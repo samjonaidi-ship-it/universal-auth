@@ -110,11 +110,25 @@ export async function initUniversalAuth(config: UniversalAuthConfig): Promise<vo
     sdkVersion: SDK_VERSION,
   });
 
-  // Pending subsequent blocks (to be wired when modules land):
-  //   Block 3 Day 5-6: flows (code-flow, enroll-flow, passkey-flow)
-  //   Block 3 Day 5-6: event-reporter, entitlements, settings-sync, session-watcher
-  //   Block 3 Day 7-8: offline queue + SW bridge
-  //   Block 4 Day 9-10: React AuthProvider + useAuth hook tree
+  // Wire event reporter (batched ingestion per §3.2 + §8.1)
+  const { configureEventReporter } = await import('./core/event-reporter.js');
+  const erConfig: { batchInterval?: number; batchSize?: number } = {};
+  if (config.events?.batchInterval !== undefined) erConfig.batchInterval = config.events.batchInterval;
+  if (config.events?.batchSize !== undefined) erConfig.batchSize = config.events.batchSize;
+  configureEventReporter(erConfig);
 
-  void config;
+  // Wire settings sync (debounced PUT per §8.1)
+  const { configureSettingsSync } = await import('./core/settings-sync.js');
+  const ssConfig: { debounceMs?: number } = {};
+  if (config.settings?.debounceMs !== undefined) ssConfig.debounceMs = config.settings.debounceMs;
+  configureSettingsSync(ssConfig);
+
+  // Wire offline queue size (per config.offline.maxQueueSize)
+  if (config.offline?.maxQueueSize !== undefined) {
+    const { setMaxQueueSize } = await import('./offline/queue.js');
+    setMaxQueueSize(config.offline.maxQueueSize);
+  }
+
+  // SW + session-watcher start is the consumer app's call
+  // (React AuthProvider wires them up in Block 4).
 }
