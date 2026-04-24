@@ -218,11 +218,11 @@ export interface AuthErrorEnvelope {
  * Used by `core/client.ts` (Block 2 Days 3-4) when non-2xx response arrives.
  */
 export function errorFromEnvelope(env: AuthErrorEnvelope): AuthSdkError {
-  const opts = {
-    hint: env.hint,
-    retryAfterSeconds: env.retry_after_seconds,
-    traceId: env.trace_id,
-  };
+  // Build opts without undefined-valued keys (exactOptionalPropertyTypes).
+  const opts: { hint?: string; retryAfterSeconds?: number; traceId?: string } = {};
+  if (env.hint !== undefined) opts.hint = env.hint;
+  if (env.retry_after_seconds !== undefined) opts.retryAfterSeconds = env.retry_after_seconds;
+  if (env.trace_id !== undefined) opts.traceId = env.trace_id;
 
   switch (env.code) {
     case 'AUTH_CODE_INVALID':          return new AuthCodeInvalid(undefined, opts);
