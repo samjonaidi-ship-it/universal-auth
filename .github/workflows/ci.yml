@@ -1,5 +1,5 @@
 # @bb/universal-auth | .github/workflows/ci.yml | v1.0.0-rc.1 | 2026-04-24 | BB
-# Runs on every PR per plan §CI/CD
+# Runs on every PR per plan section CI/CD
 
 name: CI
 
