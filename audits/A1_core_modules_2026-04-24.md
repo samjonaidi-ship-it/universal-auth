@@ -19,15 +19,15 @@ Every line in A1 scope files traces to a spec `§/L` citation. Inline comments i
 
 | File | Primary spec citations | Lines in file |
 |---|---|---|
-| `src/core/device-id.ts` | §15.2 L1363 | 90 |
-| `src/core/storage-crypto.ts` | §8.2 L826, §9.3 L227 | 72 |
-| `src/core/crypto-worker.ts` | §8.2 L826 (worker-context assertion top-of-file) | 132 |
-| `src/core/crypto-client.ts` | §8.2 L826 (main-thread proxy to worker + fallback) | 144 |
-| `src/core/storage.ts` | §15.1 L1353, §9.1 L864, §9.6 L982 | 160 |
-| `src/core/token-manager.ts` | §5.0 v1.4.0, §8.2 L828, §15.1 L1353, §9.6 L982 | 310 |
-| `src/core/client.ts` | §3 L142, §3.6 L234, §3.7 L247, §8.1 L815-L821, §14.2 L1330 | 260 |
-| `src/errors.ts` | §3.7 L247, §5.4.5 L519, §3.4 v1.4.0 L221 | 254 |
-| `src/config.ts` | §10.6 L1041 (mode-safety assertion) | 120 |
+| `src/core/device-id.ts` | §15.2 | 90 |
+| `src/core/storage-crypto.ts` | §8.2, §9.3 | 72 |
+| `src/core/crypto-worker.ts` | §8.2 (worker-context assertion top-of-file) | 132 |
+| `src/core/crypto-client.ts` | §8.2 (main-thread proxy to worker + fallback) | 144 |
+| `src/core/storage.ts` | §15.1, §9.1, §9.6 | 160 |
+| `src/core/token-manager.ts` | §5.0 v1.4.0, §8.2, §15.1, §9.6 | 310 |
+| `src/core/client.ts` | §3, §3.6, §3.7, §8.1, §14.2 | 260 |
+| `src/errors.ts` | §3.7, §5.4.5, §3.4 (v1.4.0) | 254 |
+| `src/config.ts` | §10.6 (mode-safety assertion) | 120 |
 
 **Result:** ✅ PASS
 
@@ -46,7 +46,7 @@ grep -rE "window\.\w*[Tt]oken" src/
 → no matches
 ```
 
-Access tokens live exclusively in `token-manager.ts` module state (memory). Refresh tokens live in IndexedDB, AES-256-GCM encrypted via `crypto-client.ts` → `crypto-worker.ts`. The only `localStorage` usage in `src/` is `device-id.ts` for caching the non-secret UA-derived device id (device id is observable to the server via UA anyway — not a token per §15.1 L1353).
+Access tokens live exclusively in `token-manager.ts` module state (memory). Refresh tokens live in IndexedDB, AES-256-GCM encrypted via `crypto-client.ts` → `crypto-worker.ts`. The only `localStorage` usage in `src/` is `device-id.ts` for caching the non-secret UA-derived device id (device id is observable to the server via UA anyway — not a token per §15.1).
 
 **Result:** ✅ PASS
 
@@ -123,8 +123,8 @@ Test passes on every run. The `inFlightRefresh` promise in `token-manager.ts` L1
 
 `test/unit/errors.test.ts` enumerates all 17 canonical codes:
 
-- 15 from §3.7 L247: `AUTH_CODE_INVALID`, `AUTH_CODE_EXPIRED`, `AUTH_RATE_LIMITED`, `AUTH_SESSION_EXPIRED`, `AUTH_SESSION_REVOKED`, `PROVISIONING_INCOMPLETE` (w/ 6 blocker sub-codes), `PLAN_SUSPENDED`, `FEATURE_NOT_ENTITLED`, `PASSKEY_UV_REQUIRED`, `DEVICE_UNRECOGNIZED`, `IDEMPOTENCY_KEY_REPLAY`, `APP_NOT_REGISTERED`, `UNKNOWN_EVENT_TYPE`, `VERSION_INCOMPATIBLE`, `MAINTENANCE_MODE`
-- 2 extensions: `VALIDATION_PHONE_UNREACHABLE` (§5.4.5 L519), `CONSENT_REQUIRED` (v1.4.0 §3.4 L221)
+- 15 from §3.7: `AUTH_CODE_INVALID`, `AUTH_CODE_EXPIRED`, `AUTH_RATE_LIMITED`, `AUTH_SESSION_EXPIRED`, `AUTH_SESSION_REVOKED`, `PROVISIONING_INCOMPLETE` (w/ 6 blocker sub-codes), `PLAN_SUSPENDED`, `FEATURE_NOT_ENTITLED`, `PASSKEY_UV_REQUIRED`, `DEVICE_UNRECOGNIZED`, `IDEMPOTENCY_KEY_REPLAY`, `APP_NOT_REGISTERED`, `UNKNOWN_EVENT_TYPE`, `VERSION_INCOMPATIBLE`, `MAINTENANCE_MODE`
+- 2 extensions: `VALIDATION_PHONE_UNREACHABLE` (§5.4.5), `CONSENT_REQUIRED` (v1.4.0 §3.4)
 
 Plus `errorFromEnvelope()` factory maps each envelope code to the correct typed class. 6 `PROVISIONING_INCOMPLETE` blocker sub-codes (`no_app_registration` per plan Decision #20).
 
@@ -212,9 +212,23 @@ Vitest coverage report (77 tests, 5 test files, all passing):
 
 5. **device-id.ts 77% branches:** uncovered branches are localStorage quota-exceeded + JSON.parse failure — reliably triggering requires environment control (private browsing, storage quota mock) that is A2 chaos-test scope.
 
-**Aggregate metrics** (unweighted across A1-scope files excluding Worker-unreachable):
-- Lines: **87.1%** (target 90%, −2.9%)
-- Branches: **87.5%** (target 85%, ✓ exceeds)
+**Two aggregate numbers — both are correct for different scopes:**
+
+1. **Vitest `All files` line (full source tree, includes Block-3+ stubs at 0%):**
+   - Lines: **73.85%**
+   - Branches: **83.01%**
+   - This is the raw CI-report number. It averages across stubs (`flows/passkey-flow.ts`, `imperative/getAuth.ts`, `react/index.ts`, `sw/index.ts`, `types/api.ts`, `types/profile.ts`, `index.ts`) that carry 0% because they contain no executable logic yet — all planned implementations land in Block 3-5.
+
+2. **Selective aggregate across A1-scope implementations (excluding Block-3+ stubs AND Worker-unreachable):**
+   - Lines: **87.1%**
+   - Branches: **87.5%**
+   - This is my hand-calc over the 7 files that actually have A1 logic: `errors.ts`, `storage-crypto.ts`, `storage.ts`, `device-id.ts`, `client.ts`, `token-manager.ts`, `config.ts`.
+
+**Gate target:** 90% L / 85% B. Branches clear both measures. Lines:
+- Raw (73.85%) is under target; inflated by stubs which can't be tested until their logic exists.
+- Selective (87.1%) is closer but still −2.9% short, with every uncovered line traced to an A2/A3 test commitment.
+
+Neither number is "wrong" — they measure different scopes. A5 (end of Block 6) targets both numbers ≥ 90% L / 85% B against the FULL tree, when all stubs have real implementations.
 
 **Disposition:** Gate 10 is conditionally satisfied for Day 4 scaffold scope. Every remaining coverage gap has a documented A2/A3 test plan. Sam signs or flags per this audit.
 
@@ -227,9 +241,9 @@ Vitest coverage report (77 tests, 5 test files, all passing):
 `pnpm size-check` output:
 
 ```
-core (§12.1 L1199 budget 40 KB)        Size: 5.51 kB   ← 13.8% of budget
-passkey lazy (§12.1 L1202 budget 10KB) Size: 104 B
-sw lazy     (§12.1 L1203 budget 5 KB)  Size: 13 B
+core (§12.1 budget 40 KB)        Size: 5.51 kB   ← 13.8% of budget
+passkey lazy (§12.1 budget 10KB) Size: 104 B
+sw lazy     (§12.1 budget 5 KB)  Size: 13 B
 ```
 
 A1 interim target was 20 KB for core. Current 5.51 KB = **72% headroom** remaining for Blocks 3–5 to add flows/offline/React components without breaching the 40 KB final budget.
@@ -259,7 +273,7 @@ Runs on every CI pipeline. Checks production dep tree for `jose`, `lodash`, `axi
 | 7 | Zero TODO/FIXME | ✅ |
 | 8 | Watermark on every file | ✅ |
 | 9 | TypeScript strict | ✅ |
-| 10 | Coverage ≥ 90% L / 85% B | ⚠ Branches ✓; lines 87% aggregate |
+| 10 | Coverage ≥ 90% L / 85% B | ⚠ conditional: branches ✓ both measures; lines 73.85% raw / 87.1% selective (A1-scope only), both traced to A2/A3 commitments |
 | 11 | Bundle core ≤ 20 KB at A1 | ✅ (5.5 KB) |
 | 12 | verify:no-jose passes | ✅ |
 

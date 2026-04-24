@@ -1,6 +1,6 @@
 // @bb/universal-auth | src/errors.ts | v1.0.0-rc.1 | 2026-04-24 | BB
-// Typed error classes for every canonical error code per §3.7 L247.
-// Full enumeration: 15 from §3.7 + `VALIDATION_PHONE_UNREACHABLE` (§5.4.5 L519)
+// Typed error classes for every canonical error code per §3.7.
+// Full enumeration: 15 from §3.7 + `VALIDATION_PHONE_UNREACHABLE` (§5.4.5)
 // + `CONSENT_REQUIRED` (v1.4.0 §3.4) = 17 total.
 //
 // Day 2 delivery — consumed by client.ts (Block 2 Days 3-4) when HTTP responses
@@ -12,7 +12,7 @@
 /**
  * Base class for every SDK-surfaced error.
  * Carries the canonical code + optional `hint`, `retry_after_seconds`, `trace_id`
- * per §3.6 L234 error envelope.
+ * per §3.6 error envelope.
  */
 export class AuthSdkError extends Error {
   readonly code: string;
@@ -41,7 +41,7 @@ export class AuthSdkError extends Error {
 
 // ── Blocker sub-codes for PROVISIONING_INCOMPLETE ─────────────────────────
 // Per plan Decision #20: use `no_app_registration` (Wizard vocabulary) not
-// SDK §3.7 L247 `no_app`. SDK spec patch filed as v1.4.1 cleanup.
+// SDK §3.7 `no_app`. SDK spec patch filed as v1.4.1 cleanup.
 
 export type ProvisioningBlocker =
   | 'qbo_missing'
@@ -51,7 +51,7 @@ export type ProvisioningBlocker =
   | 'no_app_registration'
   | 'enrollment_incomplete';
 
-// ── 15 canonical codes from §3.7 L247 ─────────────────────────────────────
+// ── 15 canonical codes from §3.7 ─────────────────────────────────────
 
 export class AuthCodeInvalid extends AuthSdkError {
   constructor(message = 'The verification code is invalid.', opts?: ConstructorParameters<typeof AuthSdkError>[2]) {
@@ -84,7 +84,7 @@ export class AuthSessionRevoked extends AuthSdkError {
 }
 
 /**
- * Custody chain incomplete per §3.7 L247. Carries a `blocker` sub-code indicating
+ * Custody chain incomplete per §3.7. Carries a `blocker` sub-code indicating
  * which chain link failed. Thrown during finalize or on access-gated request.
  */
 export class ProvisioningIncomplete extends AuthSdkError {
@@ -169,7 +169,7 @@ export class MaintenanceMode extends AuthSdkError {
 // ── 2 additional codes (v1.4.0 + §5.4.5) ──────────────────────────────────
 
 /**
- * Phone failed server-side canonicalization (§5.4.5 L519).
+ * Phone failed server-side canonicalization (§5.4.5).
  * Client-side libphonenumber-js accepted, but server's full libphonenumber rejected.
  */
 export class ValidationPhoneUnreachable extends AuthSdkError {
@@ -179,7 +179,7 @@ export class ValidationPhoneUnreachable extends AuthSdkError {
 }
 
 /**
- * Required consent missing or stale policy version (v1.4.0 §3.4 L221).
+ * Required consent missing or stale policy version (v1.4.0 §3.4).
  * SDK auth middleware throws this on first non-consent API call post-version-bump.
  */
 export class ConsentRequired extends AuthSdkError {
@@ -199,7 +199,7 @@ export class ConsentRequired extends AuthSdkError {
 // ── Factory: construct a typed error from a CT BFF error envelope ─────────
 
 /**
- * CT BFF error envelope shape per §3.6 L234.
+ * CT BFF error envelope shape per §3.6.
  */
 export interface AuthErrorEnvelope {
   error?: string;

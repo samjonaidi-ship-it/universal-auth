@@ -1,6 +1,6 @@
 // @bb/universal-auth | src/core/storage-crypto.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 // Pure crypto primitives (PBKDF2 + AES-256-GCM) used by both:
-//   * crypto-worker.ts — primary path, off-main-thread per §8.2 L826
+//   * crypto-worker.ts — primary path, off-main-thread per §8.2
 //   * crypto-client.ts — main-thread fallback for test/SSR environments
 //
 // Keep this module free of DOM / IDB / network — it must be importable from

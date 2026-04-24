@@ -42,10 +42,12 @@ Summary: N/M gates passed.
 
 ## Spec-compliance matrix (A1+A4+A6)
 
-| Spec §/L | Implementation file | Verified |
+| Spec § | Implementation file | Verified |
 |---|---|---|
-| §3.1 L150 code/request rate limit | core/client.ts:NN | ✓ |
+| §3.1 code/request rate limit | core/client.ts:<line> | ✓ |
 | ... | ... | ... |
+
+> Citation convention: section-only (`§3.1`, `§D2.1`, `Appendix B`). SDK spec line numbers drift on every version bump — section numbers are stable.
 
 ---
 

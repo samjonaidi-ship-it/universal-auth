@@ -1,12 +1,12 @@
 // @bb/universal-auth | src/types/api.ts | v1.0.0-rc.1 | 2026-04-24 | BB
-// v1 HTTP request/response + session types per §3 + §D2.1 L1505-L1564.
+// v1 HTTP request/response + session types per §3 + §D2.1.
 //
 // Day 1: top-level shape stubs. Day 3-4 (Block 2) fleshes out every request/response.
 
-/** `identity_kind` enum per D11 / §D2.1 L1512. */
+/** `identity_kind` enum per D11 / §D2.1. */
 export type IdentityKind = 'human' | 'device' | 'service' | 'external_app' | 'agent';
 
-/** Persona entry in the multi-persona session per D8 / §D2.1 L1516. */
+/** Persona entry in the multi-persona session per D8 / §D2.1. */
 export interface Persona {
   persona_type: string;       // 'crew' | 'supplier' | 'client' | 'architect' | 'subcontractor' | 'admin' | ...
   party_id: string;
@@ -18,7 +18,7 @@ export interface Persona {
   landing_route: string;      // from persona_registry
 }
 
-/** Agent-session augmentation per D13 / §D2.2 L1552. */
+/** Agent-session augmentation per D13 / §D2.2. */
 export interface AgentContext {
   class: string;              // e.g., 'buddy'
   tier: 1 | 2 | 3;
@@ -29,7 +29,7 @@ export interface AgentContext {
   on_behalf_of_persona: string | null;
 }
 
-/** Feature/capability/app-access aggregate per §D2.1 L1537. */
+/** Feature/capability/app-access aggregate per §D2.1. */
 export interface Entitlements {
   features: readonly string[];
   app_access: readonly string[];
@@ -49,14 +49,14 @@ export interface Identity {
   employee_id?: string | null;
 }
 
-/** Session metadata per §D2.1 L1542. Populated Block 2 Day 3. */
+/** Session metadata per §D2.1. Populated Block 2 Day 3. */
 export interface SessionMeta {
   session_id: string;
   issued_at: string;         // ISO
   expires_at: string;        // ISO
 }
 
-/** Full session payload returned from `/auth/v1/me` per §D2.1 L1505. */
+/** Full session payload returned from `/auth/v1/me` per §D2.1. */
 export interface Session {
   identity: Identity;
   primary_persona?: string;  // D8 — not present for agents

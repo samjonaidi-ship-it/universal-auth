@@ -1,5 +1,5 @@
 // @bb/universal-auth | scripts/verify-no-jose.ts | v1.0.0-rc.1 | 2026-04-24 | BB
-// Asserts `jose` (and other forbidden deps per §Appendix B L1447) do not appear
+// Asserts `jose` (and other forbidden deps per §Appendix B) do not appear
 // in the PRODUCTION dependency tree. Dev-only appearances are permitted.
 
 import { execSync } from 'node:child_process';
@@ -58,7 +58,7 @@ try {
 if (violations.length) {
   console.error(
     `[verify-no-jose] FAILED: forbidden prod dep(s) present: ${violations.join(', ')}\n` +
-      `See SDK spec §Appendix B L1447 — these packages must NOT appear in production bundles.`
+      `See SDK spec §Appendix B — these packages must NOT appear in production bundles.`
   );
   process.exit(1);
 }

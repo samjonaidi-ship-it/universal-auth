@@ -1,9 +1,9 @@
 // @bb/universal-auth | src/core/token-manager.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 // Access + refresh token lifecycle. Enforces spec invariants:
 //
-//   §15.1 L1353-L1354  Access token in memory only, never disk
+//   §15.1  Access token in memory only, never disk
 //   §5.0   v1.4.0       Access TTL 15 min (prod), refresh TTL 90 days
-//   §8.2   L826-L828    Mutex-coalesced refresh (Shared Worker primary;
+//   §8.2    Mutex-coalesced refresh (Shared Worker primary;
 //                       BroadcastChannel fallback for multi-tab coordination)
 //
 // Multi-tab note: Day 3 implementation uses BroadcastChannel for cross-tab
@@ -188,7 +188,7 @@ export async function clearSession(): Promise<void> {
 
 /**
  * Return a valid access token, refreshing if needed.
- * Concurrent callers coalesce on a single in-flight refresh (§8.2 L828).
+ * Concurrent callers coalesce on a single in-flight refresh (§8.2).
  * Returns null if no session exists or refresh failed.
  */
 export async function getAccessToken(): Promise<string | null> {

@@ -1,5 +1,5 @@
 // @bb/universal-auth | scripts/build.ts | v1.0.0-rc.1 | 2026-04-24 | BB
-// esbuild build pipeline — 3-chunk split per §12.1 L1199: core / passkey / sw.
+// esbuild build pipeline — 3-chunk split per §12.1: core / passkey / sw.
 //
 // Outputs:
 //   dist/esm/index.js          — core entry (budget 40 KB gzip)
@@ -24,14 +24,14 @@ function clean(): void {
 }
 
 async function bundleEsm(): Promise<void> {
-  // 3 entry points = 3 chunks (split per §12.1 L1199)
+  // 3 entry points = 3 chunks (split per §12.1)
   await build({
     entryPoints: {
       'index':                resolve(ROOT, 'src/index.ts'),
       'react/index':          resolve(ROOT, 'src/react/index.ts'),
       'flows/passkey-flow':   resolve(ROOT, 'src/flows/passkey-flow.ts'),
       'sw/index':             resolve(ROOT, 'src/sw/index.ts'),
-      // §8.2 L826 Web Worker for crypto — bundled as its own entry so
+      // §8.2 Web Worker for crypto — bundled as its own entry so
       // crypto-client.ts can load it via `new Worker(new URL(...))`.
       'core/crypto-worker':   resolve(ROOT, 'src/core/crypto-worker.ts'),
     },

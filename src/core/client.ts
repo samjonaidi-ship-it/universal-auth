@@ -1,13 +1,13 @@
 // @bb/universal-auth | src/core/client.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 // HTTP client for CT BFF. Owns:
 //
-//   §3     L142   Every endpoint at `https://ct-bff.bainbridgebuilders.com/auth/v1/*`
-//   §3.6   L234   Standard error envelope → typed errors via errorFromEnvelope
-//   §3.7   L247   Canonical error codes (17 total; see errors.ts)
-//   §14.2  L1330  `X-Auth-Protocol-Version: v1` on every request
-//   §Global L144  `Idempotency-Key` on every mutation (POST/PUT/PATCH/DELETE)
-//   §8.1   L815   HTTP/2 + native fetch (browser-optimized keep-alive)
-//   §8.1   L821   ETag 304 handling on GET /auth/v1/me
+//   §3   Every endpoint at `https://ct-bff.bainbridgebuilders.com/auth/v1/*`
+//   §3.6   Standard error envelope → typed errors via errorFromEnvelope
+//   §3.7   Canonical error codes (17 total; see errors.ts)
+//   §14.2  `X-Auth-Protocol-Version: v1` on every request
+//   §Global  `Idempotency-Key` on every mutation (POST/PUT/PATCH/DELETE)
+//   §8.1   HTTP/2 + native fetch (browser-optimized keep-alive)
+//   §8.1   ETag 304 handling on GET /auth/v1/me
 //
 // Design:
 //   * Zero HTTP knowledge leaks to token-manager (circular dep broken via
@@ -150,7 +150,7 @@ async function requestInternal<T>(
   // catches to persist the mutation for later flush. Non-mutations propagate normally.
   const response = await fetch(url, init);
 
-  // ETag 304 path — §8.1 L821
+  // ETag 304 path — §8.1
   if (response.status === 304) {
     return {
       status: 304,

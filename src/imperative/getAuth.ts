@@ -1,5 +1,5 @@
 // @bb/universal-auth | src/imperative/getAuth.ts | v1.0.0-rc.1 | 2026-04-24 | BB
-// Non-React entry point per §5.3 L403. Returns an imperative AuthClient
+// Non-React entry point per §5.3. Returns an imperative AuthClient
 // with signIn / getSession / onSessionChange.
 //
 // Day 1 stub — concrete implementation in Block 2-3 (Days 3-6).

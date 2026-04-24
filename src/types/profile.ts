@@ -1,5 +1,5 @@
 // @bb/universal-auth | src/types/profile.ts | v1.0.0-rc.1 | 2026-04-24 | BB
-// UniversalProfile per §5.4.1 L422-L457.
+// UniversalProfile per §5.4.1.
 
 export interface EmergencyContact {
   name: string;
@@ -34,7 +34,7 @@ export interface PersonaExtensions {
 
 /**
  * Universal profile contract — every consumer app receives this shape.
- * Per §5.4.1 L422-L457.
+ * Per §5.4.1.
  */
 export interface UniversalProfile {
   identity_id: string;
@@ -44,7 +44,7 @@ export interface UniversalProfile {
   locale: string;                      // 'en-US'
   timezone: string;                    // 'America/Los_Angeles'
 
-  // 3-tier avatar fallback per §5.4.4 L510
+  // 3-tier avatar fallback per §5.4.4
   avatar_url?: string;                 // tier 1: R2-hosted upload
   avatar_preset?: string;              // tier 2: one of 20 preset SVG keys
   initials_color: string;              // tier 3: deterministic hex from hash(identity_id)

@@ -2,10 +2,10 @@
 // Encrypted IndexedDB storage — refresh token + event queue + offline queue backing store.
 //
 // Per spec:
-//   §15.1 L1353  Tokens never touch localStorage or sessionStorage (IDB only, encrypted)
-//   §9.3  L227   AES-256-GCM + PBKDF2 encryption
-//   §8.2  L826   Web Worker for crypto (off main thread) — routed via crypto-client.ts
-//   §9.1  L864   Encrypted refresh token, 90-day TTL
+//   §15.1  Tokens never touch localStorage or sessionStorage (IDB only, encrypted)
+//   §9.3   AES-256-GCM + PBKDF2 encryption
+//   §8.2   Web Worker for crypto (off main thread) — routed via crypto-client.ts
+//   §9.1   Encrypted refresh token, 90-day TTL
 //
 // Design split (Block 2 + A1):
 //   * storage-crypto.ts  — pure crypto primitives (Worker-safe)
@@ -79,13 +79,13 @@ interface RefreshTokenRow {
   key: string;        // static 'current' — one row
   iv: Uint8Array;
   ciphertext: Uint8Array;
-  expiresAt: number;  // epoch ms — 90-day TTL per §9.6 L982
+  expiresAt: number;  // epoch ms — 90-day TTL per §9.6
   storedAt: number;
 }
 
 /**
  * Store the refresh token encrypted with a device-bound AES-256-GCM key
- * (derivation + encryption happen in the Web Worker per §8.2 L826).
+ * (derivation + encryption happen in the Web Worker per §8.2).
  */
 export async function storeRefreshToken(refreshToken: string, expiresAtMs: number): Promise<void> {
   const deviceId = await getOrCreateDeviceId();
@@ -112,7 +112,7 @@ export async function getRefreshToken(): Promise<string | null> {
     | undefined;
   if (!row) return null;
 
-  // 90-day hard cutoff per §9.6 L982
+  // 90-day hard cutoff per §9.6
   if (row.expiresAt < Date.now()) {
     await clearRefreshToken();
     return null;
@@ -126,7 +126,7 @@ export async function getRefreshToken(): Promise<string | null> {
     };
     return await decryptString(blob, deviceId);
   } catch {
-    // Key mismatch OR tampered ciphertext — §11.8 L1148 graceful-fail
+    // Key mismatch OR tampered ciphertext — §11.8 graceful-fail
     await clearRefreshToken();
     return null;
   }

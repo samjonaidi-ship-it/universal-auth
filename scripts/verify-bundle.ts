@@ -1,5 +1,5 @@
 // @bb/universal-auth | scripts/verify-bundle.ts | v1.0.0-rc.1 | 2026-04-24 | BB
-// Bundle audits per §8.2 L830 + §15.1 L1358.
+// Bundle audits per §8.2 + §15.1.
 // Enforced in CI — fails the build on any violation.
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -12,7 +12,7 @@ function checkSideEffects(): void {
   const pkg = JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf8')) as { sideEffects?: unknown };
   if (pkg.sideEffects !== false) {
     throw new Error(
-      `[verify-bundle] package.json must declare "sideEffects": false for tree-shaking (§8.2 L830). ` +
+      `[verify-bundle] package.json must declare "sideEffects": false for tree-shaking (§8.2). ` +
         `Got: ${JSON.stringify(pkg.sideEffects)}`
     );
   }
@@ -45,7 +45,7 @@ function checkNoInlineScripts(): void {
         for (const { pattern, label } of FORBIDDEN) {
           if (pattern.test(content)) {
             throw new Error(
-              `[verify-bundle] ${label} found in ${full}. SDK must be CSP-compatible (§15.1 L1358).`
+              `[verify-bundle] ${label} found in ${full}. SDK must be CSP-compatible (§15.1).`
             );
           }
         }
@@ -74,7 +74,7 @@ function checkNoBarrelSideEffects(): void {
   for (const { pattern, label } of FORBIDDEN_TOP_LEVEL) {
     if (pattern.test(indexSrc)) {
       throw new Error(
-        `[verify-bundle] ${label} found in src/index.ts. Barrel must be declarative-only (§8.2 L830).`
+        `[verify-bundle] ${label} found in src/index.ts. Barrel must be declarative-only (§8.2).`
       );
     }
   }

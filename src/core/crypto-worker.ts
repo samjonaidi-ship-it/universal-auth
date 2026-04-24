@@ -1,5 +1,5 @@
 // @bb/universal-auth | src/core/crypto-worker.ts | v1.0.0-rc.1 | 2026-04-24 | BB
-// Dedicated Web Worker for AES-256-GCM + PBKDF2 cryptography per §8.2 L826.
+// Dedicated Web Worker for AES-256-GCM + PBKDF2 cryptography per §8.2.
 // Lives in its own module because:
 //   * Main-thread CPU should not block on 100k-iteration PBKDF2
 //   * Key material lives inside the worker — the CryptoKey never leaves

@@ -1,5 +1,5 @@
 // @bb/universal-auth | src/core/crypto-client.ts | v1.0.0-rc.1 | 2026-04-24 | BB
-// Main-thread proxy to crypto-worker.ts. Per §8.2 L826, AES-GCM + PBKDF2 must
+// Main-thread proxy to crypto-worker.ts. Per §8.2, AES-GCM + PBKDF2 must
 // run off-main-thread. This module:
 //
 //   * Lazily spawns the Worker on first crypto op
