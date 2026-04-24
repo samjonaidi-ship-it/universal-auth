@@ -31,6 +31,9 @@ async function bundleEsm(): Promise<void> {
       'react/index':          resolve(ROOT, 'src/react/index.ts'),
       'flows/passkey-flow':   resolve(ROOT, 'src/flows/passkey-flow.ts'),
       'sw/index':             resolve(ROOT, 'src/sw/index.ts'),
+      // §8.2 L826 Web Worker for crypto — bundled as its own entry so
+      // crypto-client.ts can load it via `new Worker(new URL(...))`.
+      'core/crypto-worker':   resolve(ROOT, 'src/core/crypto-worker.ts'),
     },
     bundle: true,
     format: 'esm',
@@ -72,7 +75,7 @@ async function main(): Promise<void> {
   console.log('[build] cleaning dist/');
   clean();
 
-  console.log('[build] bundling ESM (4 entry points, splitting: true)');
+  console.log('[build] bundling ESM (5 entry points, splitting: true)');
   await bundleEsm();
 
   console.log('[build] emitting .d.ts via tsc');
