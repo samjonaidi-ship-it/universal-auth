@@ -1,0 +1,108 @@
+{
+  "name": "@bb/universal-auth",
+  "version": "1.0.0-rc.1",
+  "description": "Bainbridge Builders universal authentication SDK — one package, every consumer app (BB_Express, ControlTower, future Customer Portal, Buddy Console).",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist/",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "types": "./dist/types/index.d.ts"
+    },
+    "./react": {
+      "import": "./dist/esm/react/index.js",
+      "types": "./dist/types/react/index.d.ts"
+    },
+    "./sw": {
+      "import": "./dist/esm/sw/index.js",
+      "types": "./dist/types/sw/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsx scripts/build.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src test scripts --ext .ts,.tsx",
+    "test:unit": "vitest run --coverage",
+    "test:unit:watch": "vitest",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:contract": "vitest run --config vitest.contract.config.ts",
+    "test:browser": "playwright test",
+    "test:perf": "size-limit && tsx test/perf/cold-start.ts",
+    "test:chaos": "vitest run --config vitest.chaos.config.ts",
+    "test:security": "vitest run --config vitest.security.config.ts",
+    "test:memory": "vitest run --config vitest.memory.config.ts",
+    "size-check": "size-limit",
+    "verify:bundle": "tsx scripts/verify-bundle.ts",
+    "verify:watermarks": "tsx scripts/verify-watermarks.ts",
+    "verify:no-jose": "tsx scripts/verify-no-jose.ts",
+    "release": "tsx scripts/release.ts",
+    "publish:dry": "npm publish --dry-run --provenance"
+  },
+  "dependencies": {
+    "@simplewebauthn/browser": "^13.0.0",
+    "idb": "^8.0.0",
+    "libphonenumber-js": "^1.10.0",
+    "nanoid": "^5.0.0"
+  },
+  "devDependencies": {
+    "tiny-invariant": "^1.3.0",
+    "typescript": "^5.5.0",
+    "tsx": "^4.0.0",
+    "esbuild": "^0.23.0",
+    "vitest": "^2.0.0",
+    "@vitest/coverage-v8": "^2.0.0",
+    "fake-indexeddb": "^6.0.0",
+    "msw": "^2.0.0",
+    "@simplewebauthn/server": "^13.0.0",
+    "@playwright/test": "^1.47.0",
+    "size-limit": "^11.0.0",
+    "@size-limit/preset-small-lib": "^11.0.0",
+    "toxiproxy-node-client": "^2.0.0",
+    "fast-check": "^3.0.0",
+    "eslint": "^9.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/node": "^22.0.0"
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0"
+  },
+  "size-limit": [
+    {
+      "name": "core (§12.1 L1199 budget 40 KB)",
+      "path": "dist/esm/index.js",
+      "limit": "40 KB"
+    },
+    {
+      "name": "passkey lazy (§12.1 L1202 budget 10 KB)",
+      "path": "dist/esm/flows/passkey-flow.js",
+      "limit": "10 KB"
+    },
+    {
+      "name": "sw lazy (§12.1 L1203 budget 5 KB)",
+      "path": "dist/esm/sw/index.js",
+      "limit": "5 KB"
+    }
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BainbridgeBuilders/universal-auth.git"
+  }
+}

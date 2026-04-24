@@ -1,0 +1,41 @@
+# @bb/universal-auth | .gitignore | v1.0.0-rc.1 | 2026-04-24 | BB
+node_modules/
+dist/
+coverage/
+.nyc_output/
+
+# Demo builds
+demo/dist/
+demo/.vite/
+
+# Env + secrets (never commit)
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-error.log
+pnpm-debug.log*
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Test artifacts
+playwright-report/
+test-results/
+test-results.xml
+
+# Build cache
+.turbo/
+.cache/
+*.tsbuildinfo
+
+# Package tarball outputs
+*.tgz
