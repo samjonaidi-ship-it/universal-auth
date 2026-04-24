@@ -1,6 +1,6 @@
 // @bb/universal-auth | src/config.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 // SDK initialization config + mode-safety assertion (§10.6 L1041).
-// Day 1: config shape + safety check stub. Day 2+ wires to client.
+// Day 3-4: wires core modules (client, token-manager) via configureClient().
 
 /**
  * Operating modes per §10 L988-L1052.
@@ -84,10 +84,15 @@ export function assertModeSafety(
   }
 }
 
+/** Current SDK version. Stamped on every event + every outbound HTTP request. */
+export const SDK_VERSION = '1.0.0-rc.1';
+
 /**
  * Initialize the SDK. Called once at app startup.
  *
- * Day 1 stub — actual wiring begins Day 2+ per plan.
+ * Day 3-4 (Block 2): wires core/client.ts with the CT BFF base URL + appId.
+ * Subsequent blocks layer in flows (Block 3), offline queue (Block 3), and
+ * React providers (Block 4).
  */
 export async function initUniversalAuth(config: UniversalAuthConfig): Promise<void> {
   const mode: SdkMode = config.mode ?? 'production';
@@ -97,11 +102,19 @@ export async function initUniversalAuth(config: UniversalAuthConfig): Promise<vo
     assertModeSafety(mode, window.location.hostname);
   }
 
-  // TODO(Day 3-4 Block 2): wire core/client.ts, token-manager.ts, storage.ts, device-id.ts
-  // TODO(Day 5-6 Block 3): wire flows + event-reporter + entitlements + settings-sync
-  // TODO(Day 7-8 Block 3): wire offline queue + SW bridge
-  // See plan Block 1-5 for full implementation sequence.
+  // Wire the HTTP client (registers the refresh callback with token-manager internally)
+  const { configureClient } = await import('./core/client.js');
+  configureClient({
+    apiBaseUrl: config.apiBaseUrl,
+    appId: config.appId,
+    sdkVersion: SDK_VERSION,
+  });
 
-  // Day 1 no-op — registration only proves the API shape compiles.
+  // Pending subsequent blocks (to be wired when modules land):
+  //   Block 3 Day 5-6: flows (code-flow, enroll-flow, passkey-flow)
+  //   Block 3 Day 5-6: event-reporter, entitlements, settings-sync, session-watcher
+  //   Block 3 Day 7-8: offline queue + SW bridge
+  //   Block 4 Day 9-10: React AuthProvider + useAuth hook tree
+
   void config;
 }
