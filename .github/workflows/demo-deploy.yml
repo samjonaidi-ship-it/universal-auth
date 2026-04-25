@@ -1,0 +1,63 @@
+# BB Universal Auth | .github/workflows/demo-deploy.yml | v1.0.0-rc.1 | 2026-04-25 | BB
+# Railway deploy of demo/ to auth-sdk-demo.bainbridgebuilders.com.
+# Triggers: pushes to main that touch demo/ OR src/ (new SDK code → demo refresh).
+#
+# Required GitHub Actions secrets:
+#   RAILWAY_TOKEN              — project-scoped Railway token (BB-Production)
+#   RAILWAY_SERVICE_AUTH_DEMO  — service id of `auth-sdk-demo` once created in Railway dashboard
+#
+# One-time Railway setup (Sam, ~5 minutes):
+#   1. Railway dashboard → BB-Production → New Service → GitHub Repo
+#   2. Connect BainbridgeBuilders/universal-auth (authorize org access)
+#   3. Service name: auth-sdk-demo
+#   4. Root directory: /demo
+#   5. Custom domain: auth-sdk-demo.bainbridgebuilders.com (Railway auto-issues SSL)
+#   6. Add Cloudflare DNS CNAME: auth-sdk-demo → <railway-target>.up.railway.app
+#   7. Generate project token in Railway → copy as RAILWAY_TOKEN secret in GitHub repo
+#   8. Copy service id (visible in Railway service URL) as RAILWAY_SERVICE_AUTH_DEMO
+
+name: Deploy Demo to Railway
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'demo/**'
+      - 'src/**'
+      - '.github/workflows/demo-deploy.yml'
+  workflow_dispatch: {}
+
+concurrency:
+  group: demo-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install pnpm
+        run: npm install -g pnpm@9
+
+      - name: Build SDK (so demo can resolve workspace dep)
+        run: |
+          pnpm install --frozen-lockfile=false
+          pnpm run build
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli@latest
+
+      - name: Deploy demo via Railway CLI
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          cd demo
+          railway up \
+            --service "${{ secrets.RAILWAY_SERVICE_AUTH_DEMO }}" \
+            --detach
