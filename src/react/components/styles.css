@@ -1,0 +1,190 @@
+/* @bb/universal-auth | src/react/components/styles.css | v1.0.0-rc.1 | 2026-04-24 | BB
+ * CSS custom properties only (§8.5). Consumer apps override --bb-* vars to theme.
+ * No inline styles in any component (verified by scripts/verify-bundle.ts).
+ */
+
+:where(.bb-auth-signin-form,
+       .bb-auth-code-entry,
+       .bb-auth-passkey-prompt,
+       .bb-auth-offline-indicator,
+       .bb-auth-impersonation-banner,
+       .bb-auth-app-chooser,
+       .bb-auth-persona-chooser,
+       .bb-auth-agent-banner,
+       .bb-auth-consent-screen) {
+  --bb-color-primary: #c8102e;
+  --bb-color-text: #1a1a1a;
+  --bb-color-bg: #ffffff;
+  --bb-color-bg-subtle: #f6f6f6;
+  --bb-color-border: #d0d0d0;
+  --bb-color-error: #b00020;
+  --bb-color-disabled: #999;
+  --bb-radius: 6px;
+  --bb-spacing: 12px;
+  --bb-font: system-ui, -apple-system, sans-serif;
+  --bb-touch-target-min: 44px;
+
+  font-family: var(--bb-font);
+  color: var(--bb-color-text);
+}
+
+.bb-auth-heading {
+  font-size: 1.5rem;
+  margin: 0 0 var(--bb-spacing);
+}
+
+.bb-auth-description {
+  margin: 0 0 var(--bb-spacing);
+}
+
+.bb-auth-field {
+  display: block;
+  margin-bottom: var(--bb-spacing);
+}
+
+.bb-auth-field-label {
+  display: block;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.bb-auth-field input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--bb-color-border);
+  border-radius: var(--bb-radius);
+  font-size: 1rem;
+  min-height: var(--bb-touch-target-min);
+}
+
+.bb-auth-field input[aria-invalid='true'] {
+  border-color: var(--bb-color-error);
+}
+
+.bb-auth-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--bb-touch-target-min);
+  min-width: var(--bb-touch-target-min);
+  padding: 8px 16px;
+  border: 1px solid transparent;
+  border-radius: var(--bb-radius);
+  font-size: 1rem;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.bb-auth-button:disabled {
+  cursor: not-allowed;
+  color: var(--bb-color-disabled);
+}
+
+.bb-auth-button-primary {
+  background: var(--bb-color-primary);
+  color: var(--bb-color-bg);
+}
+
+.bb-auth-button-secondary {
+  background: var(--bb-color-bg);
+  border-color: var(--bb-color-border);
+}
+
+.bb-auth-button-link {
+  background: transparent;
+  border: none;
+  color: var(--bb-color-primary);
+  text-decoration: underline;
+  padding: 4px 8px;
+}
+
+.bb-auth-error {
+  color: var(--bb-color-error);
+  margin: var(--bb-spacing) 0;
+}
+
+.bb-auth-divider {
+  display: flex;
+  align-items: center;
+  margin: var(--bb-spacing) 0;
+  color: var(--bb-color-disabled);
+  text-transform: uppercase;
+  font-size: 0.85rem;
+}
+
+.bb-auth-actions {
+  display: flex;
+  gap: var(--bb-spacing);
+  margin-top: var(--bb-spacing);
+}
+
+.bb-auth-checkbox {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 8px 0;
+  cursor: pointer;
+}
+
+.bb-auth-consent-group {
+  border: 1px solid var(--bb-color-border);
+  border-radius: var(--bb-radius);
+  padding: var(--bb-spacing);
+  margin-bottom: var(--bb-spacing);
+}
+
+.bb-auth-offline-indicator {
+  background: var(--bb-color-bg-subtle);
+  padding: 8px var(--bb-spacing);
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+.bb-auth-impersonation-banner {
+  background: #fff3cd;
+  color: #664d03;
+  padding: 8px var(--bb-spacing);
+  display: flex;
+  gap: var(--bb-spacing);
+  align-items: center;
+  justify-content: center;
+  border-bottom: 1px solid #ffe69c;
+}
+
+.bb-auth-agent-banner {
+  background: var(--bb-color-bg-subtle);
+  border-left: 4px solid var(--bb-color-primary);
+  padding: var(--bb-spacing);
+  margin-bottom: var(--bb-spacing);
+}
+
+.bb-auth-app-chooser-list,
+.bb-auth-persona-chooser-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--bb-spacing);
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+}
+
+.bb-auth-app-chooser-card,
+.bb-auth-persona-chooser-card {
+  width: 100%;
+  text-align: left;
+  padding: var(--bb-spacing);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--bb-color-bg);
+  border: 1px solid var(--bb-color-border);
+}
+
+.bb-auth-persona-chooser-card-title {
+  font-weight: 600;
+}
+
+.bb-auth-persona-chooser-card-subtitle {
+  color: var(--bb-color-disabled);
+  font-size: 0.9rem;
+}

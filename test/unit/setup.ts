@@ -5,6 +5,14 @@
 // Storage impl before any test code runs.
 
 import 'fake-indexeddb/auto';
+import { afterEach } from 'vitest';
+import { cleanup } from '@testing-library/react';
+import '@testing-library/jest-dom/vitest';
+
+// React Testing Library — auto-cleanup DOM between tests.
+afterEach(() => {
+  cleanup();
+});
 
 // ── localStorage shim (Node 25+ injects broken stub) ─────────────────────
 
