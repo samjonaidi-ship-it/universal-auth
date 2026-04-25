@@ -10,6 +10,7 @@
 - **Block gated:** Block 5 (Profile + Passkey + Demo) — A3 must sign before Day 11
 - **Branch:** `agent/block-4-react-core` (stacked on `agent/block-3-flows-offline`)
 - **Authoritative spec:** `BB_UNIVERSAL_AUTH_SDK_SPEC.md v1.4.2` (§5.2, §8.4, §D2.4, §D2.5, §D2.7)
+- **Look-back amendment** (2026-04-24): pre-merge code-look-back found 2 real bugs + 3 gaps + coverage holes; fixes applied in same branch. See "Look-back remediation" section below.
 
 ---
 
@@ -25,11 +26,42 @@
 | 6 | `sideEffects: false` — `import '@bainbridgebuilders/universal-auth/react'` has no side effects | ✓ | `package.json:8 "sideEffects": false`. Build produces tree-shakeable ESM (5 entry points, code-split). `scripts/verify-bundle.ts` ran clean post-build. The CSS file is opt-in (consumers import `'./components/styles.css'` explicitly when they want default styles); not auto-loaded by the barrel. |
 | 7 | Props strict: every component fully typed, no `React.FC<any>` | ✓ | All 10 components use explicit `Props` interfaces and `: ReactNode` return types. Zero uses of `React.FC<any>`. `tsc --noEmit` clean under `exactOptionalPropertyTypes: true`. |
 | 8 | Lazy loading: `<PasskeyPrompt>` and SW chunk import dynamically — bundle output shows separate `.js` files | ✓ | Build output (`dist/esm/`) shows 5 entry points: `index.js` (root barrel), `react/index.js`, `flows/passkey-flow.js` (lazy passkey), `sw/index.js` (lazy SW), `core/crypto-worker.js` (Worker entry). Verified via `ls dist/esm/`. PasskeyPrompt component itself is a thin UI primitive (~1 KB) that imports zero heavy deps; the WebAuthn ceremony (which IS heavy) is invoked through `flows/passkey-flow.ts` — that file is its own entry and is dynamically imported by consumers (BB_Express enroll screen) per spec §8.2. |
-| 9 | `<ImpersonationBanner>` persists across client-side route changes | ✓ | The banner reads from `useAuth().identity.acting_as`. Because `IdentityContext` lives in the global `<AuthProvider>` (not per-route), the banner stays mounted across SPA navigations. Consumer apps render `<ImpersonationBanner>` inside the layout shell (above `<Outlet>` / `<Routes>`). Confirmed by component design — does NOT depend on URL or router state. Manual Playwright verification scheduled in A4. |
+| 9 | `<ImpersonationBanner>` persists across client-side route changes | ✓ (post-look-back fix) | **Original implementation was broken** — banner read `identity.acting_as` which doesn't exist on the spec's session payload, so the banner would never render. Look-back fix: introduced `flows/impersonation` module-level pub-sub (`getCurrentActingAs` + `onActingAsChange`); `useImpersonation()` hook subscribes and returns reactive `actingAs`; banner reads from hook. Test: `test/unit/react/components/ImpersonationBanner.test.tsx` covers (a) renders nothing when no impersonation, (b) renders with target name after `startImpersonation`, (c) disappears after `endImpersonation`. Persistence across navigation comes from rendering in the layout shell (unchanged). |
 | 10 | Multi-tab sign-in propagation via BroadcastChannel | ✓ (carried from A1) | `core/token-manager.ts` BroadcastChannel `bb-universal-auth-session` broadcasts `session_updated` / `session_cleared` messages on every login + clearSession. `AuthProvider`'s `onSessionChange` subscription consumes these and re-fetches `/auth/v1/me` to keep its state fresh. Tested in A1 via `token-manager.test.ts`. Cross-tab E2E added in A4. |
 | 11 | Imperative API `getAuth()` works without React §5.3 | ✓ | `src/imperative/getAuth.ts` was scaffolded in A1 + Block 2 with `signIn`, `getSession`, `onSessionChange`. Block 4 did NOT modify it. Consumers can use the SDK in vanilla JS contexts (Web Workers, server-side tests, future Node/Bun consumer apps). |
 
-**Summary: 9/11 ✓ + 1 partial (gate #2 — spec-acknowledged Phase 2 deferral) + 1 deferred (gate #4 — A4 axe-core scope per plan).**
+**Summary: 9/11 ✓ (after look-back fixes) + 1 partial (gate #2 — spec-acknowledged Phase 2 deferral) + 1 deferred (gate #4 — A4 axe-core scope per plan).**
+
+---
+
+## Look-back remediation (post-initial-pass, pre-merge)
+
+A code look-back against the initial Block 4 commit found 2 real bugs, 3 gaps, and a test-coverage hole that the first audit pass missed. All addressed in-branch before merge:
+
+### Fixes shipped
+
+| # | Issue | Severity | Fix |
+|---|---|---|---|
+| 1 | `<ImpersonationBanner>` cast-coerced `identity.acting_as` (field doesn't exist) — banner would NEVER render, defeating gate #9 | Real bug | `flows/impersonation` now exposes `getCurrentActingAs()` + `onActingAsChange()`; set on start, cleared on end. `useImpersonation()` subscribes via `useState` + `useEffect`. Banner reads `actingAs` from hook. |
+| 2 | `<AuthProvider>` hydration short-circuited to `anonymous` whenever no in-memory access token — broke D10 cross-subdomain SSO (cookie-only sessions ignored) | Real bug | Always attempt `GET /me` on mount (`credentials: 'include'` carries the cookie). Transition to `anonymous` only on auth-class failures (`AuthSessionExpired` / `AuthSessionRevoked` / `HTTP_401` / `HTTP_403`). Network or 5xx leaves status in `loading` so the app retries naturally. |
+| 3 | `<AppChooser>` with no `apps` prop returned hardcoded `[]` — silently disappeared | Gap | Default `apps` falls back to `useEntitlements().app_access` (canonical "apps this user can reach" per §D2.1). Test verifies prop, fallback, and empty paths. |
+| 4 | `EntitlementsContext.hasFeature` had redundant OR fallback (`hasFeatureRaw(k) \|\| f.includes(k)`) — confusing two-source dedup | Cleanup | Single source: `f.includes(k)` where `f` already takes `getEntitlementsSnapshot()` with offline-grace logic. |
+| 5 | 8 components had ZERO unit tests — exactly where bugs 1+3 hid | Coverage | Added smoke tests for `SignInForm` (5 tests), `CodeEntry` (4), `PasskeyPrompt` (3), `OfflineIndicator` (2), `ImpersonationBanner` (3), `AppChooser` (4), `PersonaChooser` (3), `AgentStatusBanner` (3) → 27 new tests. |
+
+### Initial-status fix (caught during smoke testing)
+
+`AuthProvider` initialized status as `'authenticated'` whenever `initialSession` was present, ignoring `navigator.onLine`. Adjusted to read `navigator.onLine` at mount when initial session is supplied. Confirmed via `OfflineIndicator` smoke test.
+
+### Test count after remediation
+
+- **Before look-back:** 120/120 across 17 files (4 React tests)
+- **After look-back:** 147/147 across 25 files (12 React tests, +27 new smoke tests)
+
+### Lesson logged
+
+The same lesson Block 3 taught: **components without unit tests hide spec-level bugs**. Going forward, every UI surface ships with at least a smoke test in the same PR — not deferred to A4 Playwright. A4 still adds axe-core + browser matrix, but smoke-level happy-path coverage is now part of A3's bar.
+
+---
 
 ---
 

@@ -19,13 +19,15 @@ import {
 import {
   onSessionChange,
   hasLiveAccessToken,
-  getCurrentSessionId,
 } from '../core/token-manager.js';
+import {
+  AuthSessionExpired,
+  AuthSessionRevoked,
+  AuthSdkError,
+} from '../errors.js';
 import {
   getEntitlementsSnapshot,
   refreshEntitlements,
-  hasFeature as hasFeatureRaw,
-  hasAppAccess as hasAppAccessRaw,
 } from '../core/entitlements.js';
 import { get } from '../core/client.js';
 import type { Session, Identity, Persona, AgentContext } from '../types/api.js';
@@ -108,9 +110,12 @@ export function AuthProvider({
     initialSession?.aggregate?.app_access ?? []
   );
 
-  const [status, setStatus] = useState<AuthStatus>(
-    initialSession ? 'authenticated' : 'loading'
-  );
+  const [status, setStatus] = useState<AuthStatus>(() => {
+    if (initialSession === undefined) return 'loading';
+    // Respect navigator.onLine at mount when an initial session is supplied
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return 'offline';
+    return 'authenticated';
+  });
 
   // ── Hydration ──────────────────────────────────────────────────────────
 
@@ -119,19 +124,29 @@ export function AuthProvider({
     let cancelled = false;
 
     async function hydrate(): Promise<void> {
-      // If no session token in memory, we're anonymous until login
-      if (!hasLiveAccessToken() && getCurrentSessionId() === null) {
-        if (!cancelled) setStatus('anonymous');
-        return;
-      }
+      // ALWAYS attempt /me. The session may live in the cross-subdomain
+      // cookie (D10 / §5.0) without an in-memory access token — typical when
+      // the user just hopped from controltower.bb.com to express.bb.com.
+      // The client sends `credentials: 'include'`, so the cookie travels.
       try {
         const { data } = await get<Session>('/auth/v1/me');
         if (cancelled) return;
         applySession(data);
         // Backfill entitlements cache
         void refreshEntitlements();
-      } catch {
-        if (!cancelled) setStatus('anonymous');
+      } catch (err) {
+        if (cancelled) return;
+        // Only mark anonymous on auth-class failures. Network or 5xx leaves
+        // the provider in 'loading' so the app retries naturally and the
+        // user doesn't see a logged-out flash on flaky connections.
+        if (
+          err instanceof AuthSessionExpired ||
+          err instanceof AuthSessionRevoked ||
+          (err instanceof AuthSdkError && isAnonymousCode(err.code))
+        ) {
+          setStatus('anonymous');
+        }
+        // Otherwise: stay 'loading'; session-watcher / next user action retries.
       }
     }
 
@@ -245,14 +260,16 @@ export function AuthProvider({
   }, [identity, primaryPersona, personas, agent, activeType, setActivePersonaCb]);
 
   const entitlementsValue = useMemo<EntitlementsContextValue>(() => {
+    // Snapshot wins when present (it includes the offline grace logic).
+    // Otherwise fall back to the in-memory aggregate from /me.
     const snap = getEntitlementsSnapshot();
     const f = snap?.features ?? features;
     const a = snap?.app_access ?? appAccess;
     return {
       features: f,
       app_access: a,
-      hasFeature: (k: string) => hasFeatureRaw(k) || f.includes(k),
-      hasAppAccess: (id: string) => hasAppAccessRaw(id) || a.includes(id),
+      hasFeature: (k: string) => f.includes(k),
+      hasAppAccess: (id: string) => a.includes(id),
     };
   }, [features, appAccess]);
 
@@ -267,5 +284,15 @@ export function AuthProvider({
         </StatusContext.Provider>
       </EntitlementsContext.Provider>
     </IdentityContext.Provider>
+  );
+}
+
+// HTTP-status / error-code helper for hydrate path
+function isAnonymousCode(code: string): boolean {
+  return (
+    code === 'AUTH_SESSION_EXPIRED' ||
+    code === 'AUTH_SESSION_REVOKED' ||
+    code === 'HTTP_401' ||
+    code === 'HTTP_403'
   );
 }

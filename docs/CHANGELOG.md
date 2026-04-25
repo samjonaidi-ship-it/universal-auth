@@ -6,6 +6,16 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
 
 ## [Unreleased — targeting 1.0.0-rc.1]
 
+### Block 4 look-back remediation (2026-04-24)
+- **Bug fix — `<ImpersonationBanner>`**: original code cast `identity.acting_as` which doesn't exist on the session payload — banner would never render. `flows/impersonation` now exposes `getCurrentActingAs()` + `onActingAsChange()` pub-sub; `useImpersonation()` subscribes; banner reads reactive `actingAs` from hook.
+- **Bug fix — `<AuthProvider>` hydration**: original code short-circuited to `anonymous` whenever no in-memory access token, breaking D10 cross-subdomain SSO (cookie-only sessions ignored on initial page load). Now always attempts `GET /me` on mount with `credentials: 'include'`; transitions to `anonymous` only on auth-class failures.
+- **Gap fix — `<AppChooser>`**: omitted `apps` prop now falls back to `useEntitlements().app_access` (was hardcoded empty list).
+- **Cleanup — `EntitlementsContext.hasFeature`**: removed redundant `hasFeatureRaw(k) || f.includes(k)` OR fallback; single source.
+- **Initial-status fix**: `AuthProvider` now reads `navigator.onLine` when constructing initial status from `initialSession`.
+- **Smoke tests added** for 8 previously-untested components (27 new tests): `SignInForm`, `CodeEntry`, `PasskeyPrompt`, `OfflineIndicator`, `ImpersonationBanner`, `AppChooser`, `PersonaChooser`, `AgentStatusBanner`. The 2 real bugs were caught by these tests during the look-back.
+- **Test count**: 120 → **147 passing** across 25 files
+- **Audit amendment**: `audits/A3_react_core_2026-04-24.md` Look-back remediation section logs the 5 issues + fixes + lesson learned
+
 ### Block 4 + A3 audit sign-off (2026-04-24)
 - **AuthProvider with 3-context split** (§8.4): `IdentityContext` / `EntitlementsContext` / `StatusContext` — components subscribe to one context and don't re-render on others. Memoized snapshots with stable deps.
 - **Public hooks (§5.2 + §D2.4):**

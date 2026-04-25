@@ -1,12 +1,19 @@
 // @bb/universal-auth | src/react/components/AppChooser.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
 // Per §D2.5 — shown at app root, persona-mismatch fallback, or in user menu
 // when an identity has access to multiple BB apps (D10).
+//
+// Default `apps` falls back to `useEntitlements().app_access` — i.e., the
+// session's aggregate.app_access[]. Consumers can override with explicit list
+// (e.g., to reorder or filter to whitelisted apps).
 
 import type { ReactNode } from 'react';
-import { useAuth } from '../useAuth.js';
+import { useEntitlements } from '../useEntitlements.js';
 
 export interface AppChooserProps {
-  /** App ids to offer. Default: read from session.aggregate.app_access. */
+  /**
+   * App ids to offer. Defaults to `useEntitlements().app_access` from session
+   * — the canonical "apps this user can reach" set per §D2.1.
+   */
   apps?: readonly string[];
   /** Required: turn an app id into a click target. */
   onSelect: (appId: string) => void;
@@ -28,10 +35,8 @@ export function AppChooser({
   appLabels = {},
   heading = 'Choose an app',
 }: AppChooserProps): ReactNode {
-  const { identity } = useAuth();
-  // Read aggregate.app_access via the entitlements module to keep this
-  // component decoupled from EntitlementsContext (avoids re-render coupling).
-  const list = apps ?? readAppAccessFromIdentity(identity);
+  const { app_access } = useEntitlements();
+  const list = apps ?? app_access;
   if (list.length === 0) return null;
 
   return (
@@ -52,13 +57,4 @@ export function AppChooser({
       </ul>
     </section>
   );
-}
-
-function readAppAccessFromIdentity(identity: ReturnType<typeof useAuth>['identity']): readonly string[] {
-  // The session's aggregate.app_access is on EntitlementsContext, not on
-  // identity; consumers SHOULD pass `apps` explicitly. If omitted we fall
-  // back to an empty list so the component renders nothing rather than
-  // surfacing stale data.
-  void identity;
-  return [];
 }
