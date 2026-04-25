@@ -74,89 +74,60 @@ This doc tracks the infrastructure tasks required for **A4 sign-off**. The SDK c
 
 ---
 
-## ⏳ Phase C — Railway Demo Service (Sam owns ~10 min)
+## ✅ Phase C — Railway Demo Service (DONE 2026-04-25, except DNS)
 
-The SDK side is complete:
-- `demo/` scaffold (Vite + React + SDK)
-- `demo/railway.json` + `demo/nixpacks.toml` (Railway build config)
-- `.github/workflows/demo-deploy.yml` (auto-deploy on `main` push)
+**The CLI path sidestepped the GitHub-org-link issue entirely.** Service was created via `railway add --service auth-sdk-demo` (Empty Service); `railway up --detach` deploys from local code without needing Railway-GitHub integration.
 
-**What Sam needs to do (one-time):**
+### What's live now
 
-### C.1 Connect Railway → BainbridgeBuilders GitHub org
+- **Railway service:** `auth-sdk-demo` in project `BB-Production`, env `production`
+- **Service URL:** https://auth-sdk-demo-production.up.railway.app — **HTTP 200, serving the demo placeholder**
+- **Custom domain registered in Railway:** `auth-sdk-demo.bainbridgebuilders.com` (DNS propagation pending)
+- **Build:** `pnpm install + pnpm run build (SDK) + cd demo && pnpm run build` via Nixpacks
+- **Start:** `cd demo && pnpm run start` → `vite preview --host 0.0.0.0 --port $PORT`
+- **`vite.config.ts allowedHosts`:** `.up.railway.app`, `.bainbridgebuilders.com`, `localhost`
 
-The `BainbridgeBuilders/universal-auth` repo is private + under a fresh org. Railway can't auto-link without explicit auth.
+### What's deployed (Block 5 minimal placeholder)
 
-1. Open https://railway.app/dashboard → BB-Production
-2. Click **+ New Service** → **GitHub Repo**
-3. If prompted, click "Configure GitHub App" → authorize Railway for the **BainbridgeBuilders** organization
-4. Select **BainbridgeBuilders/universal-auth**
+The current demo is a **static placeholder page** (no AuthProvider, no SDK imports) that proves the deploy pipeline works end-to-end. Block 7 will replace it with the full kitchen-sink (AuthProvider, sign-in flows, ProfileSetupScreen, etc.).
 
-### C.2 Configure the service
+**Why placeholder for Block 5?** The SDK's `core/crypto-client.ts` uses `new Worker(new URL('./crypto-worker.js', import.meta.url))` — Vite's static analyzer can't resolve that across the workspace boundary cleanly. Block 7 fixes via either:
+- Vite plugin to handle `import.meta.url` workers
+- Conditional Worker construction guarded by a feature flag
+- Build-time replacement of crypto-client with a stub for bundlers
 
-1. **Service name:** `auth-sdk-demo`
-2. **Root directory:** `/demo`
-3. **Branch:** `main`
-4. **Watch paths:** `demo/**` and `src/**` (so SDK changes also trigger redeploy)
+### One step remaining — DNS records (Sam ~30 sec at Porkbun)
 
-Railway will auto-detect `demo/railway.json` + `demo/nixpacks.toml` and use them.
-
-### C.3 Add custom domain
-
-1. Service settings → **Domains** → **+ Custom Domain**
-2. Enter: `auth-sdk-demo.bainbridgebuilders.com`
-3. Railway will print a CNAME target like `xxxxxxx.up.railway.app`
-
-### C.4 Cloudflare DNS
-
-In Cloudflare → bainbridgebuilders.com zone → **+ Add Record**:
+DNS for `bainbridgebuilders.com` is on **Porkbun** (per `CLOUDFLARE_CREDENTIALS.md`, the nameserver switch to Cloudflare is "pending"). Add these records at Porkbun:
 
 ```
-Type:    CNAME
-Name:    auth-sdk-demo
-Target:  <CNAME from step C.3>
-Proxy:   DNS only (grey cloud) — Railway issues its own SSL
-TTL:     Auto
+Type   Name                              Value
+─────  ────────────────────────────────  ───────────────────────────────────────────────────────────────────────────────────────
+CNAME  auth-sdk-demo                     badfwcn5.up.railway.app
+TXT    _railway-verify.auth-sdk-demo     railway-verify=railway-verify=d9d0c11a260cce2abf1e3d31421d00fe46137a4ff44c2b0065f1e94b4e90bdd3
 ```
 
-Wait ~30 seconds for DNS propagation. Railway will auto-issue an SSL cert via Let's Encrypt.
+After ~5 min DNS propagation:
+- Railway auto-issues SSL via Let's Encrypt
+- `https://auth-sdk-demo.bainbridgebuilders.com/` → HTTP 200
 
-### C.5 Wire GitHub Actions secrets
-
-For the `demo-deploy.yml` workflow to work:
-
-1. Railway → Project Settings → **Tokens** → **+ Create Token**
-   - Name: `github-actions-deploy`
-   - Scope: `BB-Production` (project-scoped)
-   - Copy the token
-2. GitHub repo → Settings → Secrets and variables → Actions → **New repository secret**
-   - Name: `RAILWAY_TOKEN`
-   - Value: paste token from step 1
-3. Same place → another secret:
-   - Name: `RAILWAY_SERVICE_AUTH_DEMO`
-   - Value: the service ID (visible in Railway service URL `https://railway.app/project/.../service/<this-id>`)
-
-### C.6 First deploy
-
-Either:
-- Push any change to `main` that touches `demo/` or `src/` → workflow auto-runs
-- OR Railway dashboard → **Deploy now**
-
-### C.7 Smoke test (gate #6 + #8)
-
-Once deployed:
+Verify:
 
 ```bash
 curl -sI https://auth-sdk-demo.bainbridgebuilders.com/
-# Expect HTTP/2 200
+# expect: HTTP/2 200
 ```
 
-Walk through the demo in a browser:
-- Open DevTools console
-- Sign in (or attempt to)
-- Verify ZERO React deprecation warnings (gate #8)
-- Verify ProfileSetupScreen renders correctly with avatar picker
-- Verify ConsentScreen shows the 9 crew consents seeded above
+### Optional — wire GitHub Actions auto-deploy
+
+`.github/workflows/demo-deploy.yml` is staged. To enable auto-deploy on `main` push:
+
+1. Railway dashboard → Project Settings → **Tokens** → **+ Create Token** → scope `BB-Production` → copy token
+2. GitHub repo Settings → Secrets and variables → Actions → **New repository secret**:
+   - `RAILWAY_TOKEN` = the token from step 1
+   - `RAILWAY_SERVICE_AUTH_DEMO` = service ID `d86f35cc-a607-48e8-badb-28a6484569e1`
+
+After that, any push to `main` touching `demo/**` or `src/**` auto-redeploys.
 
 ---
 
@@ -169,9 +140,9 @@ Walk through the demo in a browser:
 | 3 | 9 crew consents seeded | **✓** (24 total rows, 9 crew required) |
 | 4 | R2 bucket writable | **✓** (CORS configured) |
 | 5 | Migrations 046-058 applied | **✓** (HWM = 058, 14/14 tables) |
-| 6 | Demo deployed + reachable | ⏳ pending Sam Phase C steps |
+| 6 | Demo deployed + reachable | **✓ via Railway** (custom DNS pending Porkbun) |
 | 7 | Extendability mock adapter test | ✓ (3 tests) |
-| 8 | No deprecation warnings in demo | ⏳ verify after C.6 |
+| 8 | No deprecation warnings in demo | ⏳ Block 7 — current placeholder has no SDK imports to test |
 | 9 | Watermarks + zero TODO | ✓ |
 
 **5 of 9 ✓ + 4 pending Phase C completion.**
