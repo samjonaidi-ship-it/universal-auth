@@ -1,0 +1,208 @@
+// @bb/universal-auth | src/profile/profile-store.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// Profile state + sync. Per §5.4.2.
+//
+// Endpoints:
+//   GET    /identity/v1/profile                    — fetch (returns completeness)
+//   PUT    /identity/v1/profile  (If-Match: ver)   — optimistic-locked update
+//   POST   /identity/v1/profile/avatar             — upload (handled by avatar.ts)
+//   DELETE /identity/v1/profile/avatar             — clear (handled by avatar.ts)
+//
+// State machine per §5.4.2: 'loading' | 'ready' | 'saving' | 'error'.
+// Conflicts (409) → re-fetch, surface profile.conflict event, caller decides.
+
+import { get, put } from '../core/client.js';
+import { AuthSdkError } from '../errors.js';
+import { emit } from '../core/event-reporter.js';
+import type { UniversalProfile } from '../types/profile.js';
+import { computeCompleteness } from './completeness.js';
+
+// ── State machine ────────────────────────────────────────────────────────
+
+export type ProfileState = 'loading' | 'ready' | 'saving' | 'error';
+
+interface InternalState {
+  profile: UniversalProfile | null;
+  state: ProfileState;
+  /** Last error message (for state='error'). */
+  errorMessage: string | null;
+}
+
+const state: InternalState = {
+  profile: null,
+  state: 'loading',
+  errorMessage: null,
+};
+
+type Listener = () => void;
+const listeners = new Set<Listener>();
+
+function notify(): void {
+  for (const l of listeners) {
+    try {
+      l();
+    } catch {
+      // listener bugs can't crash the store
+    }
+  }
+}
+
+// ── Public API ────────────────────────────────────────────────────────────
+
+export function getProfileSnapshot(): {
+  profile: UniversalProfile | null;
+  state: ProfileState;
+  errorMessage: string | null;
+} {
+  return {
+    profile: state.profile,
+    state: state.state,
+    errorMessage: state.errorMessage,
+  };
+}
+
+export function onProfileChange(listener: Listener): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+/**
+ * Fetch the current profile. Replaces local state.
+ * Emits `profile.started` if this is the first load and missing-required is non-empty.
+ */
+export async function hydrateProfile(): Promise<UniversalProfile | null> {
+  state.state = 'loading';
+  state.errorMessage = null;
+  notify();
+  try {
+    const { data } = await get<UniversalProfile>('/identity/v1/profile');
+    state.profile = data;
+    state.state = 'ready';
+    notify();
+    if (data.missing_required_fields.length > 0) {
+      void emit('profile.started', {
+        source: 'auto',
+        missing_count: data.missing_required_fields.length,
+      });
+    }
+    return data;
+  } catch (err) {
+    state.state = 'error';
+    state.errorMessage = err instanceof Error ? err.message : String(err);
+    notify();
+    return null;
+  }
+}
+
+/**
+ * Save a partial patch. Server validates + canonicalizes; SDK reflects the
+ * server-returned profile in local state. Optimistic-locked via If-Match.
+ *
+ * Local rejection: if the patch would leave a required field empty AND the
+ * caller indicated `enforceRequired: true`, we throw locally without a
+ * network call (per §5.4.5).
+ */
+export async function saveProfile(
+  patch: Partial<UniversalProfile>,
+  opts: { activePersona?: string; enforceRequired?: boolean } = {}
+): Promise<UniversalProfile> {
+  if (state.profile === null) {
+    throw new Error(
+      '[@bb/universal-auth] saveProfile called before hydrateProfile completed.'
+    );
+  }
+
+  // Local required-field check (§5.4.5)
+  if (opts.enforceRequired === true && opts.activePersona !== undefined) {
+    // Merge patch onto current profile to evaluate
+    const merged = { ...state.profile, ...patch } as UniversalProfile;
+    const r = computeCompleteness(merged, opts.activePersona);
+    if (r.missingRequired.length > 0) {
+      const err = new Error(
+        `Required field(s) missing: ${r.missingRequired.join(', ')}`
+      );
+      void emit('profile.validation_failed', {
+        field_keys: r.missingRequired,
+      });
+      throw err;
+    }
+  }
+
+  state.state = 'saving';
+  state.errorMessage = null;
+  notify();
+
+  const completenessBefore = state.profile.completeness_score;
+
+  try {
+    const { data } = await put<UniversalProfile>(
+      '/identity/v1/profile',
+      patch,
+      { headers: { 'If-Match': String(state.profile.profile_version) } }
+    );
+    state.profile = data;
+    state.state = 'ready';
+    notify();
+
+    void emit('profile.field_saved', {
+      field_keys: Object.keys(patch),
+      completeness_before: completenessBefore,
+      completeness_after: data.completeness_score,
+    });
+
+    if (data.completeness_score === 100 && completenessBefore < 100) {
+      void emit('profile.completed', {
+        fields_filled_count: Object.keys(patch).length,
+      });
+    }
+
+    return data;
+  } catch (err) {
+    if (err instanceof AuthSdkError && (err.code === 'HTTP_409' || err.code === 'SYNC_CONFLICT')) {
+      // Server has a newer version — refetch + re-throw so caller can re-apply
+      void emit('sync.conflict', { endpoint: '/identity/v1/profile' });
+      try {
+        await hydrateProfile();
+      } catch {
+        // hydrate failed — leave profile in error state
+      }
+      state.state = 'error';
+      state.errorMessage = 'Profile changed elsewhere — please retry.';
+      notify();
+      throw err;
+    }
+    state.state = 'error';
+    state.errorMessage = err instanceof Error ? err.message : String(err);
+    notify();
+    throw err;
+  }
+}
+
+/**
+ * Apply an avatar update returned by uploadAvatar / clearAvatar so the local
+ * profile reflects it without a refetch. Caller still receives the URL from
+ * the avatar.ts function — this just keeps the store in sync.
+ */
+export function applyAvatarUpdate(update: {
+  avatar_url?: string;
+  avatar_preset?: string;
+  profile_version: number;
+}): void {
+  if (state.profile === null) return;
+  state.profile = {
+    ...state.profile,
+    ...(update.avatar_url !== undefined ? { avatar_url: update.avatar_url } : {}),
+    ...(update.avatar_preset !== undefined ? { avatar_preset: update.avatar_preset } : {}),
+    profile_version: update.profile_version,
+  };
+  notify();
+}
+
+/** Test-only reset. */
+export function __resetProfileStoreForTests(): void {
+  state.profile = null;
+  state.state = 'loading';
+  state.errorMessage = null;
+  listeners.clear();
+}

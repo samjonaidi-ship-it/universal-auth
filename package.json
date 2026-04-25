@@ -20,9 +20,18 @@
       "import": "./dist/esm/react/index.js",
       "types": "./dist/types/react/index.d.ts"
     },
+    "./react/styles.css": "./dist/esm/react/components/styles.css",
     "./sw": {
       "import": "./dist/esm/sw/index.js",
       "types": "./dist/types/sw/index.d.ts"
+    },
+    "./profile": {
+      "import": "./dist/esm/profile/index.js",
+      "types": "./dist/types/profile/index.d.ts"
+    },
+    "./extendability": {
+      "import": "./dist/esm/extendability/index.js",
+      "types": "./dist/types/extendability/index.d.ts"
     }
   },
   "scripts": {

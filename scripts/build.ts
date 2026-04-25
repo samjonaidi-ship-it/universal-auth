@@ -12,7 +12,7 @@
 
 import { build } from 'esbuild';
 import { execSync } from 'node:child_process';
-import { mkdirSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdirSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const ROOT = resolve(import.meta.dirname ?? '.', '..');
@@ -31,6 +31,8 @@ async function bundleEsm(): Promise<void> {
       'react/index':          resolve(ROOT, 'src/react/index.ts'),
       'flows/passkey-flow':   resolve(ROOT, 'src/flows/passkey-flow.ts'),
       'sw/index':             resolve(ROOT, 'src/sw/index.ts'),
+      'profile/index':        resolve(ROOT, 'src/profile/index.ts'),
+      'extendability/index':  resolve(ROOT, 'src/extendability/index.ts'),
       // §8.2 Web Worker for crypto — bundled as its own entry so
       // crypto-client.ts can load it via `new Worker(new URL(...))`.
       'core/crypto-worker':   resolve(ROOT, 'src/core/crypto-worker.ts'),
@@ -75,11 +77,18 @@ async function main(): Promise<void> {
   console.log('[build] cleaning dist/');
   clean();
 
-  console.log('[build] bundling ESM (5 entry points, splitting: true)');
+  console.log('[build] bundling ESM (7 entry points, splitting: true)');
   await bundleEsm();
 
   console.log('[build] emitting .d.ts via tsc');
   emitTypes();
+
+  console.log('[build] copying styles.css to dist/');
+  mkdirSync(resolve(OUT, 'esm/react/components'), { recursive: true });
+  copyFileSync(
+    resolve(ROOT, 'src/react/components/styles.css'),
+    resolve(OUT, 'esm/react/components/styles.css')
+  );
 
   console.log('[build] done. Run `pnpm size-check` to verify bundle budgets.');
 }
