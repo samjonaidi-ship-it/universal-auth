@@ -289,6 +289,14 @@ function joinUrl(base: string, path: string): string {
 // refresh callback path (e.g., code-verify, enroll-activate).
 export { setSession };
 
+/**
+ * Read-only access to client config for sibling modules (event-reporter,
+ * entitlements, session-watcher). Returns null if not yet configured.
+ */
+export function getClientConfig(): Readonly<ClientConfig> | null {
+  return clientConfig;
+}
+
 // ── Test-only helper ─────────────────────────────────────────────────────
 
 export function __resetClientForTests(): void {

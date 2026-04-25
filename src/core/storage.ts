@@ -13,7 +13,7 @@
 //   * crypto-client.ts   — main-thread proxy with Worker primary + pure fallback
 //   * storage.ts (this)  — IDB persistence + high-level refresh-token API
 
-import { openDB, type IDBPDatabase } from 'idb';
+import { openDB, deleteDB, type IDBPDatabase } from 'idb';
 import { getOrCreateDeviceId } from './device-id.js';
 import { encryptString, decryptString } from './crypto-client.js';
 import type { EncryptedBlob } from './storage-crypto.js';
@@ -69,6 +69,15 @@ function getDb(): Promise<IDBPDatabase> {
     },
   });
   return dbPromise;
+}
+
+/**
+ * Shared DB getter for sibling modules (event-reporter, offline/queue, sdk-metrics).
+ * Guarantees the upgrade callback runs exactly once per tab regardless of
+ * which module is first to touch IDB.
+ */
+export function getSharedDb(): Promise<IDBPDatabase> {
+  return getDb();
 }
 
 // ── Encrypted refresh-token storage ───────────────────────────────────────
@@ -167,5 +176,12 @@ export async function __resetDbForTests(): Promise<void> {
     const db = await dbPromise;
     db.close();
     dbPromise = null;
+  }
+  // Fully delete to guarantee test isolation — the upgrade callback runs
+  // fresh on the next open() and no rows survive between tests.
+  try {
+    await deleteDB(DB_NAME);
+  } catch {
+    // ignore — DB may not exist yet
   }
 }
