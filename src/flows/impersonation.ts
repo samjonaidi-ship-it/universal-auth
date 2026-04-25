@@ -22,20 +22,56 @@ export interface StartImpersonationInput {
   max_duration_minutes?: number;
 }
 
+export interface ActingAs {
+  identity_id: string;
+  display_name: string;
+  expires_at: string;
+}
+
 interface StartResponse {
   access_token: string;
   refresh_token: string;
   session_id: string;
   expires_at: string;
-  acting_as: {
-    identity_id: string;
-    display_name: string;
-    expires_at: string;
-  };
+  acting_as: ActingAs;
   identity: Session['identity'];
   aggregate: Session['aggregate'];
   session_meta: Session['session_meta'];
 }
+
+// ── Impersonation state (module-level pub-sub) ───────────────────────────
+//
+// /auth/v1/me does NOT carry acting_as (spec §D2.1). The session payload
+// shows the impersonated identity, not the admin behind it. We track the
+// admin → target relationship in module state so <ImpersonationBanner> can
+// surface it across navigations (§11.10).
+
+let currentActingAs: ActingAs | null = null;
+const listeners = new Set<() => void>();
+
+export function getCurrentActingAs(): ActingAs | null {
+  return currentActingAs;
+}
+
+export function onActingAsChange(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+function setActingAs(next: ActingAs | null): void {
+  currentActingAs = next;
+  for (const l of listeners) {
+    try {
+      l();
+    } catch {
+      // listener bugs must not crash the flow
+    }
+  }
+}
+
+// ── Public flow API ──────────────────────────────────────────────────────
 
 export async function startImpersonation(input: StartImpersonationInput): Promise<StartResponse> {
   const { data } = await post<StartResponse>('/auth/v1/impersonation/start', {
@@ -51,6 +87,8 @@ export async function startImpersonation(input: StartImpersonationInput): Promis
     sessionId: data.session_id,
   });
 
+  setActingAs(data.acting_as);
+
   void emit('impersonation.started', {
     admin_id: data.identity.identity_id,
     target_id: input.target_identity_id,
@@ -64,6 +102,7 @@ export async function endImpersonation(): Promise<void> {
   try {
     await post('/auth/v1/impersonation/end', {});
   } finally {
+    setActingAs(null);
     // Regardless of server response, event always fires so audit trail is complete.
     void emit('impersonation.ended', {});
   }
@@ -76,4 +115,10 @@ export async function endImpersonation(): Promise<void> {
  */
 export function recordImpersonationAction(action: string, targetId: string): void {
   void emit('impersonation.action', { action, target_id: targetId });
+}
+
+/** Test-only reset of module state. */
+export function __resetImpersonationForTests(): void {
+  currentActingAs = null;
+  listeners.clear();
 }

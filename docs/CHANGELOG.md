@@ -6,6 +6,44 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
 
 ## [Unreleased — targeting 1.0.0-rc.1]
 
+### Block 4 look-back remediation (2026-04-24)
+- **Bug fix — `<ImpersonationBanner>`**: original code cast `identity.acting_as` which doesn't exist on the session payload — banner would never render. `flows/impersonation` now exposes `getCurrentActingAs()` + `onActingAsChange()` pub-sub; `useImpersonation()` subscribes; banner reads reactive `actingAs` from hook.
+- **Bug fix — `<AuthProvider>` hydration**: original code short-circuited to `anonymous` whenever no in-memory access token, breaking D10 cross-subdomain SSO (cookie-only sessions ignored on initial page load). Now always attempts `GET /me` on mount with `credentials: 'include'`; transitions to `anonymous` only on auth-class failures.
+- **Gap fix — `<AppChooser>`**: omitted `apps` prop now falls back to `useEntitlements().app_access` (was hardcoded empty list).
+- **Cleanup — `EntitlementsContext.hasFeature`**: removed redundant `hasFeatureRaw(k) || f.includes(k)` OR fallback; single source.
+- **Initial-status fix**: `AuthProvider` now reads `navigator.onLine` when constructing initial status from `initialSession`.
+- **Smoke tests added** for 8 previously-untested components (27 new tests): `SignInForm`, `CodeEntry`, `PasskeyPrompt`, `OfflineIndicator`, `ImpersonationBanner`, `AppChooser`, `PersonaChooser`, `AgentStatusBanner`. The 2 real bugs were caught by these tests during the look-back.
+- **Test count**: 120 → **147 passing** across 25 files
+- **Audit amendment**: `audits/A3_react_core_2026-04-24.md` Look-back remediation section logs the 5 issues + fixes + lesson learned
+
+### Block 4 + A3 audit sign-off (2026-04-24)
+- **AuthProvider with 3-context split** (§8.4): `IdentityContext` / `EntitlementsContext` / `StatusContext` — components subscribe to one context and don't re-render on others. Memoized snapshots with stable deps.
+- **Public hooks (§5.2 + §D2.4):**
+  - `useAuth` — identity / status / personas / activePersona / primary_persona / hasPersona / switchActivePersona / allFeatures / agent / signIn / requestCode / signOut / signOutEverywhere
+  - `useEntitlements` — features / app_access / hasFeature / hasAppAccess
+  - `useProfile` — Block 4 stub (full impl Block 5)
+  - `useImpersonation` — start / end / recordAction
+  - `useSettingsSync` — settings / version / update / hydrate (auto-hydrates on mount)
+  - `usePermissionGrants` — record / requestAndRecord
+- **Day 9 components:**
+  - `<SignInForm>` — code-first 2-stage flow (destination → code) with optional passkey CTA
+  - `<CodeEntry>` — single 6-digit input (autocomplete=one-time-code)
+  - `<PasskeyPrompt>` — UI primitive; ceremony stays in `flows/passkey-flow.ts` (lazy chunk)
+  - `<OfflineIndicator>` — subtle banner, status-driven
+- **Day 9.5 components (D2.5):**
+  - `<AppChooser>` — multi-app picker (D10)
+  - `<PersonaChooser>` — multi-persona picker (D8) with optional remember-choice
+  - `<PersonaGuard>` — UX-only route gate (D2.7); server is source of truth
+  - `<AgentStatusBanner>` — disclosure for Tier-3 conversational surfaces (D13)
+  - `<ConsentScreen>` — atomic hard-gate with `DEFAULT_REQUIRED_CONSENTS` constant matching Wizard §20 vocabulary (crew=9 / supplier=2 / subcontractor=3 / client=2 / architect=2 / admin=3); group-by-type rendering (legal / device / ai_assistant); submit disabled until all required checked
+- **Day 10 component:** `<ImpersonationBanner>` — route-resilient (mounts in layout shell, NOT per-route)
+- **Styles** (§8.5): single `components/styles.css` with `--bb-*` CSS custom properties only; consumer apps theme by overriding vars; min touch target 44px. Zero inline styles.
+- **React barrel** (`src/react/index.ts`): exports all public hooks + components + types; tree-shakeable
+- **Block 4 unit tests — 14 new tests** across 4 React test files: AuthProvider context-split smoke, useAuth contract (4 tests), PersonaGuard logic (3 tests), ConsentScreen crew 9-consent hard-gate (5 tests)
+- **Test infrastructure**: added `@testing-library/react` + `@testing-library/jest-dom` + `@testing-library/user-event` + `react`/`react-dom` 19 to devDeps; `test/unit/setup.ts` registers `afterEach(cleanup)` so DOM doesn't leak between tests
+- **Bundle delta** (post-A3): core 9.20 KB / 40 KB (77% headroom — React on subpath bundle, not core); passkey 104 B / 10 KB; sw 433 B / 5 KB
+- **Audit report**: `audits/A3_react_core_2026-04-24.md` — 9/11 ✓ + 1 partial (Suspense `use()` Phase 2) + 1 deferred (axe-core to A4)
+
 ### Block 3 + A2 audit sign-off (2026-04-24)
 - **Core modules** per spec §3 / §6 / §8 / §9:
   - `src/core/event-reporter.ts` — POST /events/v1/ingest with IDB-persisted queue, 10s/50-evt batching (§8.1), envelope auto-population (§6.3), UNKNOWN_EVENT_TYPE → permanent drop

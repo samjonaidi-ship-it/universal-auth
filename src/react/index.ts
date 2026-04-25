@@ -1,35 +1,47 @@
 // @bb/universal-auth | src/react/index.ts | v1.0.0-rc.1 | 2026-04-24 | BB
-// React subpath entry — named exports only. Hooks + components.
-//
-// Day 1 stub. Actual AuthProvider + hooks + components arrive Block 4 (Days 9-10 + 9.5).
+// React subpath barrel — `@bainbridgebuilders/universal-auth/react`.
+// Tree-shakeable named exports only (sideEffects: false).
 
-// Hooks (implemented Day 9-10)
-// export { useAuth } from './useAuth.js';
-// export { useEntitlements } from './useEntitlements.js';
-// export { useProfile } from './useProfile.js';
-// export { useImpersonation } from './useImpersonation.js';
-// export { useSettingsSync } from './useSettingsSync.js';
-// export { usePermissionGrants } from './usePermissionGrants.js';
+// Provider + contexts
+export {
+  AuthProvider,
+  IdentityContext,
+  EntitlementsContext,
+  StatusContext,
+  type AuthStatus,
+  type IdentityContextValue,
+  type EntitlementsContextValue,
+  type StatusContextValue,
+  type AuthProviderProps,
+} from './AuthProvider.js';
 
-// Components (implemented Day 9-10 + 9.5)
-// export { AuthProvider } from './AuthProvider.js';
-// export { SignInForm } from './components/SignInForm.js';
-// export { CodeEntry } from './components/CodeEntry.js';
-// export { PasskeyPrompt } from './components/PasskeyPrompt.js';
-// export { ConsentScreen } from './components/ConsentScreen.js';
-// export { ProfileSetupScreen } from './components/ProfileSetupScreen.js';
-// export { AvatarPicker } from './components/AvatarPicker.js';
-// export { ContactInfoForm } from './components/ContactInfoForm.js';
-// export { PersonaFieldsForm } from './components/PersonaFieldsForm.js';
-// export { ProfileCompletenessBar } from './components/ProfileCompletenessBar.js';
-// export { ImpersonationBanner } from './components/ImpersonationBanner.js';
-// export { OfflineIndicator } from './components/OfflineIndicator.js';
-// export { AppChooser } from './components/AppChooser.js';
-// export { PersonaChooser } from './components/PersonaChooser.js';
-// export { PersonaGuard } from './components/PersonaGuard.js';
-// export { AgentStatusBanner } from './components/AgentStatusBanner.js';
+// Public hooks per §D2.4
+export { useAuth, type UseAuthReturn } from './useAuth.js';
+export { useEntitlements, type UseEntitlementsReturn } from './useEntitlements.js';
+export { useProfile, type UseProfileReturn, type ProfileState } from './useProfile.js';
+export { useImpersonation, type UseImpersonationReturn } from './useImpersonation.js';
+export { useSettingsSync, type UseSettingsSyncReturn } from './useSettingsSync.js';
+export { usePermissionGrants, type UsePermissionGrantsReturn } from './usePermissionGrants.js';
 
-// Intentionally empty during Day 1 — commented exports above trigger as
-// files land across Block 4. This entry point reserves the `@bb/universal-auth/react`
-// subpath in package.json exports map.
-export {};
+// Components per §D2.5
+export { SignInForm, type SignInFormProps } from './components/SignInForm.js';
+export { CodeEntry, type CodeEntryProps } from './components/CodeEntry.js';
+export { PasskeyPrompt, type PasskeyPromptProps } from './components/PasskeyPrompt.js';
+export { OfflineIndicator, type OfflineIndicatorProps } from './components/OfflineIndicator.js';
+export {
+  ImpersonationBanner,
+  type ImpersonationBannerProps,
+} from './components/ImpersonationBanner.js';
+export { AppChooser, type AppChooserProps } from './components/AppChooser.js';
+export { PersonaChooser, type PersonaChooserProps } from './components/PersonaChooser.js';
+export { PersonaGuard, type PersonaGuardProps } from './components/PersonaGuard.js';
+export {
+  AgentStatusBanner,
+  type AgentStatusBannerProps,
+} from './components/AgentStatusBanner.js';
+export {
+  ConsentScreen,
+  DEFAULT_REQUIRED_CONSENTS,
+  type ConsentScreenProps,
+  type ConsentAudience,
+} from './components/ConsentScreen.js';
