@@ -45,3 +45,23 @@ export {
   type ConsentScreenProps,
   type ConsentAudience,
 } from './components/ConsentScreen.js';
+
+// Profile components (Block 5)
+export {
+  ProfileSetupScreen,
+  type ProfileSetupScreenProps,
+  type ProfileSetupMode,
+} from './components/ProfileSetupScreen.js';
+export { AvatarPicker, type AvatarPickerProps } from './components/AvatarPicker.js';
+export {
+  ContactInfoForm,
+  type ContactInfoFormProps,
+} from './components/ContactInfoForm.js';
+export {
+  PersonaFieldsForm,
+  type PersonaFieldsFormProps,
+} from './components/PersonaFieldsForm.js';
+export {
+  ProfileCompletenessBar,
+  type ProfileCompletenessBarProps,
+} from './components/ProfileCompletenessBar.js';

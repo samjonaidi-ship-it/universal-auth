@@ -6,6 +6,54 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
 
 ## [Unreleased — targeting 1.0.0-rc.1]
 
+### Block 5 + A4 audit sign-off (2026-04-24)
+
+**Profile module** (§5.4) — new `/profile` subpath keeps `libphonenumber-js` out of the core bundle:
+- `profile/presets.ts` — 20 SVG preset avatars; `pickPresetForIdentity` deterministic per identity hash
+- `profile/avatar.ts` — JPEG compression (canvas, 82%, ≤1024px), `generateInitials`, `INITIALS_COLORS` (6-color palette), `resolveAvatar` 3-tier fallback (url → preset → initials), `uploadAvatar` (FormData), `clearAvatar`
+- `profile/validators.ts` — `validatePhone` (libphonenumber → E.164), `validateEmail` (RFC-5322 pragmatic), `requiredFieldsPresent` (dot-path lookup)
+- `profile/completeness.ts` — per-persona weighted scoring (60/30/10), hard cap at 59 when any required missing, 6-persona roster (crew/supplier/client/architect/subcontractor/admin)
+- `profile/persona-fields.ts` — 1h-cached server registry (§5.4.6) with `getPersonaRoster(persona)`
+- `profile/profile-store.ts` — state machine ('loading'|'ready'|'saving'|'error') + listeners + 409 conflict rehydrate
+- `react/useProfile.ts` — REAL impl (replaces Block 4 stub) wrapping store + auto-hydrate on mount
+
+**Profile components** (§D2.5):
+- `<ProfileSetupScreen>` — 3 modes per §5.5.1 (automatic / guided / deferred)
+- `<AvatarPicker>` — upload + preset grid + clear
+- `<ContactInfoForm>` — display_name + email + phone + emergency_contact (persona-aware)
+- `<PersonaFieldsForm>` — renders dynamically from server-driven registry
+- `<ProfileCompletenessBar>` — `role="progressbar"` + missing-required hint
+
+**Real passkey flow** (§3.1, was stub) — `flows/passkey-flow.ts`:
+- `registerPasskey`, `authenticatePasskey` (Conditional UI optional)
+- `isPasskeySupported`, `isConditionalUiSupported` probes
+- Cancellation events (`passkey.cancelled` with phase metadata)
+
+**Consent client** (§3.4 + §D2.6) — `flows/consent.ts`:
+- `getConsentDocuments(audience)`, `bulkAcceptConsents([...])` (atomic), `recordConsent`, `revokeConsent`, `listConsents`
+
+**Extendability** (§8.5) — interface-only, registry-backed:
+- `NotificationChannelAdapter` (§8.5.2) — registry-dispatched
+- `AuthFlowAdapter` (§8.5.3) — reserved
+- `RiskSignalAdapter` (§8.5.1) — reserved
+
+**Demo scaffold** at `demo/` — Vite + React + SDK wiring AuthProvider, SignInForm, ProfileSetupScreen, all banner/chooser components. Block 7 expands the kitchen-sink coverage per plan.
+
+**Architecture changes:**
+- New `/profile` subpath in `package.json exports` keeps libphonenumber-js out of the 40 KB core budget
+- New `/extendability` subpath
+- New `/react/styles.css` subpath — build pipeline now copies `src/react/components/styles.css` to `dist/`
+- `core/client.ts` now passes `FormData` / `Blob` / `Uint8Array` bodies through unmodified (skips JSON.stringify for binary uploads)
+- `scripts/build.ts` bundles 7 entry points (was 5)
+
+**Block 5 unit tests — 46 new tests across 5 new files**: 7 preset, 12 avatar, 12 validator, 7 completeness, 5 consent, 3 extendability.
+
+**Bundle delta** (post-A4): core **11.78 KB / 40 KB** (71% headroom), passkey **7.88 KB / 10 KB** (was 104 B stub), sw 433 B / 5 KB.
+
+**Test count**: 147 → **193 passing** across 31 files.
+
+**Audit report**: `audits/A4_feature_complete_2026-04-24.md` — 4/9 ✓ + 5 deferred-to-infra (server seeds, R2 bucket, migrations, demo deploy, no-deprecation-warnings runtime check).
+
 ### Block 4 look-back remediation (2026-04-24)
 - **Bug fix — `<ImpersonationBanner>`**: original code cast `identity.acting_as` which doesn't exist on the session payload — banner would never render. `flows/impersonation` now exposes `getCurrentActingAs()` + `onActingAsChange()` pub-sub; `useImpersonation()` subscribes; banner reads reactive `actingAs` from hook.
 - **Bug fix — `<AuthProvider>` hydration**: original code short-circuited to `anonymous` whenever no in-memory access token, breaking D10 cross-subdomain SSO (cookie-only sessions ignored on initial page load). Now always attempts `GET /me` on mount with `credentials: 'include'`; transitions to `anonymous` only on auth-class failures.

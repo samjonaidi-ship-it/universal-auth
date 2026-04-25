@@ -114,7 +114,15 @@ async function requestInternal<T>(
     ...opts.headers,
   };
 
-  if (opts.body !== undefined) {
+  // FormData / Blob / Uint8Array bodies pass through; everything else gets
+  // JSON-encoded. The browser sets multipart boundary on FormData when we
+  // omit Content-Type — letting it set its own.
+  const isFormData = typeof FormData !== 'undefined' && opts.body instanceof FormData;
+  const isBlob = typeof Blob !== 'undefined' && opts.body instanceof Blob;
+  const isBytes = opts.body instanceof Uint8Array;
+  const isBinaryBody = isFormData || isBlob || isBytes;
+
+  if (opts.body !== undefined && !isBinaryBody) {
     headers['Content-Type'] = 'application/json';
   }
 
@@ -140,7 +148,9 @@ async function requestInternal<T>(
     credentials: 'include',
   };
   if (opts.body !== undefined) {
-    init.body = JSON.stringify(opts.body);
+    init.body = isBinaryBody
+      ? (opts.body as BodyInit)
+      : JSON.stringify(opts.body);
   }
   if (opts.signal !== undefined) {
     init.signal = opts.signal;

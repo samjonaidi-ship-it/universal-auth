@@ -20,7 +20,7 @@ export type {
   IdentityKind,
   SessionMeta,
 } from './types/api.js';
-export type { UniversalProfile } from './types/profile.js';
+// Profile type re-exports moved to "Profile module" section below.
 
 // Flow surfaces (Block 3)
 export { requestCode, verifyCode, type RequestCodeInput, type VerifyCodeInput } from './flows/code-flow.js';
@@ -57,6 +57,30 @@ export {
   type PermissionState,
   type RecordGrantInput,
 } from './flows/permission-grants.js';
+export {
+  getConsentDocuments,
+  bulkAcceptConsents,
+  recordConsent,
+  revokeConsent,
+  listConsents,
+  type ConsentRecord,
+  type ListedConsent,
+} from './flows/consent.js';
+
+// Passkey (Block 5 — replaces Day 1 stub)
+export {
+  isPasskeySupported,
+  isConditionalUiSupported,
+  registerPasskey,
+  authenticatePasskey,
+  type RegisterPasskeyResult,
+  type AuthenticatePasskeyOptions,
+  type AuthenticatePasskeyResult,
+} from './flows/passkey-flow.js';
+
+// Profile module — exposed via the `/profile` subpath to keep libphonenumber-js
+// out of the core 40 KB budget (§12.1). Re-export only the type for convenience.
+export type { UniversalProfile } from './types/profile.js';
 
 // Entitlement + settings + observability surfaces
 export {
