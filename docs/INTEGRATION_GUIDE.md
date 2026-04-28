@@ -1,6 +1,6 @@
-# Integration Guide | `@bainbridgebuilders/universal-auth` | v1.0.0-rc.1 | 2026-04-28 | BB
+# Integration Guide | `@bainbridgebuilders/universal-auth` | v1.0.0-rc.2 | 2026-04-28 | BB
 
-How to add `@bainbridgebuilders/universal-auth` to a Bainbridge Builders consumer app (CalExp5/BB_Express, ControlTower SPA, future Customer Portal, future Buddy Console). Spec citations point to `BB_UNIVERSAL_AUTH_SDK_SPEC.md v1.4.2`.
+How to add `@bainbridgebuilders/universal-auth` to a Bainbridge Builders consumer app (CalExp5/BB_Express, ControlTower SPA, future Customer Portal, future Buddy Console). Spec citations point to `BB_UNIVERSAL_AUTH_SDK_SPEC.md v1.4.3`.
 
 **Audience:** Sam (CalExp5 cutover), future ControlTower implementer, third-party integrator.
 
@@ -59,23 +59,46 @@ import { uploadAvatar } from '@bainbridgebuilders/universal-auth/profile';
 
 **This is a hard prereq before flipping `USE_UNIVERSAL_AUTH=true` in production.** Per spec §6.3, unknown event types are server-rejected with `UNKNOWN_EVENT_TYPE` and the SDK silently drops them — that's silent data loss if you skip this step.
 
-Run on CT BFF:
+The actual schema lives in `ct_bff.apps` (per `BB_ControlTower/bff/migrations/053_app_registry.sql` + `059_v1_namespace_tables.sql`). The primary key is `id` (TEXT, not UUID), and `event_types` is a `TEXT[]` array column on the same row — there is **no** separate `app_events` registry table; `ct_bff.app_events` is the runtime ingestion target, not a registry.
+
+Run on CT BFF (ONE statement, idempotent — `ON CONFLICT` overwrites event_types but preserves status + secrets):
 
 ```sql
--- Register the app
-INSERT INTO ct_bff.apps (app_id, app_name, owner, environment)
-VALUES ('bb_express', 'BB Express (CalExp5)', 'samjonaidi@bbinc.com', 'production');
-
--- Declare every event_type the app emits (full list in BB_EVENT_REGISTRY.md)
-INSERT INTO ct_bff.app_events (app_id, event_type) VALUES
-  ('bb_express', 'session.started'),
-  ('bb_express', 'session.heartbeat'),
-  ('bb_express', 'session.revoked'),
-  ('bb_express', 'enrollment.completed'),
-  ('bb_express', 'enrollment.consent_recorded'),
-  ('bb_express', 'identity.employee_linked'),
-  -- ... (full list per app's actual emissions)
-  ;
+INSERT INTO ct_bff.apps
+  (id, display_name, app_kind, event_types, allowed_personas)
+VALUES (
+  'bb_express',                               -- TEXT primary key
+  'BB Express (CalExp5)',                     -- display_name
+  'consumer',                                 -- app_kind: 'consumer'|'admin'|'agent'|'iot'
+  ARRAY[
+    -- Auth lifecycle
+    'enrollment.code_sent','enrollment.consent_recorded',
+    'enrollment.completed','enrollment.code_failed',
+    -- Login + session
+    'login.success','login.failure','session.heartbeat',
+    'session.revoked','session.expired',
+    -- Identity
+    'identity.employee_linked',
+    -- Settings + permission
+    'settings.changed','settings.restored',
+    'sync.conflict','sync.failed','sync.flushed',
+    'permission.granted','permission.denied','permission.revoked',
+    -- Profile
+    'profile.updated','profile.avatar_uploaded','profile.avatar_cleared',
+    -- App-specific (timesheet, field events, etc.) — ADD YOUR APP'S EMISSIONS
+    'timesheet.submitted','timesheet.synced','timesheet.failed',
+    'photo.uploaded','photo.synced','photo.deleted'
+  ]::text[],
+  ARRAY['crew','admin']::text[]               -- allowed_personas (NULL = all allowed)
+)
+ON CONFLICT (id) DO UPDATE SET
+  display_name     = EXCLUDED.display_name,
+  app_kind         = EXCLUDED.app_kind,
+  event_types      = EXCLUDED.event_types,
+  allowed_personas = EXCLUDED.allowed_personas,
+  updated_at       = now();
+  -- Note: status is intentionally NOT updated here (so admin-disabled apps
+  -- aren't revived on redeploy — see migration 059 + audit F3).
 ```
 
 **Verification:** SDK calls `POST /events/v1/ingest` with each declared type — returns 200 with all events accepted. Run smoke check after registration:
@@ -84,9 +107,19 @@ INSERT INTO ct_bff.app_events (app_id, event_type) VALUES
 curl -X POST https://ct-bff.bainbridgebuilders.com/events/v1/ingest \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
-  -H "X-App-Id: bb_express" \
-  -d '{"events":[{"event_type":"session.heartbeat","ts":"...","client_ts":"...","sdk_version":"1.0.0-rc.1","protocol_version":"v1"}]}'
+  -d '{"events":[{
+    "event_type":"session.heartbeat",
+    "app_id":"bb_express",
+    "client_ts":"2026-04-28T20:00:00Z",
+    "sdk_version":"1.0.0-rc.2",
+    "protocol_version":"v1",
+    "payload":{}
+  }]}'
 ```
+
+Expected response: `{"accepted":1,"rejected":0,"protocol_version":"v1"}`.
+
+If you see `{"accepted":0,"rejected":1,"details":[{"reason":"UNKNOWN_EVENT_TYPE",...}]}`, that event_type isn't in your `event_types[]` array — re-run the INSERT above with the missing type added.
 
 ---
 
