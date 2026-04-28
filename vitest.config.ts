@@ -27,6 +27,9 @@ export default defineConfig({
         'scripts/**',
         'test/**',
         '**/*.config.*',
+        // Sibling worktrees under .claude/worktrees/ create nested copies of
+        // src/ that vitest's globbing would otherwise count toward coverage.
+        '.claude/**',
       ],
     },
   },
