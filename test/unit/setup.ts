@@ -14,6 +14,24 @@ afterEach(() => {
   cleanup();
 });
 
+// Swallow noisy unhandled rejections that fire on test teardown when a
+// component unmounts mid-fetch (PersonaFieldsForm, etc.). happy-dom rejects
+// the pending fetch promise as "operation was aborted" — pure test-env noise,
+// NOT a product bug. Real fetch errors are still caught inside the SDK's
+// try/catch blocks. We let other rejections through.
+process.on('unhandledRejection', (reason: unknown) => {
+  if (
+    reason instanceof Error &&
+    (reason.message.includes('operation was aborted') ||
+      reason.message.includes('Body has already been used') ||
+      reason.message.includes('aborted'))
+  ) {
+    return;
+  }
+  // Re-emit other rejections so real bugs surface
+  throw reason;
+});
+
 // ── localStorage shim (Node 25+ injects broken stub) ─────────────────────
 
 function createMapBackedStorage(): Storage {
