@@ -3,7 +3,6 @@
   "version": "1.0.0-rc.1",
   "description": "Bainbridge Builders universal authentication SDK — one package, every consumer app (BB_Express, ControlTower, future Customer Portal, Buddy Console).",
   "license": "UNLICENSED",
-  "private": true,
   "type": "module",
   "sideEffects": false,
   "files": [
