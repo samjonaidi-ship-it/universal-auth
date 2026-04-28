@@ -6,6 +6,37 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
 
 ## [Unreleased — targeting 1.0.0-rc.1]
 
+### Block 6 Day 22: perf budgets + memory soak + security suite + CI wiring (2026-04-28)
+
+**Perf budgets** (per spec §7.1 + §12.1):
+- `test/perf/cold-start.ts` — measures SDK module-init latency over 20 cold-imports, applies 3× Moto G Power throttle, gates at ≤ 50 ms (§7.1). Current: 16-22 ms throttled vs 50 ms budget.
+- `pnpm size-check` already gated 3-chunk budget; re-confirmed: core 11.78/40 KB, passkey 7.88/10 KB, sw 0.43/5 KB.
+
+**Memory soak** (per spec §11.7 + §7.1):
+- `vitest.memory.config.ts` — single-fork happy-dom env; `BB_SOAK_DURATION_MS` knob (default 5 min CI, 24h nightly)
+- `test/memory/sign-in-out-soak.test.ts` — repeated `setSession`/`clearSession` cycles; gates 200 KB heap delta when GC is forced (`--expose-gc`); without GC asserts no deadlock + positive cycle count
+- 5s smoke produces ~220+ cycles; 5-min CI gate per `chaos.yml`
+
+**Security suite** (per spec §11.8):
+- `vitest.security.config.ts` — single-fork, no docker, runs on every PR
+- 6 test files in `test/security/`:
+  - `01-fuzz-code-validation` — fast-check 200 random strings against `validateEmail`/`validatePhone`; 8 hand-picked injection attacks (XSS, CRLF, SQL, RTL override, length overflow)
+  - `02-timing-attack-resistance` — `constantTimeEqual` shape check + grep heuristic that source files don't `===` raw refresh/access tokens
+  - `03-token-storage` — after `setSession`, scans every localStorage/sessionStorage key for token strings; opens IDB and asserts no plaintext token in any record
+  - `04-idb-tamper` — flips first byte of every Uint8Array in IDB (corrupts AES-GCM auth tag); `getAccessToken()` returns null gracefully (no crash, no plaintext fallback)
+  - `05-csrf-headers` — every POST carries `Idempotency-Key` (nanoid shape) + `X-Auth-Protocol-Version: v1` + `X-App-Id`; GETs do NOT carry idempotency keys; 50 mutations produce 50 unique keys
+  - `06-token-replay` — refresh token never lands in localStorage/sessionStorage/window; rotation overwrites IDB blob
+
+**CI wiring** (`.github/workflows/`):
+- `ci.yml` expanded — `build` job (existing) + new parallel jobs `perf`, `security`, `memory-quick` (5-min `BB_SOAK_DURATION_MS=300000` with `NODE_OPTIONS=--expose-gc`)
+- `chaos.yml` (new) — nightly cron at 04:00 UTC: full Toxiproxy chaos suite via docker compose + 24h memory soak; manual `workflow_dispatch` for ad-hoc runs
+
+**Verification:**
+- 6/6 security test files, 18/18 tests pass in ~2s
+- Memory soak 220+ cycles in 5s, no deadlock
+- Cold-start 16-22 ms throttled (vs 50 ms budget)
+- typecheck + lint clean
+
 ### Block 6 Day 16-17 + look-back fixes (2026-04-25 — 2026-04-28)
 
 **Unit-coverage push** (`agent/block-6-test-hardening` → main, commit `12dbfc4`):
