@@ -52,7 +52,7 @@ describe('Security #6 — token replay defense (§11.8)', () => {
     }
   });
 
-  it('rotation: setSession with NEW tokens overwrites the old encrypted blob', async () => {
+  it('rotation: setSession with NEW tokens replaces the old encrypted blob (not stored side-by-side)', async () => {
     const oldRefresh = 'OLD-REFRESH-TOKEN';
     const newRefresh = 'NEW-REFRESH-TOKEN';
 
@@ -63,6 +63,10 @@ describe('Security #6 — token replay defense (§11.8)', () => {
       expiresAt: Date.now() + 60_000,
     });
 
+    // Snapshot all blobs from IDB BEFORE rotation
+    const before = await snapshotIdb();
+    expect(before.totalRecords).toBeGreaterThan(0);
+
     await setSession({
       accessToken: 'a2',
       refreshToken: newRefresh,
@@ -70,31 +74,83 @@ describe('Security #6 — token replay defense (§11.8)', () => {
       expiresAt: Date.now() + 60_000,
     });
 
-    // After rotation, the IDB blob should NOT contain the old token
-    // (in either plaintext OR re-encrypted-and-readable form). We can't
-    // decrypt to verify; we assert that the BLOB is structurally different
-    // (different IV → different bytes for same plaintext).
-    const dbReq = indexedDB.open('bb-universal-auth');
-    const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      dbReq.onsuccess = () => resolve(dbReq.result);
-      dbReq.onerror = () => reject(dbReq.error);
-    });
+    // After rotation, snapshot again
+    const after = await snapshotIdb();
 
-    // Just verify there's at least one record (encrypted blob present)
-    let recordCount = 0;
-    for (const storeName of Array.from(db.objectStoreNames)) {
-      const tx = db.transaction(storeName, 'readonly');
-      // eslint-disable-next-line no-await-in-loop
-      await new Promise<void>((resolve, reject) => {
-        const req = tx.objectStore(storeName).count();
-        req.onsuccess = () => {
-          recordCount += req.result;
-          resolve();
-        };
-        req.onerror = () => reject(req.error);
-      });
-    }
-    db.close();
-    expect(recordCount).toBeGreaterThan(0);
+    // Real rotation invariant: total record count is unchanged. If old + new
+    // were stored side-by-side that would DOUBLE recordCount — that's the
+    // failure mode we're guarding against.
+    expect(after.totalRecords).toBe(before.totalRecords);
+
+    // Stronger assertion: the encrypted bytes have actually changed.
+    // Even if rotation kept "1 record" by happenstance (same key), a
+    // re-encryption with a new IV must produce different ciphertext bytes.
+    const beforeBytes = before.allUint8Bytes;
+    const afterBytes = after.allUint8Bytes;
+    expect(afterBytes).not.toBe(beforeBytes); // different reference
+    expect(bytesEqual(beforeBytes, afterBytes)).toBe(false);
   });
 });
+
+// ── Helpers ──────────────────────────────────────────────────────────────
+
+interface IdbSnapshot {
+  totalRecords: number;
+  /** Concatenated bytes of every Uint8Array found, in iteration order. */
+  allUint8Bytes: Uint8Array;
+}
+
+async function snapshotIdb(): Promise<IdbSnapshot> {
+  const dbReq = indexedDB.open('bb-universal-auth');
+  const db = await new Promise<IDBDatabase>((resolve, reject) => {
+    dbReq.onsuccess = () => resolve(dbReq.result);
+    dbReq.onerror = () => reject(dbReq.error);
+  });
+
+  let totalRecords = 0;
+  const byteChunks: Uint8Array[] = [];
+
+  for (const storeName of Array.from(db.objectStoreNames)) {
+    const tx = db.transaction(storeName, 'readonly');
+    const store = tx.objectStore(storeName);
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise<void>((resolve, reject) => {
+      const cursorReq = store.openCursor();
+      cursorReq.onsuccess = () => {
+        const cursor = cursorReq.result;
+        if (cursor === null) {
+          resolve();
+          return;
+        }
+        totalRecords++;
+        const value = cursor.value;
+        if (value !== null && typeof value === 'object') {
+          for (const v of Object.values(value as Record<string, unknown>)) {
+            if (v instanceof Uint8Array) byteChunks.push(new Uint8Array(v));
+          }
+        }
+        cursor.continue();
+      };
+      cursorReq.onerror = () => reject(cursorReq.error);
+    });
+  }
+
+  db.close();
+
+  const total = byteChunks.reduce((s, b) => s + b.length, 0);
+  const allBytes = new Uint8Array(total);
+  let offset = 0;
+  for (const c of byteChunks) {
+    allBytes.set(c, offset);
+    offset += c.length;
+  }
+  return { totalRecords, allUint8Bytes: allBytes };
+}
+
+function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}

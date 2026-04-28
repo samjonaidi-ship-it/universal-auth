@@ -13,12 +13,17 @@
 
 /// <reference lib="webworker" />
 
+import {
+  DEFAULT_PURGE_PATTERNS,
+  parsePurgePatterns,
+  selectCachesToPurge,
+} from './purge-helpers.js';
+
 const SW_VERSION = '1.0.0-rc.1';
 const SYNC_TAG = 'bb-universal-auth-flush';
 
 // Cache-name patterns to purge on logout (configurable via message).
-const DEFAULT_PURGE_PATTERNS = [/runtime/i, /api/i, /auth-session-features/i];
-let purgePatterns: RegExp[] = DEFAULT_PURGE_PATTERNS;
+let purgePatterns: readonly RegExp[] = DEFAULT_PURGE_PATTERNS;
 
 // Typed self ref
 const sw = self as unknown as ServiceWorkerGlobalScope;
@@ -65,7 +70,7 @@ sw.addEventListener('message', (event: ExtendableMessageEvent) => {
   switch (data.type) {
     case 'set_purge_patterns': {
       if (Array.isArray(data.patterns)) {
-        purgePatterns = data.patterns.map((p) => new RegExp(p, 'i'));
+        purgePatterns = parsePurgePatterns(data.patterns);
       }
       break;
     }
@@ -82,15 +87,12 @@ sw.addEventListener('message', (event: ExtendableMessageEvent) => {
 
 async function purgeCaches(): Promise<void> {
   const names = await caches.keys();
-  await Promise.all(
-    names
-      .filter((name) => purgePatterns.some((pat) => pat.test(name)))
-      .map((name) => caches.delete(name))
-  );
+  const toPurge = selectCachesToPurge(names, purgePatterns);
+  await Promise.all(toPurge.map((name) => caches.delete(name)));
   // Notify all clients that caches were purged so they can reload if needed
   const clients = await sw.clients.matchAll({ type: 'window' });
   for (const client of clients) {
-    client.postMessage({ type: 'caches_purged', purged: names });
+    client.postMessage({ type: 'caches_purged', purged: toPurge });
   }
 }
 

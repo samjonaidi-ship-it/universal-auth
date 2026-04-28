@@ -43,9 +43,11 @@ export default defineConfig({
         'src/profile/index.ts',
         'src/extendability/index.ts',
         'src/react/index.ts',
-        // Service worker entry point — runs in SW global scope; covered by
-        // Playwright (Day 20-21) not unit suite.
-        'src/sw/**',
+        // Service worker ENTRY POINT — runs in SW global scope (not happy-dom);
+        // covered by Playwright at the integration level. The pure-algorithm
+        // helpers it imports from `sw/purge-helpers.ts` ARE unit-tested
+        // (look-back fix L6 2026-04-28).
+        'src/sw/index.ts',
         // Web Worker module — runs inside the worker; exercised indirectly
         // via crypto-client.ts unit tests. Direct unit coverage requires
         // a Worker shim; deferred past v1.0.

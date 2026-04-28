@@ -8,7 +8,10 @@
   "files": [
     "dist/",
     "README.md",
-    "CHANGELOG.md"
+    "docs/CHANGELOG.md",
+    "docs/RELEASE_NOTES.md",
+    "docs/INTEGRATION_GUIDE.md",
+    "docs/THREAT_MODEL.md"
   ],
   "exports": {
     ".": {
