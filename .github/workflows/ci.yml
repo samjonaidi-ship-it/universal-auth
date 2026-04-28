@@ -1,5 +1,11 @@
+# @bb/universal-auth | .github/workflows/ci.yml | v1.0.0-rc.1 | 2026-04-28 | BB
+# Per-PR CI gate. Block 6 Day 22 expansion: + perf cold-start, + memory soak
+# (5 min CI cap), + security suite. Heavy suites (24h soak, full chaos,
+# Playwright matrix) live in chaos.yml nightly.
+
 name: CI
 on: [push, pull_request, workflow_dispatch]
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -22,3 +28,55 @@ jobs:
       - run: pnpm verify:watermarks
       - run: pnpm verify:no-jose
       - run: pnpm audit --prod --audit-level=high
+
+  perf:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Cold-start budget (≤ 50 ms throttled)
+        run: pnpm test:perf
+
+  security:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Security suite (fuzzing, CSRF, IDB tamper, token replay)
+        run: pnpm test:security
+
+  memory-quick:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Memory soak (5 min, --expose-gc, gates heap budget)
+        env:
+          BB_SOAK_DURATION_MS: '300000' # 5 min
+          NODE_OPTIONS: '--expose-gc'
+        run: pnpm test:memory
