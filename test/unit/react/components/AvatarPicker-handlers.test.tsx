@@ -148,7 +148,7 @@ describe('AvatarPicker click handlers + useProfile mutations', () => {
     expect(screen.queryByRole('button', { name: /^clear/i })).toBeNull();
   });
 
-  it('upload button click triggers file picker (programmatic)', async () => {
+  it('upload button click forwards to hidden file input (verified via click spy)', async () => {
     render(
       <AuthProvider initialSession={SESSION}>
         <AvatarPicker />
@@ -158,10 +158,17 @@ describe('AvatarPicker click handlers + useProfile mutations', () => {
       expect(screen.getByRole('button', { name: /upload photo/i })).toBeTruthy();
     });
     const uploadBtn = screen.getByRole('button', { name: /upload photo/i });
-    // Just clicking the button is enough to exercise the onClick handler
+
+    // Capture the hidden file input + spy its click()
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    expect(fileInput).toBeTruthy();
+    const clickSpy = vi.spyOn(fileInput, 'click');
+
     fireEvent.click(uploadBtn);
-    // No throw, no fetch spike — handler is a click forwarder
-    expect(true).toBe(true);
+    // The visible button's onClick must forward to the hidden input
+    expect(clickSpy).toHaveBeenCalledOnce();
+
+    clickSpy.mockRestore();
   });
 
   it('renders custom heading + custom labels', async () => {

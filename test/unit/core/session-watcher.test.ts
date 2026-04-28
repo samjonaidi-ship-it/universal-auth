@@ -113,11 +113,20 @@ describe('session-watcher', () => {
     stopSessionWatcher();
   });
 
-  it('reset clears interval back to default', () => {
-    configureSessionWatcher({ intervalMs: 5 });
+  it('reset clears state — subsequent start uses default 60s interval, not the prior custom value', async () => {
+    configureSessionWatcher({ intervalMs: 50 });
     __resetSessionWatcherForTests();
-    // After reset, configuring with empty opts should not preserve old value
-    configureSessionWatcher({});
-    expect(true).toBe(true);
+
+    // Don't reconfigure — start should use default (60_000ms), not 50ms
+    fetchSpy.mockImplementation(
+      async () => new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } })
+    );
+    startSessionWatcher();
+
+    // At 1s elapsed, default 60s interval has not fired yet — fetch count = 0
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    stopSessionWatcher();
   });
 });
