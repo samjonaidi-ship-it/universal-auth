@@ -35,7 +35,16 @@ async function bundleEsm(): Promise<void> {
       'extendability/index':  resolve(ROOT, 'src/extendability/index.ts'),
       // §8.2 Web Worker for crypto — bundled as its own entry so
       // crypto-client.ts can load it via `new Worker(new URL(...))`.
-      'core/crypto-worker':   resolve(ROOT, 'src/core/crypto-worker.ts'),
+      //
+      // CRITICAL: this entry name must produce `dist/esm/crypto-worker.js`
+      // (flat, NOT `dist/esm/core/crypto-worker.js`). esbuild bundles
+      // `crypto-client.ts` into a chunk at `dist/esm/chunk-XXX.js`, and
+      // emits a Worker URL `./crypto-worker.js` relative to THAT chunk's
+      // location — which resolves to `dist/esm/crypto-worker.js`.
+      // If the worker is under `core/`, downstream Vite/Rollup builds
+      // (e.g., the demo) fail with "Could not resolve entry module
+      // ../dist/esm/crypto-worker.js" (look-back 2026-04-28 fix).
+      'crypto-worker':        resolve(ROOT, 'src/core/crypto-worker.ts'),
     },
     bundle: true,
     format: 'esm',
@@ -56,10 +65,21 @@ async function bundleEsm(): Promise<void> {
     legalComments: 'inline',
     metafile: true,
   }).then((result) => {
-    // Write metafile for CI size-check + verify-bundle inspection
+    // Write metafile for CI size-check + verify-bundle inspection. Lives
+    // OUTSIDE dist/ so it doesn't ship in the published tarball — the
+    // metafile contains full build-machine paths (e.g.,
+    // `node_modules/.pnpm/nanoid@5.1.9/...`) and all internal `src/*.ts`
+    // filenames; minor info disclosure if shipped (look-back fix L10
+    // 2026-04-28).
     if (result.metafile) {
-      const metaPath = resolve(OUT, 'meta.json');
-      return import('node:fs').then((fs) => fs.writeFileSync(metaPath, JSON.stringify(result.metafile, null, 2)));
+      const META_DIR = resolve(ROOT, '.build-meta');
+      return import('node:fs').then((fs) => {
+        fs.mkdirSync(META_DIR, { recursive: true });
+        fs.writeFileSync(
+          resolve(META_DIR, 'esbuild-meta.json'),
+          JSON.stringify(result.metafile, null, 2)
+        );
+      });
     }
     return undefined;
   });

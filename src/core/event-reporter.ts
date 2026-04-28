@@ -111,20 +111,50 @@ export async function emit(
   const persona = getActivePersonaFn();
   if (persona !== null) envelope.active_persona = persona;
 
-  // Persist to IDB
-  const db = await getDb();
-  await db.add(STORE_EVENT_QUEUE, {
-    envelope,
-    createdAt: Date.now(),
-  } satisfies Row);
+  // Persist to IDB. Wrap in try/catch — multi-tab DB upgrades, page-unload
+  // races, and SW termination can close the connection mid-transaction
+  // (browser throws `InvalidStateError` / `TransactionInactiveError`).
+  // Better to drop the event silently than crash the calling code, which
+  // is typically a fire-and-forget `void emit(...)` chain.
+  // (Look-back fix L12 2026-04-28.)
+  try {
+    const db = await getDb();
+    await db.add(STORE_EVENT_QUEUE, {
+      envelope,
+      createdAt: Date.now(),
+    } satisfies Row);
 
-  // Check if we've hit the count cap
-  const count = await db.count(STORE_EVENT_QUEUE);
-  if (count >= config.batchSize) {
-    void flushNow();
-  } else {
-    scheduleFlush();
+    const count = await db.count(STORE_EVENT_QUEUE);
+    if (count >= config.batchSize) {
+      void flushNow();
+    } else {
+      scheduleFlush();
+    }
+  } catch (e) {
+    if (isTransientIdbError(e)) {
+      // Drop the event. Same-tab next emit() will succeed once the
+      // upgrade/close completes. Multi-tab: the other tab's emit() carries
+      // its own copy.
+      return;
+    }
+    throw e;
   }
+}
+
+/**
+ * True for IDB errors that come from the connection being closed mid-flight
+ * (multi-tab upgrade, page unload race, SW termination). These are not
+ * product bugs — the SDK should drop the call and continue.
+ *
+ * @internal — exported for unit tests only.
+ */
+export function isTransientIdbError(e: unknown): boolean {
+  if (!(e instanceof Error)) return false;
+  return (
+    e.name === 'InvalidStateError' ||
+    e.name === 'TransactionInactiveError' ||
+    /transaction is not active|database connection is closing/i.test(e.message)
+  );
 }
 
 /**

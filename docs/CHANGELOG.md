@@ -4,7 +4,36 @@ All notable changes to `@bainbridgebuilders/universal-auth` are documented here.
 
 Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line numbers drift on every version bump; section numbers are stable.
 
-## [Unreleased — targeting 1.0.0-rc.2 or carry to 1.0.0]
+## [1.0.0-rc.2] — 2026-04-28
+
+**Critical fix for Vite/Rollup-based consumers** (CalExp5, future ControlTower SPA, the demo itself). Plus tier-3 hardening from the look-back audit. Recommended upgrade for all consumers on rc.1.
+
+### Fixed
+
+- **`scripts/build.ts` — crypto-worker output path:** entry name `core/crypto-worker` → `crypto-worker` so the built file lands at `dist/esm/crypto-worker.js`. The Worker URL emitted by esbuild from the bundled chunk (`new Worker(new URL('./crypto-worker.js', import.meta.url))`) resolves relative to the chunk's location at `dist/esm/chunk-XXX.js` — pointing under `core/` made it resolve to `dist/esm/crypto-worker.js` and break Vite's worker-import-meta-url plugin with "Could not resolve entry module ../dist/esm/crypto-worker.js". Surfaced when expanding `demo/src/App.tsx` to actually import the SDK.
+- **`src/core/event-reporter.ts` — InvalidStateError swallow (look-back L12):** new `isTransientIdbError(e)` helper + try/catch around the IDB `add()` + `count()` calls in `emit()`. Multi-tab DB upgrades, page-unload races, and SW termination all surface `InvalidStateError` / `TransactionInactiveError` mid-transaction during legitimate state transitions; SDK now drops the event silently rather than crashing the calling fire-and-forget chain. 7 unit tests in new `test/unit/core/event-reporter-resilience.test.ts`.
+- **`scripts/build.ts` — `dist/meta.json` no longer ships in tarball (look-back L10):** esbuild metafile relocated to `.build-meta/esbuild-meta.json` (gitignored, outside published tree). The metafile contains full build-machine paths (`node_modules/.pnpm/nanoid@5.1.9/...`) and internal `src/*.ts` filenames — minor info disclosure removed.
+
+### Changed
+
+- **`test/unit/setup.ts` — removed `InvalidStateError` / `transaction is not active` from `SWALLOW_PATTERNS`** since the SDK now handles these natively. A leaked InvalidStateError reaching the filter now means a NEW unguarded IDB call path needs hardening (it'll fail the test loudly).
+- **`demo/src/App.tsx` — full SDK kitchen-sink:** replaces the Block 5 placeholder. Initializes SDK against `ct-bff.bainbridgebuilders.com` in `production` mode, wraps in `<AuthProvider>`, renders `<SignInForm>` for anonymous users and a signed-in dashboard (identity + active persona + features + sign-out) for authenticated. Live at `https://auth-sdk-demo.bainbridgebuilders.com`.
+
+### Verified
+
+- `pnpm test:unit`: 62 files / 383 tests; **90.98% lines / 85.15% branches / 90.26% functions / 90.98% statements** (all spec §11 thresholds met)
+- `pnpm test:security`: 6 files / 18 tests
+- typecheck / lint / build / size-check / verify:* — all green
+- `pnpm pack --dry-run`: `dist/meta.json` no longer in tarball
+- Demo builds locally + deployed to Railway (live at `auth-sdk-demo.bainbridgebuilders.com`)
+- `vite build` from `demo/` no longer fails on crypto-worker path resolution
+
+### Known carry-forwards (deferred to v1.1)
+
+- **Provenance vs restricted access conflict:** `npm publish --provenance` requires `--access=public`, which conflicts with spec §15.1 mandating private GitHub Packages. Untouched in rc.2 — needs Sam's call. Three options documented in `release.yml` inline comment + LOOKBACK audit.
+- **Unit-test coverage of `src/sw/index.ts` entry point:** the SW global-scope entry remains uncovered. Pure-algorithm helpers extracted to `sw/purge-helpers.ts` ARE unit-tested (17 tests). Block 7 demo deploy will exercise the SW lifecycle end-to-end.
+
+## [Unreleased — pre-1.0.0]
 
 ### Look-back tier-2 remediations (2026-04-28)
 

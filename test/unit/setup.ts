@@ -33,11 +33,11 @@ const SWALLOW_PATTERNS = [
   'ENOTFOUND',
   'getaddrinfo',
   'fetch failed',
-  // event-reporter / settings-sync can fire `void emit(...)` after a test
-  // has run __resetDbForTests; the in-flight IDB transaction then throws
-  // InvalidStateError. This is leaked async work, not a real product bug.
-  'InvalidStateError',
-  'transaction is not active',
+  // 'InvalidStateError' / 'transaction is not active' previously listed
+  // here — REMOVED 2026-04-28 (look-back fix L12). The SDK's
+  // event-reporter now catches these explicitly via `isTransientIdbError()`
+  // and drops the event. A leaked InvalidStateError reaching this filter
+  // again would mean a NEW unguarded IDB call path needs hardening.
 ];
 
 function shouldSwallow(reason: unknown): boolean {

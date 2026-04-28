@@ -1,5 +1,47 @@
 # Release Notes — `@bainbridgebuilders/universal-auth`
 
+## v1.0.0-rc.2 — 2026-04-28
+
+**Critical fix-up release.** Recommended upgrade from rc.1 for any consumer that bundles the SDK with Vite or Rollup (CalExp5, future ControlTower SPA, the demo).
+
+### Why upgrade
+
+- **rc.1 broke Vite-based consumer builds** — `dist/esm/core/crypto-worker.js` path mismatch caused "Could not resolve entry module" errors in the Vite worker-import-meta-url plugin. Surfaced when expanding the demo to actually use the SDK. rc.2 emits the worker at `dist/esm/crypto-worker.js` (flat) where the bundled chunk's Worker URL expects it.
+- **InvalidStateError** in event-reporter is now caught natively (look-back L12) — multi-tab DB upgrades, page-unload races, SW termination no longer crash fire-and-forget `void emit(...)` chains.
+- **`dist/meta.json`** (esbuild metafile with build-machine paths + internal source filenames) no longer ships in the npm tarball (look-back L10).
+
+### What changed from rc.1
+
+| File | Change | Why |
+|---|---|---|
+| `scripts/build.ts` | crypto-worker entry name flattened (`core/crypto-worker` → `crypto-worker`) | Vite/Rollup couldn't resolve worker URL |
+| `scripts/build.ts` | esbuild metafile → `.build-meta/esbuild-meta.json` (outside `dist/`) | Removed info disclosure in tarball |
+| `src/core/event-reporter.ts` | New `isTransientIdbError()` + try/catch in `emit()` | Hardens against transient IDB connection-closed errors |
+| `src/config.ts` | `SDK_VERSION` bumped to `1.0.0-rc.2` | Stamped on every event + outbound HTTP request |
+| `demo/src/App.tsx` | Block 5 placeholder → full SDK kitchen-sink | Validates the package end-to-end at `auth-sdk-demo.bainbridgebuilders.com` |
+| `test/unit/setup.ts` | Removed InvalidStateError swallow patterns | SDK now catches natively; filter would hide real regressions |
+| `test/unit/core/event-reporter-resilience.test.ts` | NEW — 7 tests for `isTransientIdbError` | Locks in the L12 fix |
+
+### Quality gates met
+
+- 62 test files / 383 tests pass
+- Coverage: 90.98% lines / 85.15% branches / 90.26% functions / 90.98% statements
+- Bundle: core 11.78/40 KB, passkey 7.88/10 KB, sw 488 B/5 KB
+- typecheck / lint / build / size-check / verify:bundle / verify:watermarks / verify:no-jose / npm audit — all green
+
+### Migration from rc.1
+
+No code changes required for consumers — drop-in upgrade. Bump the version pin in your `package.json`:
+
+```diff
+- "@bainbridgebuilders/universal-auth": "1.0.0-rc.1"
++ "@bainbridgebuilders/universal-auth": "1.0.0-rc.2"
+```
+
+If you were on rc.1 with a Vite-based consumer, you may have been seeing build failures on `crypto-worker.js`. rc.2 resolves these.
+
+---
+
 ## v1.0.0-rc.1 — 2026-04-28
 
 **First release candidate.** Targets `1.0.0` GA after CalExp5 integration (Block 7) signs off + 24h production soak (A6 audit).

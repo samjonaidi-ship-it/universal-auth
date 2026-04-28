@@ -35,6 +35,7 @@ test-results.xml
 # Build cache
 .turbo/
 .cache/
+.build-meta/
 *.tsbuildinfo
 
 # Package tarball outputs
