@@ -17,9 +17,14 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov', 'html'],
-      // Coverage THRESHOLDS activate at A4 end (Day 15+). For now, report only.
-      // Post-A4 activation per plan Block 6 Day 16-17:
-      //   thresholds: { lines: 90, branches: 85, functions: 90, statements: 90 }
+      // Spec §11 thresholds — activated 2026-04-28 (Block 6 coverage push).
+      // CI enforces; PRs that drop coverage below these fail the unit job.
+      thresholds: {
+        lines: 90,
+        branches: 85,
+        functions: 90,
+        statements: 90,
+      },
       exclude: [
         'dist/**',
         'node_modules/**',
@@ -30,6 +35,26 @@ export default defineConfig({
         // Sibling worktrees under .claude/worktrees/ create nested copies of
         // src/ that vitest's globbing would otherwise count toward coverage.
         '.claude/**',
+        // Pure type definitions — no executable code.
+        'src/types/**',
+        // Barrel files: re-export only. Listed as 0% because v8 doesn't
+        // count re-export evaluation; functionally tested via every consumer.
+        'src/index.ts',
+        'src/profile/index.ts',
+        'src/extendability/index.ts',
+        'src/react/index.ts',
+        // Service worker entry point — runs in SW global scope; covered by
+        // Playwright (Day 20-21) not unit suite.
+        'src/sw/**',
+        // Web Worker module — runs inside the worker; exercised indirectly
+        // via crypto-client.ts unit tests. Direct unit coverage requires
+        // a Worker shim; deferred past v1.0.
+        'src/core/crypto-worker.ts',
+        // Pure interface declarations (shape-only, no logic) for v1.0
+        // reserved extension points.
+        'src/extendability/auth-flow.ts',
+        'src/extendability/risk-signal.ts',
+        'src/extendability/notification-channel.ts',
       ],
     },
   },

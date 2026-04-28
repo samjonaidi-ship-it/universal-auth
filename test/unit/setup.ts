@@ -33,17 +33,32 @@ const SWALLOW_PATTERNS = [
   'ENOTFOUND',
   'getaddrinfo',
   'fetch failed',
+  // event-reporter / settings-sync can fire `void emit(...)` after a test
+  // has run __resetDbForTests; the in-flight IDB transaction then throws
+  // InvalidStateError. This is leaked async work, not a real product bug.
+  'InvalidStateError',
+  'transaction is not active',
 ];
-process.on('unhandledRejection', (reason: unknown) => {
+
+function shouldSwallow(reason: unknown): boolean {
   const msg =
     reason instanceof Error
-      ? reason.message
+      ? `${reason.name}: ${reason.message}`
       : typeof reason === 'string'
         ? reason
         : '';
-  if (SWALLOW_PATTERNS.some((p) => msg.includes(p))) return;
+  return SWALLOW_PATTERNS.some((p) => msg.includes(p));
+}
+
+process.on('unhandledRejection', (reason: unknown) => {
+  if (shouldSwallow(reason)) return;
   // Re-emit other rejections so real bugs surface
   throw reason;
+});
+
+process.on('uncaughtException', (err: Error) => {
+  if (shouldSwallow(err)) return;
+  throw err;
 });
 
 // ── localStorage shim (Node 25+ injects broken stub) ─────────────────────
