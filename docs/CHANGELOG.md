@@ -4,7 +4,31 @@ All notable changes to `@bainbridgebuilders/universal-auth` are documented here.
 
 Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line numbers drift on every version bump; section numbers are stable.
 
-## [Unreleased — targeting 1.0.0-rc.1]
+## [Unreleased — targeting 1.0.0-rc.2 or carry to 1.0.0]
+
+### Look-back tier-2 remediations (2026-04-28)
+
+Six findings from `audits/LOOKBACK_2026-04-28.md` tier-2 remediated before Block 7 demo deploy.
+
+**L2 — circular timing test:** removed the locally-defined `constantTimeEqual` helper that tested itself. Kept the source-grep heuristic that asserts no raw `===` on tokens in `src/core/{token-manager,client}.ts`; added a second grep that catches `console.<level>(...token...)` log-leak patterns across token-manager / client / storage. THREAT_MODEL D7 row rewritten.
+
+**L3 — IDB tamper soft assertion:** `expect(corrupted).toBeGreaterThanOrEqual(0)` → `>= 2`. The original would silently pass on an empty IDB; the new threshold asserts AES-GCM IV + ciphertext byte arrays were both found and corrupted.
+
+**L4 — token rotation test now actually tests rotation:** added `snapshotIdb()` helper that captures all blobs + concatenated bytes pre/post `setSession()`. Asserts (a) total record count unchanged after rotation (catches side-by-side storage bug), and (b) actual encrypted bytes differ (catches no-op rotation).
+
+**L5 — AuthProvider 401 hydrate test:** strengthened from "fetch was called" to "status transitions to `'anonymous'`" using a `<StatusProbe>` testid. Found + fixed docs-vs-code drift in mock envelope shape (`{ error: { code } }` → `{ code, message }` per `AuthErrorEnvelope` actual shape). Hydrate test similarly upgraded to assert active persona resolves to `'crew'` via primary_persona fallback.
+
+**L6 — SW logic now unit-tested via algorithm extraction:** new `src/sw/purge-helpers.ts` (pure functions: `parsePurgePatterns`, `selectCachesToPurge`, `DEFAULT_PURGE_PATTERNS` frozen export) extracted from `sw/index.ts`. 17 unit tests in `test/unit/sw/purge-helpers.test.ts` cover: case-insensitivity, no over-purge, invalid-regex skip, defensive non-string skip, anchor support, stable filter order, multi-pattern dedup. `sw/index.ts` refactored to use the helpers; coverage exclude narrowed from `src/sw/**` to just `src/sw/index.ts` (only the SW global-scope entry point).
+
+**L9 — `package.json files[]` glob fixed:** `"CHANGELOG.md"` (matched nothing — file lives at `docs/CHANGELOG.md`) → explicit list of all 4 docs. Verified via `pnpm pack --dry-run`: all 5 doc files now ship in tarball.
+
+**Note:** behavior change in SW `caches_purged` postMessage — payload `purged` field now lists ONLY the actually-purged cache names (was: ALL cache names). No consumer in `src/` reads the field; safer + more accurate.
+
+**Verification:**
+- `pnpm test:unit`: 61 files / 376 tests; **91.00% lines / 85.34% branches / 90.23% functions / 91.00% statements** (all spec §11 thresholds met)
+- `pnpm test:security`: 6 files / 18 tests
+- typecheck / lint / build / size-check / verify:* all green
+- SW chunk grew 433 B → 488 B (+55 B for helper imports); still 10× under 5 KB budget
 
 ### Coverage push to spec gate (2026-04-28)
 

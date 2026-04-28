@@ -4,68 +4,24 @@
 // Goal: client-side string comparisons of secrets (refresh tokens, idempotency
 // keys, anti-CSRF nonces) must not leak length-of-prefix-match via wall-clock.
 //
-// We can't prove perfect constant-time at the JS level (V8 optimizations can
-// short-circuit), but we CAN regression-test the SDK doesn't use raw `===`
-// on secrets in a tight comparison loop. The strongest server-side defense
-// is in the BFF; here we sanity-check our client-side compare helpers.
+// The strongest server-side defense is in the BFF (it's the only place where
+// secrets are actually compared). Client-side, the regression we CAN catch
+// is "did anyone add a raw `===` comparison on a token in source?". Doing so
+// would expose timing on the SDK side too if any consumer reflects equality
+// back via DOM events / mutation observers.
+//
+// Earlier this file also contained a circular self-test of a locally-defined
+// constantTimeEqual helper. That helper is not exported by the SDK — testing
+// it tested the test, not the SDK. Removed in look-back fix L2 (2026-04-28);
+// if/when the SDK adds a real constant-time compare export, gate it here.
 
 import { describe, it, expect } from 'vitest';
-import { performance } from 'node:perf_hooks';
-
-// Constant-time string equality — vendored shape used by client.ts (if any
-// future code path adds raw secret comparison, it should call into this).
-// We assert that the helper exists in shape and timing distribution is
-// indistinguishable for matching vs non-matching equal-length inputs.
-function constantTimeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let mismatch = 0;
-  for (let i = 0; i < a.length; i++) {
-    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return mismatch === 0;
-}
-
-function measure(fn: () => void, runs = 5000): number[] {
-  const samples: number[] = [];
-  for (let i = 0; i < runs; i++) {
-    const t0 = performance.now();
-    fn();
-    samples.push(performance.now() - t0);
-  }
-  samples.sort((a, b) => a - b);
-  return samples;
-}
-
-function median(arr: number[]): number {
-  return arr[Math.floor(arr.length / 2)] ?? 0;
-}
 
 describe('Security #2 — timing-attack regression (§11.8)', () => {
-  it('constantTimeEqual: matching vs first-char-mismatch indistinguishable', () => {
-    const secret = 'a'.repeat(64);
-    const matching = 'a'.repeat(64);
-    const earlyMismatch = 'b' + 'a'.repeat(63);
-    const lateMismatch = 'a'.repeat(63) + 'b';
-
-    const samplesMatch = measure(() => constantTimeEqual(secret, matching));
-    const samplesEarly = measure(() => constantTimeEqual(secret, earlyMismatch));
-    const samplesLate = measure(() => constantTimeEqual(secret, lateMismatch));
-
-    const m = median(samplesMatch);
-    const e = median(samplesEarly);
-    const l = median(samplesLate);
-
-    // We expect all 3 medians to be close. We don't try to prove timing
-    // safety perfectly — V8 messes with that; the BFF-side compare is
-    // the authoritative defense. We assert no obvious linear-in-prefix
-    // signal: ratio of late-mismatch to early-mismatch < 5×.
-    const ratio = Math.max(e, l) / Math.max(m, 1e-9);
-    expect(ratio).toBeLessThan(50);
-  });
-
-  it('does NOT use raw === for tokens in source (heuristic)', async () => {
-    // This test reads source files and asserts no obvious raw === between
-    // refresh-token-shaped variables. Heuristic only — defense-in-depth.
+  it('source files do NOT use raw === for refresh/access tokens', async () => {
+    // Heuristic: scan token-manager + client for `refreshToken === something`
+    // or `accessToken === something` (excluding nullish comparisons, which
+    // are fine and don't leak timing on secret content).
     const { readFile } = await import('node:fs/promises');
     const { resolve, dirname } = await import('node:path');
     const { fileURLToPath } = await import('node:url');
@@ -73,13 +29,37 @@ describe('Security #2 — timing-attack regression (§11.8)', () => {
 
     for (const file of ['../../src/core/token-manager.ts', '../../src/core/client.ts']) {
       const src = await readFile(resolve(here, file), 'utf8');
-      // Pattern: `refreshToken === something` or `accessToken === something`
-      // (excluding null/undefined comparisons which are fine)
       const danger = src.match(/(refresh|access)Token\s*===\s*[a-zA-Z_]/g);
       const filtered = danger?.filter(
         (m) => !/(===\s*(null|undefined|''|""|`{2}))/.test(m)
       );
       expect(filtered ?? []).toEqual([]);
+    }
+  });
+
+  it('source files do NOT log refresh/access token values (defense-in-depth)', async () => {
+    // Logging a token (even at debug level) is a timing-adjacent leak — not
+    // through CPU but through log files. Catch any console.log / console.debug
+    // that interpolates a *Token variable.
+    const { readFile } = await import('node:fs/promises');
+    const { resolve, dirname } = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const here = dirname(fileURLToPath(import.meta.url));
+
+    for (const file of [
+      '../../src/core/token-manager.ts',
+      '../../src/core/client.ts',
+      '../../src/core/storage.ts',
+    ]) {
+      const src = await readFile(resolve(here, file), 'utf8');
+      // Pattern: `console.<anything>(...refreshToken...)` or accessToken.
+      // Allow logging the IDB key/length, just not the value.
+      const danger = src.match(
+        /console\.[a-z]+\([^)]*\b(refresh|access)Token\b[^)]*\)/g
+      );
+      // Filter false positives: `length` references are fine.
+      const filtered = (danger ?? []).filter((m) => !/\.length/.test(m));
+      expect(filtered).toEqual([]);
     }
   });
 });

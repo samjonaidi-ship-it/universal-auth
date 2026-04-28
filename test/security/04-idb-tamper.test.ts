@@ -82,9 +82,11 @@ describe('Security #4 — IDB tamper (§11.8)', () => {
 
     // Hostile script flips bytes in the encrypted blob
     const corrupted = await corruptIdbValues();
-    // We don't assert exact count — depends on storage shape — only that
-    // we found at least one byte-array to corrupt.
-    expect(corrupted).toBeGreaterThanOrEqual(0);
+    // Must have actually found AND corrupted at least one byte-array.
+    // The original `>= 0` (look-back L3 2026-04-28) would falsely pass on
+    // an empty IDB. Expect at least 2: AES-GCM IV + ciphertext are stored
+    // as separate Uint8Arrays in the encrypted blob.
+    expect(corrupted).toBeGreaterThanOrEqual(2);
 
     // Clear in-memory state (simulate page reload after tampering)
     await clearSession();

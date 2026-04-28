@@ -156,7 +156,7 @@ describe('AuthProvider — active-persona resolution branches', () => {
     });
   });
 
-  it('hydrates from /auth/v1/me when no initialSession given', async () => {
+  it('hydrates from /auth/v1/me when no initialSession given — sets active persona from server response', async () => {
     fetchSpy = vi
       .spyOn(globalThis, 'fetch')
       .mockResolvedValue(jsonResp(200, SESSION_TWO_PERSONAS));
@@ -166,16 +166,31 @@ describe('AuthProvider — active-persona resolution branches', () => {
         <ActivePersonaProbe />
       </AuthProvider>
     );
+    // Hydrate must complete: active persona resolves from the server response
     await waitFor(() => {
-      expect(fetchSpy).toHaveBeenCalled();
+      // Default URL is "/" so primary_persona ('crew') wins
+      expect(screen.getByTestId('active').textContent).toBe('crew');
     });
+    // Verify fetch hit /auth/v1/me specifically (not some other endpoint)
+    const meCalls = fetchSpy.mock.calls.filter((c) => {
+      const url = typeof c[0] === 'string' ? c[0] : (c[0] as Request).url;
+      return String(url).includes('/auth/v1/me');
+    });
+    expect(meCalls.length).toBeGreaterThan(0);
   });
 
-  it('handles /auth/v1/me 401 → anonymous status (no crash)', async () => {
-    fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      jsonResp(401, {
-        error: { code: 'AUTH_SESSION_EXPIRED', message: 'gone' },
-      })
+  it('handles /auth/v1/me 401 → status transitions to anonymous (real assertion, not just no-crash)', async () => {
+    // Fresh Response per call — Response bodies can only be consumed once,
+    // and client.ts may make multiple fetch calls (silent refresh retry).
+    // Envelope shape per src/errors.ts AuthErrorEnvelope: { code, message }
+    // (NOT { error: { code } } — that was a docs-vs-code drift in the prior
+    // version of this test).
+    fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(
+      async () =>
+        jsonResp(401, {
+          code: 'AUTH_SESSION_EXPIRED',
+          message: 'session gone',
+        })
     );
 
     render(
@@ -183,10 +198,21 @@ describe('AuthProvider — active-persona resolution branches', () => {
         <StatusProbe />
       </AuthProvider>
     );
+    // Wait for fetch to settle
     await waitFor(() => {
       expect(fetchSpy).toHaveBeenCalled();
     });
-    // Status should resolve to either 'anonymous' or initial 'loading' — no crash
-    expect(screen.getByTestId('status')).toBeTruthy();
+    // Real assertion: after a 401 hydrate, status MUST be 'anonymous'.
+    // Initial state is 'loading'; if the AuthProvider crashes silently
+    // it stays at 'loading' forever — this assertion catches that.
+    //
+    // Extended timeout because client.ts attempts one silent refresh on 401
+    // before surfacing AuthSessionExpired (adds a fetch round).
+    await waitFor(
+      () => {
+        expect(screen.getByTestId('status').textContent).toBe('anonymous');
+      },
+      { timeout: 5_000 }
+    );
   });
 });
