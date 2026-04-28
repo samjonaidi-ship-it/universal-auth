@@ -143,6 +143,11 @@ export async function saveProfile(
     }
   }
 
+  // Generation guard — capture at start of async path (matches hydrateProfile
+  // pattern). If a logout/reset bumps the generation during the await, we
+  // discard the result instead of clobbering post-logout state.
+  const gen = state.generation;
+
   state.state = 'saving';
   state.errorMessage = null;
   notify();
@@ -155,6 +160,12 @@ export async function saveProfile(
       patch,
       { headers: { 'If-Match': String(state.profile.profile_version) } }
     );
+    if (state.generation !== gen) {
+      // Logout/reset happened during the PUT — drop the result silently.
+      // Re-throw so the caller's UI doesn't show a "saved" state on a
+      // session that was torn down mid-flight.
+      throw new Error('Profile save aborted: session changed during save.');
+    }
     state.profile = data;
     state.state = 'ready';
     notify();
@@ -173,6 +184,10 @@ export async function saveProfile(
 
     return data;
   } catch (err) {
+    if (state.generation !== gen) {
+      // Reset/logout interrupted; surface as save-aborted, NOT mutate state.
+      throw err;
+    }
     if (err instanceof AuthSdkError && (err.code === 'HTTP_409' || err.code === 'SYNC_CONFLICT')) {
       // Server has a newer version — refetch + re-throw so caller can re-apply
       void emit('sync.conflict', { endpoint: '/identity/v1/profile' });
@@ -180,6 +195,10 @@ export async function saveProfile(
         await hydrateProfile();
       } catch {
         // hydrate failed — leave profile in error state
+      }
+      if (state.generation !== gen) {
+        // hydrate completed but reset happened — don't touch state
+        throw err;
       }
       state.state = 'error';
       state.errorMessage = 'Profile changed elsewhere — please retry.';

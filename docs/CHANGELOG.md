@@ -6,6 +6,41 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
 
 ## [Unreleased — targeting 1.0.0-rc.1]
 
+### Block 6 Day 16-17 + look-back fixes (2026-04-25 — 2026-04-28)
+
+**Unit-coverage push** (`agent/block-6-test-hardening` → main, commit `12dbfc4`):
+- 14 new test files, +68 tests across previously-uncovered surfaces:
+  - flows: `recovery`, `permission-grants`, `persona-registry-client`, `passkey-flow` (with `@simplewebauthn/browser` mocked — full register + authenticate ceremony, conditionalUI flag, cancellation events)
+  - profile: `profile-store` (state machine, If-Match, 409 rehydrate, listeners), `persona-fields` (1h cache + coalesce)
+  - imperative: `getAuth` (pins stub API shape so it can't drift before Block 7)
+  - react hooks: `useProfile`, `useSettingsSync`, `usePermissionGrants`
+  - UI components: `AvatarPicker`, `ContactInfoForm`, `ProfileCompletenessBar`, `ProfileSetupScreen` (3 modes)
+  - offline: `sw-bridge` (SYNC_TAG export, no-op-when-unavailable, register-with-default-scope)
+- Coverage: **56.89% → 76.51% lines / 78.99% → 80.04% branches / 74.68% → 78.81% funcs**
+- Tests: 193 → 261 passing across 31 → 46 files
+
+**Block 6 look-back remediation** (`agent/block-6-lookback-fixes` → main, commit `73198d4`):
+- **Real bug fix — `profile-store.ts` generation guard**: `__resetProfileStoreForTests` was resetting state but not cancelling in-flight hydrate promises. A pending fetch from a prior test could resolve into the next test's fresh state with stale data.
+  - Production-relevant, not just test-only: same race exists in real life if a user triggers `hydrateProfile()` then logs out before the response lands — the resolved profile would clobber the post-logout state.
+  - Fix: monotonic `generation` counter bumped on every reset; `hydrateProfile` captures the generation at start, drops the result if it changed during the await.
+- **Test setup hardening**: `test/unit/setup.ts` `unhandledRejection` filter expanded to swallow `ENOTFOUND` / `getaddrinfo` / `fetch failed` / `aborted` patterns — leaked-fetch noise from components that fetch in `useEffect` and unmount before the response lands. Real fetch errors still surface via SDK's try/catch in `core/client.ts:151`.
+
+**2026-04-28 look-back remediation** (`agent/lookback-2026-04-28`):
+- **Generation guard extended to `saveProfile`** — same race class affects saves, not just hydrates. If a logout interrupts a save, we now drop the result instead of clobbering post-logout state. Throws `Profile save aborted: session changed during save.` so the UI doesn't show a "saved" toast on a torn-down session.
+- **Doc drift fixes** (in `BB_Platform_Specs/`):
+  - `BB_MIGRATION_MAP.md` v1.1.0 → v1.2.0: shows actual applied state (`049b seat_pools`, `049c bridge_master_snapshot` renumbered from 058, `058 consent_documents` pulled forward from 073). HWM updated to `058_consent_documents`. `073` row marked RETIRED.
+  - This CHANGELOG entry — back-fills Block 6 Day 16-17 work that wasn't logged when it landed.
+
+**SSL infrastructure for `ct-bff.bainbridgebuilders.com`**:
+- Custom domain registered on Railway BB-ControlTower service
+- DNS records added at Porkbun (CNAME + `_railway-verify` TXT)
+- SSL cert issued via Let's Encrypt (R13) + Fastly edge
+- `https://ct-bff.bainbridgebuilders.com/healthz` → HTTP 200
+
+**CT BFF migrations PR**: `samjonaidi-ship-it/BB_ControlTower#12` merged 2026-04-28T02:17:17Z. 13 migration files now in `main` (already applied to Neon prod 2026-04-25).
+
+**No bundle size delta** — pure test + doc changes. Core 11.78 KB / 40 KB. Passkey 7.88 KB / 10 KB. SW 433 B / 5 KB.
+
 ### Block 5 + A4 audit sign-off (2026-04-24)
 
 **Profile module** (§5.4) — new `/profile` subpath keeps `libphonenumber-js` out of the core bundle:
