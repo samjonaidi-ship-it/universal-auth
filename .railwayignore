@@ -1,0 +1,17 @@
+# Keep upload size reasonable — exclude generated + cache + other-tooling.
+node_modules
+dist
+coverage
+.git
+.claude
+.session
+.rcodex
+demo/dist
+demo/node_modules
+test
+**/*.test.ts
+**/*.test.tsx
+audits
+.github
+*.md
+LICENSE

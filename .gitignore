@@ -39,3 +39,9 @@ test-results.xml
 
 # Package tarball outputs
 *.tgz
+
+# Session-local Claude state (per-machine continuity; canonical handoff lives
+# in BB_Platform_Specs/HANDOFF_<date>.md)
+.session/
+.claude/
+.rcodex/
