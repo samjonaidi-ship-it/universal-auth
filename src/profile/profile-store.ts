@@ -25,12 +25,21 @@ interface InternalState {
   state: ProfileState;
   /** Last error message (for state='error'). */
   errorMessage: string | null;
+  /**
+   * Monotonic fetch generation. Bumped on every reset. Async hydrate/save
+   * paths capture the generation at start; if it has changed by the time
+   * the response lands, the result is discarded — prevents stale fetches
+   * from leaking across test boundaries (and from clobbering a logout
+   * that interrupts a hydrate in real life).
+   */
+  generation: number;
 }
 
 const state: InternalState = {
   profile: null,
   state: 'loading',
   errorMessage: null,
+  generation: 0,
 };
 
 type Listener = () => void;
@@ -72,11 +81,15 @@ export function onProfileChange(listener: Listener): () => void {
  * Emits `profile.started` if this is the first load and missing-required is non-empty.
  */
 export async function hydrateProfile(): Promise<UniversalProfile | null> {
+  const gen = state.generation;
   state.state = 'loading';
   state.errorMessage = null;
   notify();
   try {
     const { data } = await get<UniversalProfile>('/identity/v1/profile');
+    // Generation guard — if reset/logout happened during the fetch, drop
+    // this result silently rather than clobber the new state.
+    if (state.generation !== gen) return null;
     state.profile = data;
     state.state = 'ready';
     notify();
@@ -88,6 +101,7 @@ export async function hydrateProfile(): Promise<UniversalProfile | null> {
     }
     return data;
   } catch (err) {
+    if (state.generation !== gen) return null;
     state.state = 'error';
     state.errorMessage = err instanceof Error ? err.message : String(err);
     notify();
@@ -204,5 +218,6 @@ export function __resetProfileStoreForTests(): void {
   state.profile = null;
   state.state = 'loading';
   state.errorMessage = null;
+  state.generation += 1;  // invalidate any in-flight hydrate from a prior test
   listeners.clear();
 }

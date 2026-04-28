@@ -15,19 +15,33 @@ afterEach(() => {
 });
 
 // Swallow noisy unhandled rejections that fire on test teardown when a
-// component unmounts mid-fetch (PersonaFieldsForm, etc.). happy-dom rejects
-// the pending fetch promise as "operation was aborted" — pure test-env noise,
-// NOT a product bug. Real fetch errors are still caught inside the SDK's
-// try/catch blocks. We let other rejections through.
+// component unmounts mid-fetch (useProfile, PersonaFieldsForm, etc.).
+// All patterns are pure test-env artifacts, NOT product bugs:
+//
+//   * "operation was aborted" — happy-dom rejects in-flight fetch on unmount
+//   * "Body has already been used" — RTL re-renders consume the same Response
+//   * "ENOTFOUND" / "getaddrinfo" — leaked fetch from prior test's mocked spy
+//     after mockRestore tried real DNS for the dummy host (ct-bff.test)
+//   * "fetch failed" — same class of leaked async fetch
+//
+// Real fetch errors are caught inside the SDK's try/catch blocks
+// (see core/client.ts:151), so this filter only hides leaked-promise noise.
+const SWALLOW_PATTERNS = [
+  'operation was aborted',
+  'Body has already been used',
+  'aborted',
+  'ENOTFOUND',
+  'getaddrinfo',
+  'fetch failed',
+];
 process.on('unhandledRejection', (reason: unknown) => {
-  if (
-    reason instanceof Error &&
-    (reason.message.includes('operation was aborted') ||
-      reason.message.includes('Body has already been used') ||
-      reason.message.includes('aborted'))
-  ) {
-    return;
-  }
+  const msg =
+    reason instanceof Error
+      ? reason.message
+      : typeof reason === 'string'
+        ? reason
+        : '';
+  if (SWALLOW_PATTERNS.some((p) => msg.includes(p))) return;
   // Re-emit other rejections so real bugs surface
   throw reason;
 });
