@@ -1,0 +1,39 @@
+# @bb/universal-auth | test/chaos/docker-compose.chaos.yml | v1.0.0-rc.1 | 2026-04-28 | BB
+# Chaos overlay — adds Toxiproxy in front of the integration stack.
+#
+# Usage:
+#   docker compose -f test/integration/docker-compose.test.yml \
+#                  -f test/chaos/docker-compose.chaos.yml up -d
+#   pnpm test:chaos
+#
+# Toxiproxy listens on:
+#   - 8474 (admin API — tests configure toxics here)
+#   - 13300 (proxy port → forwards to ct-bff:3300)
+#
+# SDK in tests points at toxiproxy:13300 instead of ct-bff:3300, letting us
+# inject latency / drops / bandwidth limits / etc. per test case.
+
+services:
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.9.0
+    container_name: bb-chaos-toxiproxy
+    command: -host=0.0.0.0 -config=/config/proxies.json
+    ports:
+      - "8474:8474"   # admin API
+      - "13300:13300" # proxy → ct-bff
+    networks:
+      - bb-integration
+    volumes:
+      - ./toxiproxy-config.json:/config/proxies.json:ro
+    depends_on:
+      - ct-bff
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8474/version"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+networks:
+  bb-integration:
+    external: true
+    name: agent_bb-integration
