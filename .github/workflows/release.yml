@@ -40,7 +40,19 @@ jobs:
       - name: Size check before publish
         run: pnpm size-check
 
-      - name: Publish with provenance
-        run: npm publish --provenance --access=restricted
+      # Note: --provenance is incompatible with --access=restricted (npm
+      # CLI rejects with EUSAGE: "Can't generate provenance for new or
+      # private package, you must set access to public"). SLSA provenance
+      # requires public packages because the attestation URL must be
+      # publicly verifiable.
+      #
+      # Spec §15.1 calls for `npm publish --provenance` but spec also
+      # mandates private GitHub Packages registry. These conflict.
+      # v1.0-rc.1 ships restricted without provenance; v1.1 should
+      # revisit — options: (a) flip to public scoped access, (b) drop
+      # provenance requirement from spec, (c) add a post-publish
+      # cosign/sigstore attestation step.
+      - name: Publish (restricted)
+        run: npm publish --access=restricted
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
