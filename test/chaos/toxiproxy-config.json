@@ -1,0 +1,8 @@
+[
+  {
+    "name": "ct-bff",
+    "listen": "0.0.0.0:13300",
+    "upstream": "ct-bff:3300",
+    "enabled": true
+  }
+]

@@ -6,6 +6,41 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
 
 ## [Unreleased — targeting 1.0.0-rc.1]
 
+### Block 6 Day 20-21: Playwright matrix + Toxiproxy chaos (2026-04-28)
+
+**Playwright browser matrix** (per spec §11.5 + plan Block 6 Day 20-21):
+- `playwright.config.ts` — 12 projects: 4 browsers × {desktop, mobile, tablet} = chrome / firefox / webkit / edge across all 3 form factors
+- `BASE_URL` defaults to `https://auth-sdk-demo.bainbridgebuilders.com`; `PLAYWRIGHT_BASE_URL` env override for staging/local
+- HTML + JSON + list reporters; `extraHTTPHeaders` carries `X-Test-Mode-Key` for seeded fixtures
+
+**5 browser E2E test files** in `test/browser/`:
+- `01-signin-flow.spec.ts` — happy path code request/verify, empty-destination rejection, 5-digit code disabled
+- `02-passkey-conditional-ui.spec.ts` — virtual authenticator via Chrome DevTools Protocol (`WebAuthn.addVirtualAuthenticator`); WebKit/Firefox skipped
+- `03-multi-tab-sync.spec.ts` — sign-in propagation + sign-out propagation across tabs via BroadcastChannel
+- `04-consent-screen.spec.ts` — 9 canonical consent checkboxes render; submit button gated on all-9 checked
+- `05-a11y-axe.spec.ts` — `@axe-core/playwright` WCAG 2.2 AA scan on anonymous, sign-in form, authenticated, ConsentScreen views
+
+**Toxiproxy chaos suite** (per spec §11.6 — 7 scenarios):
+- `vitest.chaos.config.ts` — single-fork node env (Toxiproxy state shared across tests), 60s test timeout
+- `test/chaos/docker-compose.chaos.yml` — overlay adds `ghcr.io/shopify/toxiproxy:2.9.0` in front of CT BFF on port 13300; admin API on 8474
+- `test/chaos/toxiproxy-config.json` — single proxy `ct-bff` mapping `:13300 → ct-bff:3300`
+- `test/chaos/setup.ts` — health-polls Toxiproxy + BFF; `beforeEach` clears all toxics + re-enables proxy; `afterEach` defensive cleanup
+- `test/chaos/toxics.ts` — typed `addToxic(type, attributes, opts)` wrapper + `disableProxy()`/`enableProxy()` for total-outage simulation
+
+**7 chaos test files** (one per spec §11.6 scenario):
+- `01-connection-drop-mid-refresh.test.ts` — `reset_peer` toxic during /session/refresh; SDK surfaces network error, NOT 401; clean retry succeeds with same refresh token
+- `02-5xx-burst-events.test.ts` — `timeout` toxic kills /events/v1/ingest connections; 5-call burst all fail; recovery automatic when toxic clears
+- `03-clock-skew.test.ts` — purely client-side; ±1h client skew does not pre-expire valid tokens nor delay needed refreshes (server `expires_at` is authoritative)
+- `04-idb-unavailable.test.ts` — IDB.open rejecting + `indexedDB === undefined` (Safari incognito); SDK paths must guard `typeof` check
+- `05-multi-tab-refresh-race.test.ts` — 2s latency injected on /session/refresh; 5 concurrent refreshes complete within 10s wall-clock (mutex coalesce)
+- `06-tab-crash-restore.test.ts` — discard access token, replay refresh-token-only via /session/refresh → new access token + /me succeeds with original identity
+- `07-sw-registration-blocked.test.ts` — `navigator.serviceWorker.register()` rejects with SecurityError; SDK falls back to foreground flush, queue still operates
+
+**Operational notes:**
+- Browser matrix and chaos tests are out-of-process — require running stacks (`docker compose -f test/integration/docker-compose.test.yml -f test/chaos/docker-compose.chaos.yml up -d` for chaos; demo deployed for browser).
+- CI wiring (docker-in-docker for chaos, Playwright Docker for browser matrix) lands in Block 6 Day 22.
+- Coverage and unit suite unchanged — these tests live in their own configs (`vitest.chaos.config.ts`, `playwright.config.ts`).
+
 ### Block 6 Day 18-19: integration tests + Pact contracts (2026-04-28)
 
 **Integration test infrastructure** (per spec §11.3 + plan Block 6 Day 18-19):
