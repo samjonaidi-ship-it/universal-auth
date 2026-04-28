@@ -62,6 +62,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@pact-foundation/pact": "^16.3.0",
     "@playwright/test": "^1.47.0",
     "@simplewebauthn/server": "^13.0.0",
     "@size-limit/preset-small-lib": "^11.0.0",
