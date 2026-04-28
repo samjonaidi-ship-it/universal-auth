@@ -6,6 +6,39 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
 
 ## [Unreleased — targeting 1.0.0-rc.1]
 
+### Block 6 Day 18-19: integration tests + Pact contracts (2026-04-28)
+
+**Integration test infrastructure** (per spec §11.3 + plan Block 6 Day 18-19):
+- `test/integration/docker-compose.test.yml` — canonical 4-service stack (postgres + ct-bff + twilio-mock + resend-mock) on `bb-integration` network
+- `vitest.integration.config.ts` — node env, single-fork pool, 30s test timeout, fresh-DB-per-suite
+- `test/integration/setup.ts` — health-poll loop (60s timeout) before tests run; `INTEGRATION_BASE_URL` env override allows hitting staging instead of docker
+- `test/integration/helpers.ts` — typed `bff()` fetch wrapper + `signInSeeded()` shortcut for the 4 spec §10.3 seeded users (`test-crew-1` / `test-supplier-1` / `test-client-1` / `test-admin`) + Twilio/Resend mock inspection
+- `test/integration/passkey-simulator.ts` — minimal authenticator simulator (real WebAuthn ceremony lives in Block 6 Day 20-21 Playwright matrix)
+
+**8 integration test files** (one per spec §11.3 case):
+- `01-signup-refresh-revoke.test.ts` — full code flow + /me + refresh + revoke; old token is 401 after revoke
+- `02-passkey-ceremony.test.ts` — register options→verify, authenticate options→verify; same identity returned
+- `03-offline-queue-flush.test.ts` — 5 mutations queued offline → flush FIFO with same Idempotency-Keys
+- `04-event-batching.test.ts` — 5-evt cap → POST /events/v1/ingest; UNKNOWN_EVENT_TYPE permanent drop
+- `05-entitlement-cache.test.ts` — plan upgrade reflects in next refreshEntitlements
+- `06-settings-conflict.test.ts` — concurrent writers; second gets 409 + SDK rehydrates
+- `07-impersonation-audit.test.ts` — admin → impersonate → action → end produces full audit chain
+- `08-revoke-all-cascades.test.ts` — 3 sessions → revoke-all → all 3 die (access + refresh)
+
+**Pact consumer contracts** (per spec §11.4):
+- `test/contract/setup.ts` — Pact V3 provider, generated files land in `pacts/`
+- `test/contract/auth-endpoints.contract.test.ts` — first 2 interactions: `POST /auth/v1/code/request` (enumeration-safe) + `POST /auth/v1/code/verify` (full session shape with matchers)
+- `vitest.contract.config.ts` — single-fork node env, no docker needed (Pact mock runs in-process)
+- Generated pact JSON consumed by CT BFF CI's verifier (separate repo, `samjonaidi-ship-it/BB_ControlTower`)
+
+**Dependencies added:**
+- `@pact-foundation/pact` (devDep) — consumer-side contract testing
+
+**Operational notes:**
+- Tests don't run in CI yet — require Docker for the integration stack. Sam's verification runs locally on a workstation with Docker Desktop OR via GitHub Actions runner with docker-in-docker (Block 6 Day 22 wires the CI step).
+- Existing 261 unit tests still pass (3 consecutive runs verified).
+- Bundle sizes unchanged — Pact is dev-only.
+
 ### Block 6 Day 16-17 + look-back fixes (2026-04-25 — 2026-04-28)
 
 **Unit-coverage push** (`agent/block-6-test-hardening` → main, commit `12dbfc4`):

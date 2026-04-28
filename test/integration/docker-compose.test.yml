@@ -1,0 +1,106 @@
+# @bb/universal-auth | test/integration/docker-compose.test.yml | v1.0.0-rc.1 | 2026-04-28 | BB
+# Integration test stack per SDK spec §11.3 + plan Block 6 Day 18-19.
+#
+# Brings up: ct-bff + postgres (Neon-compatible schema) + twilio-mock + resend-mock
+#
+# Usage from repo root:
+#   docker compose -f test/integration/docker-compose.test.yml up -d
+#   pnpm test:integration
+#   docker compose -f test/integration/docker-compose.test.yml down -v
+#
+# Or from the test runner via testcontainers (when we wire that up Day 19+):
+#   pnpm test:integration  # auto-spawns the stack
+#
+# Service map:
+#   - postgres:        port 5432 (host) → 5432 (container) — Neon-compatible
+#   - ct-bff:          port 3300 (host) → 3300 (container) — real BFF, env-pointed at the postgres
+#   - twilio-mock:     port 8443 (host) → 8080 (container) — captures SMS sends
+#   - resend-mock:     port 8444 (host) → 8080 (container) — captures email sends
+#
+# All services on the `bb-integration` network so they can reach each other by name.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: bb-integration-postgres
+    environment:
+      POSTGRES_USER: bb_test
+      POSTGRES_PASSWORD: bb_test_pwd
+      POSTGRES_DB: ct_bff_test
+    ports:
+      - "5432:5432"
+    networks:
+      - bb-integration
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bb_test -d ct_bff_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    volumes:
+      # Apply CT BFF migrations 000-058 on first start so the schema matches prod
+      - ../../../BB_ControlTower/bff/migrations:/docker-entrypoint-initdb.d:ro
+
+  twilio-mock:
+    # Port 8443 host → 8080 container; captures POST /2010-04-01/Accounts/.../Messages.json
+    # Returns a fake Twilio response shape so the SDK's enroll-flow + code-flow
+    # paths can verify they format the request correctly.
+    image: stoplight/prism:5
+    container_name: bb-integration-twilio-mock
+    command: mock -h 0.0.0.0 -p 8080 /spec/twilio.json
+    ports:
+      - "8443:8080"
+    networks:
+      - bb-integration
+    volumes:
+      - ./mocks/twilio-spec.json:/spec/twilio.json:ro
+
+  resend-mock:
+    image: stoplight/prism:5
+    container_name: bb-integration-resend-mock
+    command: mock -h 0.0.0.0 -p 8080 /spec/resend.json
+    ports:
+      - "8444:8080"
+    networks:
+      - bb-integration
+    volumes:
+      - ./mocks/resend-spec.json:/spec/resend.json:ro
+
+  ct-bff:
+    # The real CT BFF, pointed at the test postgres + mocks
+    # Built from the BB_ControlTower repo's Dockerfile
+    build:
+      context: ../../../BB_ControlTower
+      dockerfile: Dockerfile
+    container_name: bb-integration-ct-bff
+    depends_on:
+      postgres:
+        condition: service_healthy
+      twilio-mock:
+        condition: service_started
+      resend-mock:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgres://bb_test:bb_test_pwd@postgres:5432/ct_bff_test
+      TWILIO_BASE_URL: http://twilio-mock:8080
+      RESEND_BASE_URL: http://resend-mock:8080
+      BB_MODE: test
+      PORT: "3300"
+      # Per spec §10 — accept TEST_MODE_KEY for header-gated test mode
+      TEST_MODE_KEY: test-key-do-not-use-in-prod
+      # Tighten TTLs for fast test cycles per spec §10.2
+      ACCESS_TOKEN_TTL_SEC: "60"
+      REFRESH_TOKEN_TTL_SEC: "300"
+    ports:
+      - "3300:3300"
+    networks:
+      - bb-integration
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:3300/healthz || exit 1"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+
+networks:
+  bb-integration:
+    driver: bridge
