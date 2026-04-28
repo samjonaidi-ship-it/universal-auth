@@ -140,11 +140,11 @@ After that, any push to `main` touching `demo/**` or `src/**` auto-redeploys.
 | 3 | 9 crew consents seeded | **✓** (24 total rows, 9 crew required) |
 | 4 | R2 bucket writable | **✓** (CORS configured) |
 | 5 | Migrations 046-058 applied | **✓** (HWM = 058, 14/14 tables) |
-| 6 | Demo deployed + reachable | **✓ via Railway** (custom DNS pending Porkbun) |
+| 6 | Demo deployed + reachable | **✓ live on https://auth-sdk-demo.bainbridgebuilders.com** (DNS resolved + SSL cert issued via Fastly/Let's Encrypt + HTTP 200 verified 2026-04-25) |
 | 7 | Extendability mock adapter test | ✓ (3 tests) |
 | 8 | No deprecation warnings in demo | ⏳ Block 7 — current placeholder has no SDK imports to test |
 | 9 | Watermarks + zero TODO | ✓ |
 
-**5 of 9 ✓ + 4 pending Phase C completion.**
+**7 of 9 ✓ + 2 deferred to Block 7 (gate 2 demo full kitchen-sink, gate 8 no-deprecation walkthrough).**
 
 When Phase C lands → all 9 ✓ → A4 signed → proceed to Block 6.
