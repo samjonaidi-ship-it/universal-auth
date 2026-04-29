@@ -85,7 +85,7 @@ export function assertModeSafety(
 }
 
 /** Current SDK version. Stamped on every event + every outbound HTTP request. */
-export const SDK_VERSION = '1.0.0-rc.2';
+export const SDK_VERSION = '1.0.0-rc.3';
 
 /**
  * Initialize the SDK. Called once at app startup.
