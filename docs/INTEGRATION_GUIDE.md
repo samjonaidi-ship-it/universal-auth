@@ -1,4 +1,10 @@
-# Integration Guide | `@bainbridgebuilders/universal-auth` | v1.0.0-rc.2 | 2026-04-28 | BB
+# Integration Guide | `@bainbridgebuilders/universal-auth` | v1.0.0-rc.3 | 2026-04-29 | BB
+
+> **Read first**: [`CREW_UX_PRINCIPLES.md`](./CREW_UX_PRINCIPLES.md). BB
+> Express users wear gloves and have dirty hands. Every UX decision in
+> this SDK is filtered through that constraint. If your integration
+> requires the user to type, scroll precisely, or hit a small target
+> repeatedly, you're doing it wrong.
 
 How to add `@bainbridgebuilders/universal-auth` to a Bainbridge Builders consumer app (CalExp5/BB_Express, ControlTower SPA, future Customer Portal, future Buddy Console). Spec citations point to `BB_UNIVERSAL_AUTH_SDK_SPEC.md v1.4.3`.
 
@@ -175,6 +181,41 @@ await initUniversalAuth({
 ```
 
 The demo at `auth-sdk-demo.bainbridgebuilders.com` falls under the default and does NOT need the override.
+
+---
+
+## 5a. Crew sign-in pattern — wrap `<SignInForm>` for low-touch returning-user flow
+
+For consumer apps with field crew users (gloves, dirty hands — see
+[`CREW_UX_PRINCIPLES.md`](./CREW_UX_PRINCIPLES.md)), wrap the bare
+`<SignInForm>` with a recent-users picker so returning users sign in
+in **one tap** instead of re-typing their email.
+
+Reference implementation: `CalExp5/src/components/auth/CrewSignInGate.jsx`.
+
+**Pattern**:
+
+1. After every successful sign-in, persist `{email, display_name,
+   initials, badgeColor}` to `localStorage('bb-recent-users')` (max 5
+   entries, oldest evicted on overflow).
+2. On mount, read that list. If non-empty, render avatar tiles as the
+   primary surface; tap a tile → call `useAuth().requestCode({
+   destination: email, channel: 'email', appId: 'bb_express' })`
+   directly → render `<CodeEntry>` with the destination shown.
+3. Provide a "Use a different email" link that falls through to the
+   bare `<SignInForm>` for first-time / shared-device cases.
+4. Provide a "×" forget-this-user button on each tile (privacy +
+   shared-device hygiene).
+
+Why a custom wrapper instead of a SignInForm prop? `<SignInForm>` v1.0
+doesn't accept a `defaultDestination` prop — its destination input is
+internal. v1.1 will likely add this, at which point the wrapper can
+shrink. For now, the wrapper composes `useAuth().requestCode + signIn`
+with `<CodeEntry>` directly when the email is already known.
+
+**Required CSS**: tap targets must be ≥88×88 px for the user tiles.
+See `CalExp5/src/index.css` `.bb-user-tile` block for the canonical
+implementation.
 
 ---
 
