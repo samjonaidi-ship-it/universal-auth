@@ -1,11 +1,27 @@
-// @bb/universal-auth | src/index.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bb/universal-auth | src/index.ts | v1.0.0-rc.3 | 2026-04-29 | BB
 // Public barrel — named exports only (tree-shakeable per §8.2).
+//
+// rc.3 additions: direct imperative token-manager surface (`getAccessToken`,
+// `getCurrentSessionId`, `hasLiveAccessToken`) so non-React consumers (e.g.
+// CalExp5's api-base.js wrapper) can read the current bearer token without
+// going through the React context tree. `getAuth()` upgraded from Day-1
+// stub to a real client wrapping these + sign-out flow.
 
 export type { UniversalAuthConfig } from './config.js';
 export { initUniversalAuth, SDK_VERSION } from './config.js';
 
 // Imperative (non-React) entry point per §5.3
-export { getAuth } from './imperative/getAuth.js';
+export { getAuth, type AuthClient, type ImperativeSessionSnapshot } from './imperative/getAuth.js';
+
+// rc.3: direct token-manager exports so non-React consumers can pull a
+// fresh bearer token without instantiating the AuthClient. Useful for
+// thin wrappers like CalExp5's api-base.js that need to inject
+// `Authorization: Bearer <token>` on every fetch.
+export {
+  getAccessToken,
+  getCurrentSessionId,
+  hasLiveAccessToken,
+} from './core/token-manager.js';
 
 // Error classes per §3.7 (17 total)
 export * from './errors.js';

@@ -4,6 +4,32 @@ All notable changes to `@bainbridgebuilders/universal-auth` are documented here.
 
 Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line numbers drift on every version bump; section numbers are stable.
 
+## [1.0.0-rc.3] — 2026-04-29
+
+**Real imperative API for non-React consumers.** Lands in advance of CalExp5 cutover so its `api-base.js` wrapper can pull a refreshable bearer token without instantiating a React tree. No public type breaks; only adds surface.
+
+### Changed
+
+- **`src/imperative/getAuth.ts` — replaced Day-1 stub** with a real client that wraps the existing token-manager. The stub was advertised as "arrives Block 3 (Day 5-6)" but never materialized; rc.3 closes that gap. Surface (per spec §5.3):
+  - `signIn({ destination, channel? })` — delegates to `flows/code-flow.requestCode`
+  - `verify({ destination, code })` — delegates to `flows/code-flow.verifyCode`
+  - `getSession()` — synchronous snapshot `{ session_id, is_authenticated }`. Intentionally does NOT expose the access token directly (use `getAccessToken()` for that — refreshable + never stale)
+  - `getAccessToken()` — async; returns a valid token, refreshing if expired; null when anonymous
+  - `onSessionChange(listener)` — listener fires after sign-in / refresh / sign-out / multi-tab sync
+  - `signOut()` — delegates to `flows/recovery.signOut`
+- **`src/index.ts` — direct token-manager exports** for non-React consumers that don't want to instantiate the AuthClient: `getAccessToken`, `getCurrentSessionId`, `hasLiveAccessToken`. Useful for thin fetch wrappers that only need to inject `Authorization: Bearer <token>`.
+- **`SDK_VERSION`** bumped `1.0.0-rc.2` → `1.0.0-rc.3`.
+
+### Tests
+
+- `test/unit/imperative/getAuth.test.ts` rewritten — stub-state assertions replaced with real-client validation. signIn/verify mocked at the flow level; getSession + getAccessToken + onSessionChange validated against in-memory token-manager state. 387 tests pass / 0 skipped.
+
+### Migration notes
+
+For consumers on rc.2: no code changes required. `getAuth().signIn()` previously threw "not yet implemented" — if any consumer was relying on that throw they need to handle the new resolved-promise behavior. CalExp5 cutover (Phase D of the cutover plan) now uses `getAccessToken()` directly from the root barrel; that path was added in rc.3.
+
+---
+
 ## [1.0.0-rc.2] — 2026-04-28
 
 **Critical fix for Vite/Rollup-based consumers** (CalExp5, future ControlTower SPA, the demo itself). Plus tier-3 hardening from the look-back audit. Recommended upgrade for all consumers on rc.1.
