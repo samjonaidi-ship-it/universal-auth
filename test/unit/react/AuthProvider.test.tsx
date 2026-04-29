@@ -1,8 +1,13 @@
-// @bb/universal-auth | test/unit/react/AuthProvider.test.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bb/universal-auth | test/unit/react/AuthProvider.test.tsx | v1.0.1 | 2026-04-29 | BB
+// v1.0.1 LOOKBACK_2026-04-29-overnight audit fix F-N5: stub global.fetch
+//        so AuthProvider's hydration call (`/auth/v1/me`) doesn't trigger
+//        a real DNS lookup against `ct-bff.test.example.com`. Eliminates
+//        the intermittent happy-dom AbortError race during DOM teardown.
+//
 // A3 gate #1 — 3-context split: components subscribing to one context do
 // NOT re-render when another context's value changes.
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
 import { useContext, useRef, type ReactNode } from 'react';
 import {
@@ -50,6 +55,23 @@ describe('react/AuthProvider — 3-context split (A3 gate #1)', () => {
   beforeEach(async () => {
     setupSDK();
     await __resetDbForTests();
+    // F-N5 audit fix: stub fetch so the AuthProvider hydration call to
+    // `/auth/v1/me` doesn't perform a real DNS lookup. happy-dom's Fetch
+    // honors AbortSignal during DOM teardown, but a still-pending DNS
+    // resolution after the test finishes intermittently fires AbortError
+    // as an unhandled promise rejection. Stubbing fetch resolves the
+    // promise synchronously so nothing remains in-flight.
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/auth/v1/me')) {
+        return jsonResp(401, { error: 'Not authenticated', protocol_version: 'v1' });
+      }
+      return jsonResp(404, { error: 'not_stubbed', url });
+    }));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('does NOT throw when no children consume contexts (smoke test)', () => {

@@ -178,6 +178,18 @@ The demo at `auth-sdk-demo.bainbridgebuilders.com` falls under the default and d
 
 ---
 
+## 5b. WebAuthn enrollment — known weakness (v1.0)
+
+The current `/auth/v1/enroll/activate` flow accepts a WebAuthn credential payload (`{attestationObject, clientDataJSON}`) WITHOUT first calling `/auth/v1/passkey/register/options` to generate + store a server-side challenge. The CT BFF therefore falls back to extracting the challenge from `clientDataJSON` only — there's no server-stored challenge to bind against.
+
+**Practical impact:** an attacker who can capture a `clientDataJSON` from another flow could replay it during enrollment. Not a v1.0 cutover blocker for the 14 internal crew, but flagged for v1.1 hardening (audit reference: F-N12 in `LOOKBACK_2026-04-29-overnight.md`).
+
+**v1.1 plan:** SDK enroll-flow will be extended to call `/auth/v1/passkey/register/options` (passing `identityId` from the verify response) before invoking `navigator.credentials.create()`. CT BFF will then drop the `clientDataJSON`-only fallback in `verifyRegistrationAttestation` and require a stored challenge.
+
+**Workaround for v1.0:** prefer the `'pin'` enrollment method during the cutover window. The `'webauthn'` path works but with the security caveat above.
+
+---
+
 ## 6. Feature flag pattern (gradual rollout)
 
 Recommended pattern for migrating an existing app:
