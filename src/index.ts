@@ -21,6 +21,13 @@ export {
   getAccessToken,
   getCurrentSessionId,
   hasLiveAccessToken,
+  // 2026-04-29 (CalExp5 cutover Day-27+1): expose setSession for consumers
+  // who mint sessions through non-SDK flows (e.g., PIN-based sign-in via
+  // POST /auth/v1/pin/verify). Same shape used by code-flow / enroll-flow /
+  // passkey-flow internally — exposing it lets external apps inject the
+  // resulting tokens through the canonical AuthProvider lifecycle.
+  setSession,
+  type SessionTokens,
 } from './core/token-manager.js';
 
 // Error classes per §3.7 (17 total)
