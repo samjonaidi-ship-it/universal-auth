@@ -1,6 +1,8 @@
-/* @bb/universal-auth | src/react/components/styles.css | v1.0.0-rc.1 | 2026-04-24 | BB
+/* @bainbridgebuilders/universal-auth | src/react/components/styles.css | v1.0.0-rc.4 | 2026-04-30 | BB
  * CSS custom properties only (§8.5). Consumer apps override --bb-* vars to theme.
  * No inline styles in any component (verified by scripts/verify-bundle.ts).
+ *
+ * v1.0.0-rc.4: + ConsentCenter, PermissionCenter, ConsentVersionWatcher overlay.
  */
 
 :where(.bb-auth-signin-form,
@@ -11,7 +13,10 @@
        .bb-auth-app-chooser,
        .bb-auth-persona-chooser,
        .bb-auth-agent-banner,
-       .bb-auth-consent-screen) {
+       .bb-auth-consent-screen,
+       .bb-auth-consent-center,
+       .bb-auth-permission-center,
+       .bb-auth-consent-version-overlay) {
   --bb-color-primary: #c8102e;
   --bb-color-text: #1a1a1a;
   --bb-color-bg: #ffffff;
@@ -187,4 +192,177 @@
 .bb-auth-persona-chooser-card-subtitle {
   color: var(--bb-color-disabled);
   font-size: 0.9rem;
+}
+
+/* ── ConsentCenter (v1.0.0-rc.4) ─────────────────────────────────────────── */
+
+.bb-auth-consent-center {
+  display: block;
+}
+
+.bb-auth-consent-center-section {
+  margin-top: calc(var(--bb-spacing) * 2);
+}
+
+.bb-auth-consent-center-section h3 {
+  font-size: 1.05rem;
+  margin: 0 0 var(--bb-spacing);
+  color: var(--bb-color-text);
+}
+
+.bb-auth-consent-center-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.bb-auth-consent-center-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--bb-spacing);
+  padding: var(--bb-spacing);
+  border: 1px solid var(--bb-color-border);
+  border-radius: var(--bb-radius);
+  background: var(--bb-color-bg);
+}
+
+.bb-auth-consent-center-row-revoked {
+  background: var(--bb-color-bg-subtle);
+  opacity: 0.85;
+}
+
+.bb-auth-consent-center-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bb-auth-consent-center-row-title {
+  font-weight: 600;
+}
+
+.bb-auth-consent-center-row-meta {
+  font-size: 0.85rem;
+  color: var(--bb-color-disabled);
+}
+
+.bb-auth-consent-center-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bb-auth-consent-center-required {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  color: var(--bb-color-disabled);
+  letter-spacing: 0.05em;
+}
+
+/* ── PermissionCenter (v1.0.0-rc.4) ──────────────────────────────────────── */
+
+.bb-auth-permission-center {
+  display: block;
+}
+
+.bb-auth-permission-center-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.bb-auth-permission-center-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--bb-spacing);
+  padding: var(--bb-spacing);
+  border: 1px solid var(--bb-color-border);
+  border-radius: var(--bb-radius);
+  background: var(--bb-color-bg);
+}
+
+.bb-auth-permission-center-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bb-auth-permission-center-row-title {
+  font-weight: 600;
+}
+
+.bb-auth-permission-center-row-meta {
+  font-size: 0.85rem;
+  color: var(--bb-color-disabled);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.bb-auth-permission-center-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bb-auth-permission-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.bb-auth-permission-pill-granted {
+  background: #1a7a3a;
+  color: #fff;
+}
+
+.bb-auth-permission-pill-denied {
+  background: var(--bb-color-error);
+  color: #fff;
+}
+
+.bb-auth-permission-pill-revoked {
+  background: var(--bb-color-disabled);
+  color: #fff;
+}
+
+.bb-auth-permission-pill-prompt {
+  background: var(--bb-color-bg-subtle);
+  color: var(--bb-color-text);
+  border: 1px solid var(--bb-color-border);
+}
+
+/* ── ConsentVersionWatcher overlay (v1.0.0-rc.4) ─────────────────────────── */
+
+.bb-auth-consent-version-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: var(--bb-spacing);
+  z-index: 1000;
+}
+
+.bb-auth-consent-version-modal {
+  background: var(--bb-color-bg);
+  border-radius: var(--bb-radius);
+  padding: calc(var(--bb-spacing) * 2);
+  max-width: 560px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
 }
