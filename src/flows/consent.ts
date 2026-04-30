@@ -1,8 +1,13 @@
-// @bb/universal-auth | src/flows/consent.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/flows/consent.ts | v1.0.0-rc.4 | 2026-04-30 | BB
 // Consent endpoint client (§3.4 + §D2.6).
 //
 // Wired by <ConsentScreen> at enrollment time + the Wizard's audit-replay UI.
 // Hard-gate: missing required consent on the next API call → CONSENT_REQUIRED.
+//
+// v1.0.0-rc.4 (2026-04-30): added `listAllConsents()` for <ConsentCenter>'s
+// history section (revoked consents). Hits CT BFF `/consents/all` which
+// returns the full audit trail including revoked_at. See PERSONA_PCP_DESIGN.md
+// §4 (FHIR-grade consents) and §10 (UX/UI implications).
 
 import { get, post } from '../core/client.js';
 import { emit } from '../core/event-reporter.js';
@@ -68,4 +73,32 @@ export interface ListedConsent {
 export async function listConsents(): Promise<readonly ListedConsent[]> {
   const { data } = await get<{ consents: readonly ListedConsent[] }>('/identity/v1/consents');
   return data.consents;
+}
+
+/**
+ * List ALL consents (active + revoked + superseded) for the current identity.
+ * Used by `<ConsentCenter>` to render the "History" section.
+ *
+ * NOTE: CT BFF `/consents/all` returns `accepted_at` instead of `granted_at`.
+ * We normalize to `granted_at` here so the UI types stay consistent.
+ */
+export async function listAllConsents(): Promise<readonly ListedConsent[]> {
+  interface RawAllResponse {
+    consents: readonly {
+      id: string;
+      consent_type: string;
+      policy_version: string;
+      accepted_at?: string;
+      granted_at?: string;
+      revoked_at: string | null;
+    }[];
+  }
+  const { data } = await get<RawAllResponse>('/identity/v1/consents/all');
+  return data.consents.map((c) => ({
+    id: c.id,
+    consent_type: c.consent_type,
+    policy_version: c.policy_version,
+    granted_at: c.granted_at ?? c.accepted_at ?? '',
+    revoked_at: c.revoked_at,
+  }));
 }

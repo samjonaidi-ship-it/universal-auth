@@ -1,6 +1,8 @@
-// @bb/universal-auth | src/react/index.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/react/index.ts | v1.0.0-rc.4 | 2026-04-30 | BB
 // React subpath barrel — `@bainbridgebuilders/universal-auth/react`.
 // Tree-shakeable named exports only (sideEffects: false).
+//
+// v1.0.0-rc.4: + ConsentCenter, PermissionCenter, ConsentVersionWatcher.
 
 // Provider + contexts
 export {
@@ -65,3 +67,18 @@ export {
   ProfileCompletenessBar,
   type ProfileCompletenessBarProps,
 } from './components/ProfileCompletenessBar.js';
+
+// Block 6 (v1.0.0-rc.4) — Consent + Permission settings UIs
+export {
+  ConsentCenter,
+  type ConsentCenterProps,
+} from './components/ConsentCenter.js';
+export {
+  PermissionCenter,
+  type PermissionCenterProps,
+} from './components/PermissionCenter.js';
+export {
+  ConsentVersionWatcher,
+  computeStale,
+  type ConsentVersionWatcherProps,
+} from './ConsentVersionWatcher.js';
