@@ -177,12 +177,7 @@ describe('ComplianceDocsSection', () => {
     });
   });
 
-  // TODO(2026-05-01): empty-state assertion fails despite component rendering
-  // "No documents on file." string. Suspected state-bleed from prior tests
-  // in this file (useIdentity store retains resources from earlier
-  // mockResolvedValue calls). Skip + investigate in a clearheaded session.
-  // Component empty-state code path: src/react/components/ComplianceDocsSection.tsx:84
-  it.skip('shows empty state when no docs', async () => {
+  it('shows empty state when no docs', async () => {
     fetchSpy.mockResolvedValue(jsonResp(200, { ...ENVELOPE, resources: [] }));
     render(
       <AuthProvider initialSession={SESSION}>
