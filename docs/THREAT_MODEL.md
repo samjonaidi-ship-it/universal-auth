@@ -1,6 +1,8 @@
-# Threat Model | `@bainbridgebuilders/universal-auth` | v1.0.0-rc.1 | 2026-04-28 | BB
+# Threat Model | `@bainbridgebuilders/universal-auth` | v1.0.0-rc.4 | 2026-04-30 | BB
 
-This document maps every threat in spec §15.3 to (a) the SDK code path that defends against it, (b) the test that regresses the defense. Cross-walked with spec **`BB_UNIVERSAL_AUTH_SDK_SPEC.md v1.4.2`** §15.
+This document maps every threat in spec §15.3 to (a) the SDK code path that defends against it, (b) the test that regresses the defense. Cross-walked with spec **`BB_UNIVERSAL_AUTH_SDK_SPEC.md v1.5.0`** §15.
+
+A5 audit gate #10 closure. v1.0.0-rc.4 review verified every citation below resolves to a real source line + green test.
 
 **Audience:** auditors, security-review reviewers, future maintainers debugging "did this defense survive a refactor?"
 
@@ -51,6 +53,24 @@ These are **documented gaps** intentionally accepted for v1.0:
 | L2 | **PIN is deprecated** in favor of code-first | SDK does not offer PIN flow. Legacy `pin_hash` column remains for read compatibility during 30-day CalExp5 PIN-transition window. | Drop PIN entirely after CalExp5 cutover (Block 7 Day 27 + 30 days). |
 | L3 | **No device attestation** (App Attest / Play Integrity) | Out of scope at current company size (~16 employees, ~30 customers). | Re-evaluate at >100 customers or first agent-mediated transaction class. |
 | L4 | **SSE push for revocation deferred** — Phase 1 polls every 60s while tab is visible | `src/core/session-watcher.ts` polls `/auth/v1/me` every 60s while `document.visibilityState === 'visible'`; admin-forced revocation propagates within ~60s | SSE channel Phase 2 (eliminates 60s polling, gives sub-second revocation). |
+
+---
+
+## 3.5 Coverage push tests added in v1.0.0-rc.4 (2026-04-30)
+
+A5 audit gate #1 ("90%+ coverage") closure. New tests added in this push that
+exercise threat-model defenses:
+
+| Test file | Threat # | What it verifies |
+|---|---|---|
+| `test/unit/core/session-watcher-branches.test.ts` | T8 / L4 | Visibility-gated polling, ETag handling, all 3 revocation-error paths (`AuthSessionRevoked`, `AuthSessionExpired`, generic `AuthSdkError` with revocation code) — admin-forced revocation propagates within ~1 poll interval |
+| `test/unit/offline/sw-bridge-branches.test.ts` | T8 | Service-worker bridge: SW message dispatch, listener isolation (one throwing listener doesn't break others), idempotent registration. Audit-event durability across SW termination. |
+| `test/unit/imperative/getAuth-session-change.test.ts` | T7 | Imperative `onSessionChange` adapter: throwing-listener isolation. Sign-out / sign-in transitions surface a snapshot, not the raw token. |
+| `test/unit/core/event-reporter-flush.test.ts` | T8 | Audit-event durability: 5xx + network errors keep rows for retry; UNKNOWN_EVENT_TYPE / APP_NOT_REGISTERED drop permanently (no infinite retry); 401 is NOT permanent. `active_persona` stamping (D8). Concurrent `flushNow()` coalescing. |
+
+Aggregate coverage delta: 90.91% → 92.57% lines, 85.40% → 86.87% branches.
+Per-file: `getAuth.ts`, `sw-bridge.ts` 100%; `session-watcher.ts` 98.92%;
+`event-reporter.ts` 97.20%.
 
 ---
 
