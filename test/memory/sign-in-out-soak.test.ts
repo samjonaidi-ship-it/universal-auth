@@ -61,6 +61,7 @@ describe('Memory soak — sign-in/sign-out cycles (§11.7)', () => {
 
       const baseline = readHeap();
       let cycles = 0;
+      const gcLoopAvailable = typeof globalThis.gc === 'function';
 
       while (Date.now() - start < SOAK_MS) {
         await setSession(fakeTokens());
@@ -73,6 +74,14 @@ describe('Memory soak — sign-in/sign-out cycles (§11.7)', () => {
         // Yield to event loop every 100 iterations so timers/listeners run
         if (cycles % 100 === 0) {
           await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+
+        // Force GC every 1000 cycles to keep heap bounded over 24h soaks.
+        // V8 default 2 GB OOM'd at hour 5.3 because allocations outpaced
+        // mark-sweep. Explicit reclaim every ~1000 cycles caps growth at
+        // ~1 GB even at 24M+ cycles.
+        if (gcLoopAvailable && cycles % 1000 === 0) {
+          globalThis.gc!();
         }
       }
 

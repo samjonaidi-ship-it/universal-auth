@@ -1,6 +1,11 @@
-# @bb/universal-auth | .github/workflows/chaos.yml | v1.0.0-rc.1 | 2026-04-28 | BB
-# Nightly chaos + 24h memory soak per spec §11.6 + §11.7 L1139.
-# Heavier than CI; runs at 04:00 UTC and on workflow_dispatch.
+# @bb/universal-auth | .github/workflows/chaos.yml | v1.1.0 | 2026-04-30 | BB
+# Nightly chaos + 24h memory soak per spec §11.6 + §11.7.
+# v1.1.0 (2026-04-30):
+#   - Cross-repo checkout of samjoonaidi-ship-it/BB_ControlTower as sibling so
+#     test/integration/docker-compose.test.yml can build ct-bff from source
+#     (was failing in 30s with "path .../BB_ControlTower not found").
+#   - memory-24h: bump heap to 4 GB + force GC every cycle (prior nightly OOM'd
+#     at hour 5.3 of 24 with default 2 GB heap).
 
 name: Nightly Chaos + Soak
 on:
@@ -17,7 +22,18 @@ jobs:
         image: docker:24-dind
         options: --privileged
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout universal-auth
+        uses: actions/checkout@v4
+        with:
+          path: universal-auth
+
+      - name: Checkout BB_ControlTower (sibling repo for ct-bff Dockerfile + migrations)
+        uses: actions/checkout@v4
+        with:
+          repository: samjonaidi-ship-it/BB_ControlTower
+          token: ${{ secrets.BB_CROSS_REPO_PAT }}
+          path: BB_ControlTower
+
       - uses: pnpm/action-setup@v4
         with:
           version: 10
@@ -25,8 +41,14 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+          cache-dependency-path: universal-auth/pnpm-lock.yaml
+
+      - name: Install deps
+        working-directory: universal-auth
+        run: pnpm install --frozen-lockfile
+
       - name: Bring up integration + chaos stacks
+        working-directory: universal-auth
         run: |
           docker compose \
             -f test/integration/docker-compose.test.yml \
@@ -39,15 +61,25 @@ jobs:
             fi
             sleep 2
           done
+
       - name: Run chaos suite (7 scenarios)
+        working-directory: universal-auth
         run: pnpm test:chaos
+
       - name: Tear down stacks
         if: always()
+        working-directory: universal-auth
         run: |
           docker compose \
             -f test/integration/docker-compose.test.yml \
             -f test/chaos/docker-compose.chaos.yml \
             down -v
+
+      - name: Capture container logs on failure
+        if: failure()
+        working-directory: universal-auth
+        run: |
+          docker compose -f test/integration/docker-compose.test.yml -f test/chaos/docker-compose.chaos.yml logs --tail=200 || true
 
   memory-24h:
     runs-on: ubuntu-latest
@@ -65,5 +97,7 @@ jobs:
       - name: 24h memory-leak soak (gates heap budget)
         env:
           BB_SOAK_DURATION_MS: '86400000'  # 24h
-          NODE_OPTIONS: '--expose-gc'
+          # 4 GB heap + expose GC for explicit reclaim between cycles
+          # (prior 2 GB default OOM'd at hour 5.3)
+          NODE_OPTIONS: '--expose-gc --max-old-space-size=4096'
         run: pnpm test:memory
