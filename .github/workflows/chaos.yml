@@ -62,9 +62,39 @@ jobs:
             sleep 2
           done
 
+      - name: Wait for ct-bff to become healthy (separate from toxiproxy)
+        working-directory: universal-auth
+        run: |
+          for i in $(seq 1 90); do
+            STATE=$(docker inspect --format='{{.State.Health.Status}}' bb-integration-ct-bff 2>/dev/null || echo "missing")
+            echo "  attempt $i: ct-bff health=$STATE"
+            if [ "$STATE" = "healthy" ]; then
+              echo "ct-bff is healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "ct-bff did not become healthy after 180s — dumping logs"
+          docker logs bb-integration-ct-bff --tail=200 || true
+          docker logs bb-integration-postgres --tail=80 || true
+          exit 1
+
       - name: Run chaos suite (7 scenarios)
         working-directory: universal-auth
         run: pnpm test:chaos
+
+      - name: Capture container logs on failure (BEFORE teardown — order matters)
+        if: failure()
+        working-directory: universal-auth
+        run: |
+          echo "=== ct-bff ==="
+          docker logs bb-integration-ct-bff --tail=300 2>&1 || true
+          echo "=== postgres ==="
+          docker logs bb-integration-postgres --tail=100 2>&1 || true
+          echo "=== toxiproxy ==="
+          docker logs bb-chaos-toxiproxy --tail=100 2>&1 || true
+          echo "=== compose ps ==="
+          docker compose -f test/integration/docker-compose.test.yml -f test/chaos/docker-compose.chaos.yml ps -a || true
 
       - name: Tear down stacks
         if: always()
@@ -74,12 +104,6 @@ jobs:
             -f test/integration/docker-compose.test.yml \
             -f test/chaos/docker-compose.chaos.yml \
             down -v
-
-      - name: Capture container logs on failure
-        if: failure()
-        working-directory: universal-auth
-        run: |
-          docker compose -f test/integration/docker-compose.test.yml -f test/chaos/docker-compose.chaos.yml logs --tail=200 || true
 
   memory-24h:
     runs-on: ubuntu-latest
