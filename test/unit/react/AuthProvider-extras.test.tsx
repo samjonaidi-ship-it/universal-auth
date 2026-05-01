@@ -1,4 +1,4 @@
-// @bb/universal-auth | test/unit/react/AuthProvider-extras.test.tsx | v1.0.0-rc.1 | 2026-04-28 | BB
+// @bainbridgebuilders/universal-auth | test/unit/react/AuthProvider-extras.test.tsx | v1.0.0-rc.1 | 2026-04-28 | BB
 // Coverage push for AuthProvider — exercise active-persona resolution
 // branches (URL match, primary fallback, custom resolver, hydrate-from-server).
 

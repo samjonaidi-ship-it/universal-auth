@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/flows/impersonation.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/flows/impersonation.ts | v1.0.1 | 2026-05-01 | BB
 // Admin impersonation — "act as" another identity for support/debugging.
 //
 // Invariants per spec:
@@ -9,6 +9,11 @@
 //
 // The server issues a distinct "acting_as" session id; the SDK swaps it in
 // for the lifetime of the impersonation and restores the admin session on end.
+//
+// v1.0.1 (C9): when `endImpersonation`'s server call fails, we still clear
+// local state (better UX — UI returns to admin view immediately) but emit
+// `impersonation.local_clear_drift` so the audit log captures the
+// inconsistency. Sam approved this trade-off in the 2026-05-01 audit triage.
 
 import { post } from '../core/client.js';
 import { setSession } from '../core/token-manager.js';
@@ -99,11 +104,28 @@ export async function startImpersonation(input: StartImpersonationInput): Promis
 }
 
 export async function endImpersonation(): Promise<void> {
+  let serverError: unknown = null;
   try {
     await post('/auth/v1/impersonation/end', {});
+  } catch (err) {
+    // v1.0.1 C9 — capture for the drift event below; do NOT rethrow. UI
+    // reverts to admin view immediately; audit log catches the drift.
+    serverError = err;
   } finally {
     setActingAs(null);
-    // Regardless of server response, event always fires so audit trail is complete.
+    if (serverError !== null) {
+      // Local-clear-drift signal: client cleared acting_as without the server
+      // confirming the end. Audit log + ops dashboards should treat this as a
+      // soft-anomaly (not a security incident, but worth a follow-up reconciliation).
+      void emit('impersonation.local_clear_drift', {
+        reason: 'server_call_failed',
+        error_message:
+          serverError instanceof Error ? serverError.message : String(serverError),
+        error_name: serverError instanceof Error ? serverError.name : 'Unknown',
+      });
+    }
+    // Regardless of server response, the canonical "ended" event always fires
+    // so audit trail records the local termination point.
     void emit('impersonation.ended', {});
   }
 }

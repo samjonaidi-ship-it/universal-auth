@@ -1,4 +1,4 @@
-// @bb/universal-auth | test/unit/react/useAuth.test.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | test/unit/react/useAuth.test.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
 // useAuth hook contract — hasPersona, switchActivePersona, allFeatures, agent.
 
 import { describe, it, expect, beforeEach } from 'vitest';

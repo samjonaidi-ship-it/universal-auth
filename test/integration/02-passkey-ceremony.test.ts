@@ -1,4 +1,4 @@
-// @bb/universal-auth | test/integration/02-passkey-ceremony.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @bainbridgebuilders/universal-auth | test/integration/02-passkey-ceremony.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Integration test #2 per spec §11.3 — full passkey register + authenticate ceremony.
 //
 // Real WebAuthn requires a browser (handled in Block 6 Day 20-21 Playwright matrix).

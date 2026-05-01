@@ -92,11 +92,25 @@ async function flushOne(row: QueuedMutation): Promise<Outcome> {
       method: row.method,
       credentials: 'include',
       headers,
+      // v1.0.1 (C1 lookback): match the B4 hardening applied to client.ts —
+      // CT BFF never legitimately redirects an offline-queue replay; manual
+      // redirect surfaces 3xx as opaque-redirect (status 0) which we treat as
+      // a network error, preventing auth-header leak across cross-origin
+      // redirect targets.
+      redirect: 'manual',
+      referrerPolicy: 'strict-origin-when-cross-origin',
     };
     if (row.body !== undefined) init.body = JSON.stringify(row.body);
     response = await fetch(url, init);
   } catch {
     // Network error → retry policy
+    return handleTransientFailure(row, 'network');
+  }
+
+  // v1.0.1 (C1 lookback): opaque-redirect → treat as a transient failure (the
+  // server may be temporarily mis-configured to issue a 3xx). 304 is impossible
+  // here because reconciler replays mutations, never conditional GETs.
+  if (response.type === 'opaqueredirect') {
     return handleTransientFailure(row, 'network');
   }
 

@@ -1,4 +1,4 @@
-// @bb/universal-auth | test/integration/01-signup-refresh-revoke.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @bainbridgebuilders/universal-auth | test/integration/01-signup-refresh-revoke.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Integration test #1 per spec §11.3 — full sign-up → refresh → revoke loop.
 //
 // Asserts:

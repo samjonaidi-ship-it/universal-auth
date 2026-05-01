@@ -1,4 +1,4 @@
-// @bb/universal-auth | test/security/03-token-storage.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @bainbridgebuilders/universal-auth | test/security/03-token-storage.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Spec §15.1 L1353-L1354 — access tokens MUST NOT touch localStorage,
 // sessionStorage, plain cookies (without HttpOnly + SameSite + Secure),
 // or unencrypted IndexedDB.

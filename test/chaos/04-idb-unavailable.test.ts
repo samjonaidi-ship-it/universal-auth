@@ -1,4 +1,4 @@
-// @bb/universal-auth | test/chaos/04-idb-unavailable.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @bainbridgebuilders/universal-auth | test/chaos/04-idb-unavailable.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Spec §11.6 scenario 4 — IndexedDB unavailable (e.g., Safari incognito).
 //
 // This scenario is purely client-side (no Toxiproxy). We simulate the

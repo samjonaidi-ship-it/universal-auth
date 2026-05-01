@@ -1,4 +1,4 @@
-// @bb/universal-auth | demo/src/App.tsx | v1.0.0-rc.1 | 2026-04-28 | BB
+// @bainbridgebuilders/universal-auth | demo/src/App.tsx | v1.0.0-rc.1 | 2026-04-28 | BB
 // Block 7 demo expansion — actually exercises the SDK end-to-end against the
 // production CT BFF.
 //

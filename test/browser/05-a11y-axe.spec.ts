@@ -1,4 +1,4 @@
-// @bb/universal-auth | test/browser/05-a11y-axe.spec.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @bainbridgebuilders/universal-auth | test/browser/05-a11y-axe.spec.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Accessibility audit per WCAG 2.2 AA — A4 gate #4 (deferred from A4 to A5).
 // Uses @axe-core/playwright to inject axe-core and assert zero violations.
 

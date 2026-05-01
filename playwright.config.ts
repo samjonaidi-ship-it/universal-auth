@@ -1,4 +1,4 @@
-// @bb/universal-auth | playwright.config.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @bainbridgebuilders/universal-auth | playwright.config.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Playwright matrix per spec §11.5 + plan Block 6 Day 20-21.
 //
 // 12 project configs = 4 browsers × 3 form factors:

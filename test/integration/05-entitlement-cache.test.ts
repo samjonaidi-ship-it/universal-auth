@@ -1,4 +1,4 @@
-// @bb/universal-auth | test/integration/05-entitlement-cache.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @bainbridgebuilders/universal-auth | test/integration/05-entitlement-cache.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Integration test #5 per spec §11.3 — entitlement cache invalidation on plan change.
 //
 // Asserts:

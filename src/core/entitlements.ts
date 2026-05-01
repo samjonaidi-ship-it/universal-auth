@@ -38,6 +38,40 @@ interface CacheShape {
 let memory: CacheShape | null = null;
 let inFlightRefresh: Promise<CacheShape | null> | null = null;
 
+// ── Listener pub/sub (v1.0.1 C4) ──────────────────────────────────────────
+// AuthProvider subscribes here so consumers of useEntitlements() re-render
+// whenever a refresh updates the cache (offline-grace TTL flip, session
+// change, background SWR refresh).
+
+type EntitlementsListener = () => void;
+const listeners = new Set<EntitlementsListener>();
+
+/**
+ * Register a listener fired on every entitlements-cache mutation
+ * (refresh success, manual clear). Listener receives no args; consumers
+ * should call `getEntitlementsSnapshot()` / `hasFeature()` / `hasAppAccess()`
+ * to read the new state.
+ *
+ * Returns an unsubscribe function. Listeners that throw are caught + logged
+ * (one bad listener can't kill another).
+ */
+export function onEntitlementsChange(listener: EntitlementsListener): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+function notifyEntitlementsChange(): void {
+  for (const l of listeners) {
+    try {
+      l();
+    } catch {
+      // Listener bugs can't crash the cache.
+    }
+  }
+}
+
 // ── Persistence (localStorage) ────────────────────────────────────────────
 
 function loadFromDisk(): CacheShape | null {
@@ -56,22 +90,28 @@ function loadFromDisk(): CacheShape | null {
 
 function saveToDisk(snap: CacheShape): void {
   memory = snap;
-  if (typeof localStorage === 'undefined') return;
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(snap));
-  } catch {
-    // Quota exceeded or storage disabled — in-memory only
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(snap));
+    } catch {
+      // Quota exceeded or storage disabled — in-memory only
+    }
   }
+  // v1.0.1 C4 — notify subscribers AFTER memory + disk update so re-reads see the new state.
+  notifyEntitlementsChange();
 }
 
 function clearDisk(): void {
   memory = null;
-  if (typeof localStorage === 'undefined') return;
-  try {
-    localStorage.removeItem(STORAGE_KEY);
-  } catch {
-    // ignore
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // ignore
+    }
   }
+  // v1.0.1 C4 — notify subscribers; useEntitlements() will read null from snapshot now.
+  notifyEntitlementsChange();
 }
 
 // ── Public sync reads ─────────────────────────────────────────────────────
@@ -193,6 +233,7 @@ function isBeyondGrace(snap: CacheShape): boolean {
 export function __resetEntitlementsForTests(): void {
   memory = null;
   inFlightRefresh = null;
+  listeners.clear();
   if (typeof localStorage !== 'undefined') {
     try {
       localStorage.removeItem(STORAGE_KEY);

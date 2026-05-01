@@ -50,11 +50,31 @@ export async function registerServiceWorker(swUrl = '/bb-universal-auth-sw.js'):
 
 /**
  * Ask the browser to fire our sync event when next online. Falls back to
- * immediate flush if Background Sync isn't available.
+ * an immediate foreground flush if Background Sync is unavailable (Safari,
+ * incognito, SW registration blocked, etc.) so callers don't have to branch.
+ *
+ * v1.0.1 (lookback C8): the original implementation only documented the
+ * fallback in a comment ("caller should run flush() directly"). Reliability-
+ * critical callers (online-event handler, retry timer) had no way to know
+ * whether to schedule their own flush. Now this function ALWAYS results in
+ * a flush attempt — either via SW background-sync OR via direct foreground
+ * call to `reconciler.flush()`. The `reconciler` module is loaded lazily so
+ * we don't bring it into the SW-only bundle.
  */
 export async function requestBackgroundFlush(): Promise<void> {
-  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
-  const reg = await navigator.serviceWorker.ready;
+  // No SW in this context (Node test, very old browser) — straight foreground.
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
+    await runForegroundFlush();
+    return;
+  }
+  let reg: ServiceWorkerRegistration | undefined;
+  try {
+    reg = await navigator.serviceWorker.ready;
+  } catch {
+    // SW registration was blocked or never completed — fall back.
+    await runForegroundFlush();
+    return;
+  }
   interface SyncManager {
     register(tag: string): Promise<void>;
   }
@@ -67,10 +87,23 @@ export async function requestBackgroundFlush(): Promise<void> {
       await withSync.sync.register(SYNC_TAG);
       return;
     } catch {
-      // fall through to foreground flush
+      // SyncManager rejected (rare — usually permissions/quota) — foreground.
     }
   }
-  // No Background Sync support — caller should run flush() directly.
+  // Background Sync API unavailable on this platform (Safari, Firefox).
+  await runForegroundFlush();
+}
+
+async function runForegroundFlush(): Promise<void> {
+  // Lazy-load the reconciler to keep this module's static dep graph small
+  // and to avoid pulling reconciler into the SW bundle.
+  try {
+    const mod = await import('./reconciler.js');
+    await mod.flush();
+  } catch {
+    // Reconciler errors must not crash the caller. The next sync event /
+    // online event / explicit flush() call will retry.
+  }
 }
 
 /**

@@ -1,4 +1,4 @@
-// @bb/universal-auth | test/unit/flows/enroll-flow-branches.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @bainbridgebuilders/universal-auth | test/unit/flows/enroll-flow-branches.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Coverage push for enroll-flow.ts — branch lines 130-137 (D14 employee
 // linking) + 149-151 (optional session fields).
 

@@ -65,7 +65,7 @@ export function configureClient(cfg: ClientConfig): void {
 function requireConfig(): ClientConfig {
   if (clientConfig === null) {
     throw new Error(
-      '[@bb/universal-auth] HTTP client called before configureClient(). Did you skip initUniversalAuth()?'
+      '[@bainbridgebuilders/universal-auth] HTTP client called before configureClient(). Did you skip initUniversalAuth()?'
     );
   }
   return clientConfig;

@@ -10,7 +10,7 @@ const channels = new Map<string, NotificationChannelAdapter>();
 export function registerNotificationChannel(adapter: NotificationChannelAdapter): void {
   if (channels.has(adapter.channel_key)) {
     throw new Error(
-      `[@bb/universal-auth] Notification channel '${adapter.channel_key}' is already registered.`
+      `[@bainbridgebuilders/universal-auth] Notification channel '${adapter.channel_key}' is already registered.`
     );
   }
   channels.set(adapter.channel_key, adapter);

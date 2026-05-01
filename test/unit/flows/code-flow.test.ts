@@ -1,4 +1,4 @@
-// @bb/universal-auth | test/unit/flows/code-flow.test.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | test/unit/flows/code-flow.test.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 // A2 — code-first sign-in happy path + session install.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';

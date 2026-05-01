@@ -1,4 +1,4 @@
-// @bb/universal-auth | vitest.chaos.config.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @bainbridgebuilders/universal-auth | vitest.chaos.config.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Chaos test config per spec §11.6 + plan Block 6 Day 20-21.
 //
 // Tests run against the integration docker-compose stack PLUS a Toxiproxy

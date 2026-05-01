@@ -26,10 +26,10 @@ import {
   AuthSessionRevoked,
   AuthSdkError,
 } from '../errors.js';
-import * as entitlementsModule from '../core/entitlements.js';
 import {
   getEntitlementsSnapshot,
   refreshEntitlements,
+  onEntitlementsChange,
 } from '../core/entitlements.js';
 import { get } from '../core/client.js';
 import type { Session, Identity, Persona, AgentContext } from '../types/api.js';
@@ -114,8 +114,7 @@ export function AuthProvider({
 
   // Bump-counter so the entitlementsValue memo re-evaluates when the
   // entitlements cache (offline-grace logic in core/entitlements.ts) emits
-  // a change notification. See: TODO below — depends on SDK-Core exporting
-  // `onEntitlementsChange` from src/core/entitlements.ts (Phase C4 / SDK-Core).
+  // a change notification. Wired to `onEntitlementsChange` below.
   const [entitlementsTick, bumpEntitlements] = useReducer((x: number) => x + 1, 0);
 
   const [status, setStatus] = useState<AuthStatus>(() => {
@@ -200,20 +199,11 @@ export function AuthProvider({
   // that can change asynchronously (refresh on focus, grace expiry tick, etc.)
   // without any local state in this provider mutating. Without an explicit
   // subscription the memo below would surface stale entitlements.
-  //
-  // TODO(SDK-Core): once `onEntitlementsChange(listener)` lands in
-  // src/core/entitlements.ts (sibling task in this hardening pass), this
-  // dynamic-lookup wrapper becomes a direct import. We avoid a hard import
-  // today so this file compiles in either order of agent landing.
+  // v1.0.1 (lookback fix): wired to real `onEntitlementsChange` export.
   useEffect(() => {
-    const mod = entitlementsModule as unknown as {
-      onEntitlementsChange?: (l: () => void) => () => void;
-    };
-    if (typeof mod.onEntitlementsChange !== 'function') return undefined;
-    const unsubscribe = mod.onEntitlementsChange(() => {
+    return onEntitlementsChange(() => {
       bumpEntitlements();
     });
-    return unsubscribe;
   }, []);
 
   // ── Online/offline tracking ────────────────────────────────────────────

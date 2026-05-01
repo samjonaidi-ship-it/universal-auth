@@ -1,4 +1,4 @@
-// @bb/universal-auth | vitest.security.config.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @bainbridgebuilders/universal-auth | vitest.security.config.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Security audit suite per spec §11.8 L1141.
 //
 // Tests live in test/security/ — they're ALL self-contained (no docker stack)

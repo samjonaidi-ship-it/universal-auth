@@ -1,4 +1,4 @@
-// @bb/universal-auth | test/unit/core/settings-sync.test.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | test/unit/core/settings-sync.test.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 // A2 — debounced PUT with If-Match + 409 conflict handling.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
