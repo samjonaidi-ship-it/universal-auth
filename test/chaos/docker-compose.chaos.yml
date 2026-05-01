@@ -1,5 +1,10 @@
-# @bb/universal-auth | test/chaos/docker-compose.chaos.yml | v1.0.0-rc.1 | 2026-04-28 | BB
+# @bb/universal-auth | test/chaos/docker-compose.chaos.yml | v1.1.0 | 2026-04-30 | BB
 # Chaos overlay — adds Toxiproxy in front of the integration stack.
+# v1.1.0: drop `external: true, name: agent_bb-integration` — that worked when
+#   developers ran the integration stack first under project name "agent" then
+#   layered chaos on top, but on CI runners the project name = repo dir
+#   ("universal-auth") so the external lookup failed. Compose merges the
+#   network definition from the integration overlay instead.
 #
 # Usage:
 #   docker compose -f test/integration/docker-compose.test.yml \
@@ -35,5 +40,4 @@ services:
 
 networks:
   bb-integration:
-    external: true
-    name: agent_bb-integration
+    driver: bridge
