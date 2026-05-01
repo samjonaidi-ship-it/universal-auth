@@ -1,4 +1,4 @@
-// @bb/universal-auth | src/sw/index.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/sw/index.ts | v1.0.1 | 2026-05-01 | BB
 // Service worker for offline queue flush + logout cache purge.
 //
 // Per spec:
@@ -63,16 +63,37 @@ sw.addEventListener('sync', (event: Event) => {
 
 // ── Message handling ──────────────────────────────────────────────────────
 
+/**
+ * Same-scope client check. Only messages whose `event.source` is a `Client`
+ * (window/worker) AND whose URL falls under our SW's registration scope are
+ * trusted. This blocks cross-origin frames or other tabs from issuing purge
+ * commands at us.
+ */
+function isTrustedClient(source: ExtendableMessageEvent['source']): boolean {
+  if (source === null) return false;
+  // MessagePort and ServiceWorker types don't carry a URL — we only trust
+  // window/worker clients, which expose `.url` on the Client interface.
+  const maybeClient = source as unknown as { url?: unknown };
+  if (typeof maybeClient.url !== 'string') return false;
+  return maybeClient.url.startsWith(sw.registration.scope);
+}
+
 sw.addEventListener('message', (event: ExtendableMessageEvent) => {
   const data = event.data as { type?: string; patterns?: string[] };
   if (!data || typeof data !== 'object') return;
 
+  // Origin/source check (Phase C5 hardening): reject any message that didn't
+  // come from a same-scope Client. Without this a malicious page that
+  // somehow obtains a postMessage handle to our SW could trigger cache
+  // purges or alter purge patterns.
+  if (!isTrustedClient(event.source)) return;
+
   switch (data.type) {
     case 'set_purge_patterns': {
-      if (Array.isArray(data.patterns)) {
-        purgePatterns = parsePurgePatterns(data.patterns);
-      }
-      break;
+      // `set_purge_patterns` is privileged config — never accept it from a
+      // page client. Pattern updates go through the build/SW-install path.
+      // Drop silently to avoid leaking that we recognize the type.
+      return;
     }
     case 'purge_caches': {
       event.waitUntil(purgeCaches());
@@ -84,6 +105,11 @@ sw.addEventListener('message', (event: ExtendableMessageEvent) => {
     }
   }
 });
+
+// `parsePurgePatterns` is retained for build-time pattern hydration (when
+// patterns ship baked into the SW bundle). It's intentionally unused at
+// runtime now that `set_purge_patterns` is rejected at the boundary.
+void parsePurgePatterns;
 
 async function purgeCaches(): Promise<void> {
   const names = await caches.keys();

@@ -1,4 +1,4 @@
-// @bb/universal-auth | src/profile/avatar.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/profile/avatar.ts | v1.0.1 | 2026-05-01 | BB
 // Avatar primitives — JPEG compression, initials generation, deterministic
 // color palette, 3-tier resolution. Per §5.4.4.
 //
@@ -11,6 +11,7 @@
 // → CT BFF signs + uploads to R2 bb-profile-avatars/<identity_id>/<uuid>.jpg
 
 import { post, del } from '../core/client.js';
+import { AuthSdkError } from '../errors.js';
 import type { UniversalProfile } from '../types/profile.js';
 import { findPresetByKey, pickPresetForIdentity } from './presets.js';
 
@@ -28,6 +29,40 @@ export const INITIALS_COLORS: readonly string[] = [
 
 const JPEG_QUALITY = 0.82;
 const MAX_DIMENSION = 1024;
+
+/** Allowed avatar input MIME types (Phase C7 hardening). */
+const ALLOWED_AVATAR_TYPES: readonly string[] = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+];
+
+/** Hard cap on input file size — 5 MB. */
+const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Validate an avatar input File/Blob before any expensive decode work.
+ * Throws an AuthSdkError with a stable code so callers (UI) can surface a
+ * specific message. Bytes-cap and type-allowlist live here so a malicious
+ * or malformed file never reaches `createImageBitmap`.
+ */
+export function validateAvatarFile(input: Blob | File): void {
+  const type = input.type || '';
+  if (!ALLOWED_AVATAR_TYPES.includes(type)) {
+    throw new AuthSdkError(
+      'AVATAR_UNSUPPORTED_FORMAT',
+      `Avatar must be JPEG, PNG, or WebP. Got: ${type || 'unknown'}.`,
+      { hint: ALLOWED_AVATAR_TYPES.join(', ') }
+    );
+  }
+  if (typeof input.size === 'number' && input.size > MAX_AVATAR_BYTES) {
+    throw new AuthSdkError(
+      'AVATAR_TOO_LARGE',
+      `Avatar exceeds ${MAX_AVATAR_BYTES} bytes (got ${input.size}).`,
+      { hint: '5 MB max' }
+    );
+  }
+}
 
 // ── Initials generation ───────────────────────────────────────────────────
 
@@ -163,6 +198,9 @@ interface UploadResponse {
  * The endpoint is `POST /identity/v1/profile/avatar` (multipart).
  */
 export async function uploadAvatar(input: Blob | File): Promise<UploadResponse> {
+  // Validate format + size BEFORE compression (Phase C7 hardening). Reject
+  // unsupported types and files >5 MB without ever decoding them.
+  validateAvatarFile(input);
   const compressed = await compressJpeg(input);
   const form = new FormData();
   form.append('file', compressed, 'avatar.jpg');

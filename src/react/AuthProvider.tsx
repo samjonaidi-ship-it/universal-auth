@@ -1,4 +1,4 @@
-// @bb/universal-auth | src/react/AuthProvider.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/react/AuthProvider.tsx | v1.0.1 | 2026-05-01 | BB
 // React provider with 3-context split per §8.4.
 //
 // Why split:
@@ -14,6 +14,7 @@ import {
   useState,
   useMemo,
   useCallback,
+  useReducer,
   type ReactNode,
 } from 'react';
 import {
@@ -25,6 +26,7 @@ import {
   AuthSessionRevoked,
   AuthSdkError,
 } from '../errors.js';
+import * as entitlementsModule from '../core/entitlements.js';
 import {
   getEntitlementsSnapshot,
   refreshEntitlements,
@@ -110,6 +112,12 @@ export function AuthProvider({
     initialSession?.aggregate?.app_access ?? []
   );
 
+  // Bump-counter so the entitlementsValue memo re-evaluates when the
+  // entitlements cache (offline-grace logic in core/entitlements.ts) emits
+  // a change notification. See: TODO below — depends on SDK-Core exporting
+  // `onEntitlementsChange` from src/core/entitlements.ts (Phase C4 / SDK-Core).
+  const [entitlementsTick, bumpEntitlements] = useReducer((x: number) => x + 1, 0);
+
   const [status, setStatus] = useState<AuthStatus>(() => {
     if (initialSession === undefined) return 'loading';
     // Respect navigator.onLine at mount when an initial session is supplied
@@ -186,6 +194,28 @@ export function AuthProvider({
     return unsubscribe;
   }, []);
 
+  // ── Entitlements-cache subscription ────────────────────────────────────
+  //
+  // The entitlements cache (core/entitlements.ts) holds offline-grace state
+  // that can change asynchronously (refresh on focus, grace expiry tick, etc.)
+  // without any local state in this provider mutating. Without an explicit
+  // subscription the memo below would surface stale entitlements.
+  //
+  // TODO(SDK-Core): once `onEntitlementsChange(listener)` lands in
+  // src/core/entitlements.ts (sibling task in this hardening pass), this
+  // dynamic-lookup wrapper becomes a direct import. We avoid a hard import
+  // today so this file compiles in either order of agent landing.
+  useEffect(() => {
+    const mod = entitlementsModule as unknown as {
+      onEntitlementsChange?: (l: () => void) => () => void;
+    };
+    if (typeof mod.onEntitlementsChange !== 'function') return undefined;
+    const unsubscribe = mod.onEntitlementsChange(() => {
+      bumpEntitlements();
+    });
+    return unsubscribe;
+  }, []);
+
   // ── Online/offline tracking ────────────────────────────────────────────
 
   useEffect(() => {
@@ -238,7 +268,11 @@ export function AuthProvider({
     setAgent(s.agent ?? null);
     setFeatures(s.aggregate?.features ?? []);
     setAppAccess(s.aggregate?.app_access ?? []);
-    setStatus(navigator?.onLine === false ? 'offline' : 'authenticated');
+    setStatus(
+      typeof navigator !== 'undefined' && navigator.onLine === false
+        ? 'offline'
+        : 'authenticated'
+    );
   }
 
   const setActivePersonaCb = useCallback((personaType: string): void => {
@@ -262,6 +296,10 @@ export function AuthProvider({
   const entitlementsValue = useMemo<EntitlementsContextValue>(() => {
     // Snapshot wins when present (it includes the offline grace logic).
     // Otherwise fall back to the in-memory aggregate from /me.
+    // `entitlementsTick` is a subscription bump so this memo re-evaluates on
+    // entitlements-cache changes (offline grace expiry, refresh, etc.) — the
+    // tick is read here intentionally to participate in dependency tracking.
+    void entitlementsTick;
     const snap = getEntitlementsSnapshot();
     const f = snap?.features ?? features;
     const a = snap?.app_access ?? appAccess;
@@ -271,7 +309,7 @@ export function AuthProvider({
       hasFeature: (k: string) => f.includes(k),
       hasAppAccess: (id: string) => a.includes(id),
     };
-  }, [features, appAccess]);
+  }, [features, appAccess, entitlementsTick]);
 
   const statusValue = useMemo<StatusContextValue>(() => ({ status }), [status]);
 

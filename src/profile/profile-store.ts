@@ -1,4 +1,4 @@
-// @bb/universal-auth | src/profile/profile-store.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/profile/profile-store.ts | v1.0.1 | 2026-05-01 | BB
 // Profile state + sync. Per §5.4.2.
 //
 // Endpoints:
@@ -33,6 +33,13 @@ interface InternalState {
    * that interrupts a hydrate in real life).
    */
   generation: number;
+  /**
+   * Pending patch awaiting consumer rebase after a 409 conflict (Phase D1).
+   * On 409 the original patch isn't silently dropped — it stays here so the
+   * caller can re-apply it via `applyProfilePatch(patch)` once they've
+   * reconciled with the server-fresh profile.
+   */
+  dirtyPatch: Partial<UniversalProfile> | null;
 }
 
 const state: InternalState = {
@@ -40,6 +47,7 @@ const state: InternalState = {
   state: 'loading',
   errorMessage: null,
   generation: 0,
+  dirtyPatch: null,
 };
 
 type Listener = () => void;
@@ -168,6 +176,10 @@ export async function saveProfile(
     }
     state.profile = data;
     state.state = 'ready';
+    // Save succeeded — any pending dirty patch from a prior 409 has been
+    // superseded by this fresh write (the caller chose this patch over the
+    // pending one). Clear the dirty buffer.
+    state.dirtyPatch = null;
     notify();
 
     void emit('profile.field_saved', {
@@ -189,8 +201,11 @@ export async function saveProfile(
       throw err;
     }
     if (err instanceof AuthSdkError && (err.code === 'HTTP_409' || err.code === 'SYNC_CONFLICT')) {
-      // Server has a newer version — refetch + re-throw so caller can re-apply
-      void emit('sync.conflict', { endpoint: '/identity/v1/profile' });
+      // Server has a newer version. Per Phase D1: do NOT silently drop the
+      // patch. Keep it in `dirtyPatch` until the consumer rebases via
+      // `applyProfilePatch`, and emit a payload-rich `sync.conflict` event
+      // mirroring settings-sync (C8) so consumer apps can show a conflict UI.
+      state.dirtyPatch = patch;
       try {
         await hydrateProfile();
       } catch {
@@ -200,6 +215,12 @@ export async function saveProfile(
         // hydrate completed but reset happened — don't touch state
         throw err;
       }
+      void emit('sync.conflict', {
+        endpoint: '/identity/v1/profile',
+        pendingPatch: patch,
+        serverState: state.profile,
+        version: state.profile?.profile_version ?? null,
+      });
       state.state = 'error';
       state.errorMessage = 'Profile changed elsewhere — please retry.';
       notify();
@@ -210,6 +231,32 @@ export async function saveProfile(
     notify();
     throw err;
   }
+}
+
+/**
+ * Read the patch that was rejected by the server during the last 409 conflict
+ * (Phase D1). Returns `null` once the consumer has rebased + re-saved
+ * successfully (or if no conflict has occurred). Useful for conflict-resolution
+ * UIs that need to show the user "your unsaved change was: …".
+ */
+export function getPendingProfilePatch(): Partial<UniversalProfile> | null {
+  return state.dirtyPatch;
+}
+
+/**
+ * Caller-side merge after a 409: apply a patch to the local profile snapshot
+ * WITHOUT issuing a network call. Used by consumer code that has manually
+ * resolved a `sync.conflict` event by combining the server-fresh state with
+ * the user's pending edits. Subsequent `saveProfile()` will use the new
+ * profile_version (just hydrated) for the If-Match header.
+ *
+ * This intentionally does not touch the dirtyPatch buffer — the caller decides
+ * when to clear it via the next `saveProfile()` (which clears on success).
+ */
+export function applyProfilePatch(patch: Partial<UniversalProfile>): void {
+  if (state.profile === null) return;
+  state.profile = { ...state.profile, ...patch } as UniversalProfile;
+  notify();
 }
 
 /**
@@ -237,6 +284,7 @@ export function __resetProfileStoreForTests(): void {
   state.profile = null;
   state.state = 'loading';
   state.errorMessage = null;
+  state.dirtyPatch = null;
   state.generation += 1;  // invalidate any in-flight hydrate from a prior test
   listeners.clear();
 }

@@ -1,9 +1,9 @@
-// @bb/universal-auth | src/react/components/ContactInfoForm.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/react/components/ContactInfoForm.tsx | v1.0.1 | 2026-05-01 | BB
 // Contact-info form: display_name, email, phone (E.164 normalized), emergency_contact.
 // Persona-aware: shows emergency_contact only for personas where it's required
 // per §5.4.3.
 
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { useAuth } from '../useAuth.js';
 import { useProfile } from '../useProfile.js';
 import { validateEmail, validatePhone } from '../../profile/validators.js';
@@ -30,15 +30,35 @@ export function ContactInfoForm({
   const { activePersona } = useAuth();
   const { profile, save } = useProfile();
 
-  const [displayName, setDisplayName] = useState(profile?.display_name ?? '');
-  const [email, setEmail] = useState(profile?.email ?? '');
-  const [phone, setPhone] = useState(profile?.phone_e164 ?? '');
-  const [ec, setEc] = useState<EmergencyContact>(
-    profile?.emergency_contact ?? { name: '', phone_e164: '', relationship: '' }
-  );
+  // Initial state is empty so first render doesn't capture a stale `profile`
+  // value (profile may arrive asynchronously). The useEffect below syncs from
+  // profile once it loads — and only seeds untouched fields, so user input
+  // that's already been typed in isn't clobbered by a late hydration.
+  const [displayName, setDisplayName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [ec, setEc] = useState<EmergencyContact>({
+    name: '',
+    phone_e164: '',
+    relationship: '',
+  });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [seeded, setSeeded] = useState(false);
+
+  // Sync from profile arrival. Runs once when profile transitions from null
+  // → loaded; subsequent profile mutations don't clobber in-progress edits.
+  useEffect(() => {
+    if (profile === null || seeded) return;
+    setDisplayName(profile.display_name ?? '');
+    setEmail(profile.email ?? '');
+    setPhone(profile.phone_e164 ?? '');
+    if (profile.emergency_contact !== undefined) {
+      setEc(profile.emergency_contact);
+    }
+    setSeeded(true);
+  }, [profile, seeded]);
 
   const showEmergency =
     activePersona !== null &&
