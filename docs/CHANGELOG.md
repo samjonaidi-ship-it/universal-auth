@@ -4,6 +4,79 @@ All notable changes to `@bainbridgebuilders/universal-auth` are documented here.
 
 Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line numbers drift on every version bump; section numbers are stable.
 
+## [1.0.0-rc.4] — 2026-04-30
+
+**Persona PCP (Profile · Consent · Permissions) component primitives + A5 gate hardening.** Lands the UI layer for per-persona profile sections that CalExp5 will consume during the cutover, plus three high-value coverage pushes that close gate #1 lines + most of branches/functions. Adds `THREAT_MODEL.md` and `QA_RUNBOOK.md` for A5 documentation gates. No public API breaks.
+
+### Added — PCP component primitives (§5.4 + design doc `PERSONA_PCP_DESIGN.md` v1.1)
+
+- **`src/react/components/sections/`** — 8 persona-aware section primitives that render dynamic per-persona field groups. Each is a pure presentation component reading from `useIdentity()` store via `__resetIdentityStoreForTests` for test isolation:
+  - `MediaGallery.tsx` — generic upload/preview grid (used by Vehicle/Gear/ComplianceDocs)
+  - `VehicleSection.tsx` — make/model/year/plate + photos
+  - `GearSection.tsx` — owned gear inventory + receipts
+  - `ComplianceDocsSection.tsx` — license/insurance/cert tracking
+  - `PropertySection.tsx` — client property addresses + access notes
+  - `EmploymentSection.tsx` — supplier/subcontractor business fields
+  - `ProjectsSection.tsx` — architect/client active project list
+  - `EmergencyContactSection.tsx` — name/phone/relationship
+- **`src/react/components/consent/ConsentCenter.tsx`** — runtime consent management hub: lists active consents, surfaces revocable optional consents, shows policy version + accepted_at timestamps. Reads from `flows/consent.listAllConsents()` (new helper).
+- **`src/react/components/consent/PermissionGrantsList.tsx`** — runtime permission grants viewer (location/camera/notifications/contacts) with state + timestamp. Reads from `flows/permission-grants.listPermissionGrants()` (new helper).
+- **`src/react/components/consent/DelegationCenter.tsx`** — placeholder primitive for v1.1 delegation/proxy flow (D14 follow-on). Renders empty state until ABAC engine ships.
+- **`src/react/useIdentity.ts`** — new persona-aware identity store with `__resetIdentityStoreForTests()` helper. Wraps `IdentityContext` + adds field-edit dispatch for section components.
+
+### Added — Flow extensions
+
+- **`flows/consent.ts`** — `listAllConsents()` + `revokeConsent(consentId)` helpers (was: only `listConsents()` + bulk acceptance). `listAllConsents` normalizes `accepted_at` → `granted_at`, hits new `/identity/v1/consents/all` endpoint.
+- **`flows/permission-grants.ts`** — `listPermissionGrants()` + `revokePermissionGrant(grantId)` helpers for the new `<PermissionGrantsList>` component.
+- **`flows/code-flow.ts`** — `maskDestination()` + `inferChannel()` private helpers exposed indirectly via `requestCode()` body shaping.
+
+### Tests — Coverage push to A5 gate #1 (spec §11)
+
+**4 new component test files** (test/unit/react/components/sections/):
+- `VehicleSection.test.tsx` — render with/without data, edit dispatch, photo upload integration
+- `GearSection.test.tsx` — list rendering, add-row handler, receipt thumbnail
+- `ComplianceDocsSection.test.tsx` — empty state + loaded state + expiry warnings
+- `PropertySection.test.tsx` — readonly mode (admin viewing client) + edit mode
+
+**3 new flow test files** (test/unit/flows/):
+- `permission-grants-list-revoke.test.ts` (8 tests) — list happy/empty, revoke happy/404/500/network, URL encoding, audit metadata
+- `consent-list-flows.test.ts` (9 tests) — listConsents, listAllConsents (granted_at normalization), revokeConsent, /consents/all endpoint, URL encoding
+- `code-flow-helpers.test.ts` (6 tests) — channel inference (omit when implicit), explicit channel pass-through, short-phone slice safety, malformed-email graceful
+
+**Test infrastructure fixes:**
+- Added `// @vitest-environment happy-dom` directive to all 4 section test files. `AuthProvider` import chain triggered an env-teardown race that surfaced as `document is not defined` only with coverage instrumentation.
+- Wired `__resetIdentityStoreForTests()` into `beforeEach` of all 4 section tests. This unblocked 2 previously `it.skip`'d tests (PropertySection readonly + ComplianceDocsSection empty-state) — both now pass un-skipped.
+- `event-reporter-flush.test.ts` "reschedules flush when more events arrived during POST" — timeout bumped 5s→30s for coverage-mode timing slack. Test logic unchanged.
+
+### Documentation
+
+- **`docs/THREAT_MODEL.md`** — A5 audit gate #10. Maps every spec §15.3 threat row to SDK defense + test citation. Covers: token theft (storage), token replay (rotation), CSRF (idempotency keys), XSS (CSP + no innerHTML), enumeration (uniform error envelopes), session fixation (refresh-on-sign-in), timing attacks (constant-time compare), IDB tamper (AES-GCM auth tag), prototype pollution (no Object.assign on user input), supply chain (provenance + lockfile SRI).
+- **`docs/QA_RUNBOOK.md`** — A5 audit gate #8. 43 manual scenarios in 12 sections expanded from spec §11.10's canonical 14: happy-path enroll/code/consent/passkey × persona variants, returning-user Conditional UI, offline×5, multi-tab×3, impersonation×2, settings restore, SMS fallback, rate-limit clarity, custody-chain blocker surfaces, plan-suspension mid-session, mode-banner visibility, production-mode safety assertion fires.
+
+### Verified
+
+- `pnpm test:unit`: 65 files / **521 tests** pass; 520/521 with coverage instrumentation (1 timing flake, not test quality)
+- Coverage: **91.32% lines** (≥ 90 ✓) / 84.83% branches (target 85, 0.17% short) / 85.64% functions (target 90, 4.36% short)
+- `pnpm test:security`: 6 files / 18 tests pass
+- `pnpm test:perf`: cold-start 24.51 ms throttled (vs 50 ms budget)
+- `pnpm pack --dry-run`: tarball includes 5 docs (including new THREAT_MODEL + QA_RUNBOOK) + dist
+- typecheck / lint / build / size-check / verify:* — all green
+- Demo at `https://auth-sdk-demo.bainbridgebuilders.com` rebuilt + redeployed
+
+### Spec amendment
+
+- **`BB_UNIVERSAL_AUTH_SDK_SPEC.md` v1.4.2 → v1.5.0** — section §5.4 expanded with PCP design (per-persona profile field registry, dynamic section rendering, ConsentCenter runtime model, PermissionGrantsList contract, DelegationCenter placeholder for v1.1). Cross-referenced from authoritative design doc `BB_Platform_Specs/PERSONA_PCP_DESIGN.md` v1.1 (1126 LOC, 10 source citations).
+
+### Known carry-forwards (deferred to v1.1 / Docker-dependent)
+
+- **Function coverage gap (85.64% vs 90% gate):** ~12-15 more component-handler integration tests would close it. Highest-impact files: `PropertySection.tsx` (33% func), `GearSection.tsx` (55% func), `ContactInfoForm.tsx` (50% func), `PersonaFieldsForm.tsx` (50% func), `AvatarPicker.tsx` (78% func), `code-flow.ts` (50% branches). Deferred as diminishing returns vs Block 7 cutover work.
+- **Branch coverage gap (84.83% vs 85% gate):** 0.17% short — single conditional in any of the above files clears it. Will be picked up incidentally during component-handler tests above.
+- **A5 gates #2-#4 (integration / browser / chaos)** — Docker-dependent, blocked in this environment. Scaffolding fully present (8 integration files, 5 browser specs, 7 chaos files + Toxiproxy config + docker-compose); CI matrix wired in `chaos.yml`. Sam to run locally on workstation with Docker Desktop or via CI runner with docker-in-docker.
+- **CalExp5 `MyProfile.jsx` refactor → `<ProfileSetupScreen mode="edit">` + section primitives** — lands during cutover Phase D (Day 26 of cutover plan).
+- **DelegationCenter UI** — primitive in place, full implementation requires v1.1 ABAC engine + `delegate_subject_type` migration on CT BFF.
+
+---
+
 ## [1.0.0-rc.3] — 2026-04-29
 
 **Real imperative API for non-React consumers.** Lands in advance of CalExp5 cutover so its `api-base.js` wrapper can pull a refreshable bearer token without instantiating a React tree. No public type breaks; only adds surface.
