@@ -1,4 +1,4 @@
-// @bb/universal-auth | src/offline/sw-bridge.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/offline/sw-bridge.ts | v1.0.1 | 2026-05-01 | BB
 // Main-thread ↔ Service-Worker bridge for offline flush.
 //
 // Per spec §9.4: SW's `sync` event (tag `bb-universal-auth-flush`) triggers
@@ -33,6 +33,13 @@ export async function registerServiceWorker(swUrl = '/bb-universal-auth-sw.js'):
     registered = true;
 
     navigator.serviceWorker.addEventListener('message', (e: MessageEvent<SwBridgeMessage>) => {
+      // Origin/source check (Phase C5 hardening): only accept messages whose
+      // origin matches our page origin AND whose source is the SW that
+      // currently controls this page. Without this guard a postMessage from
+      // another worker (e.g. a 3rd-party SW that somehow obtains a port) or
+      // a frame at a different origin could spoof flush_complete events.
+      if (e.origin !== self.location.origin) return;
+      if (e.source !== navigator.serviceWorker.controller) return;
       notify(e.data);
     });
   } catch {

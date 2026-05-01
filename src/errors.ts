@@ -1,4 +1,4 @@
-// @bb/universal-auth | src/errors.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/errors.ts | v1.0.1 | 2026-05-01 | BB
 // Typed error classes for every canonical error code per §3.7.
 // Full enumeration: 15 from §3.7 + `VALIDATION_PHONE_UNREACHABLE` (§5.4.5)
 // + `CONSENT_REQUIRED` (v1.4.0 §3.4) = 17 total.
@@ -6,6 +6,14 @@
 // Day 2 delivery — consumed by client.ts (Block 2 Days 3-4) when HTTP responses
 // arrive from CT BFF. Every canonical error surface gets a typed constructor
 // so consumer code can `catch (e) { if (e instanceof AuthCodeExpired) ... }`.
+//
+// v1.0.1 (B6): errorFromEnvelope now:
+//   - accepts BOTH `no_app` (Wizard's older vocabulary) AND `no_app_registration`
+//     (canonical) as ProvisioningBlocker, normalizing internally to
+//     `no_app_registration`.
+//   - no longer collapses an unknown/missing blocker into `identity_disabled`.
+//     Unknown blocker codes surface as `unknown` and the raw token is preserved
+//     in `ProvisioningIncomplete.details.rawBlocker` for diagnostics.
 
 // ── Base class ────────────────────────────────────────────────────────────
 
@@ -42,6 +50,10 @@ export class AuthSdkError extends Error {
 // ── Blocker sub-codes for PROVISIONING_INCOMPLETE ─────────────────────────
 // Per plan Decision #20: use `no_app_registration` (Wizard vocabulary) not
 // SDK §3.7 `no_app`. SDK spec patch filed as v1.4.1 cleanup.
+//
+// v1.0.1 (B6): added `unknown` so we can surface a raw blocker token from the
+// server without forcing it into a wrong sub-code. The server-side `no_app`
+// alias is normalized to `no_app_registration` at envelope-parse time.
 
 export type ProvisioningBlocker =
   | 'qbo_missing'
@@ -49,7 +61,8 @@ export type ProvisioningBlocker =
   | 'no_party'
   | 'no_subscription'
   | 'no_app_registration'
-  | 'enrollment_incomplete';
+  | 'enrollment_incomplete'
+  | 'unknown';
 
 // ── 15 canonical codes from §3.7 ─────────────────────────────────────
 
@@ -86,17 +99,22 @@ export class AuthSessionRevoked extends AuthSdkError {
 /**
  * Custody chain incomplete per §3.7. Carries a `blocker` sub-code indicating
  * which chain link failed. Thrown during finalize or on access-gated request.
+ *
+ * v1.0.1 (B6): `details.rawBlocker` preserves the original server token when
+ * the blocker is unrecognized (mapped to `'unknown'`).
  */
 export class ProvisioningIncomplete extends AuthSdkError {
   readonly blocker: ProvisioningBlocker;
+  readonly details?: { rawBlocker?: string };
 
   constructor(
     blocker: ProvisioningBlocker,
     message = `Provisioning incomplete: ${blocker}`,
-    opts?: ConstructorParameters<typeof AuthSdkError>[2]
+    opts?: ConstructorParameters<typeof AuthSdkError>[2] & { details?: { rawBlocker?: string } }
   ) {
     super('PROVISIONING_INCOMPLETE', message, opts);
     this.blocker = blocker;
+    if (opts?.details !== undefined) this.details = opts.details;
   }
 }
 
@@ -200,6 +218,10 @@ export class ConsentRequired extends AuthSdkError {
 
 /**
  * CT BFF error envelope shape per §3.6.
+ *
+ * v1.0.1 (B6): `blocker` is typed as `string` rather than `ProvisioningBlocker`
+ * because the wire protocol may carry alternate vocabularies (`no_app` vs
+ * `no_app_registration`). errorFromEnvelope() does the normalization.
  */
 export interface AuthErrorEnvelope {
   error?: string;
@@ -208,9 +230,41 @@ export interface AuthErrorEnvelope {
   retry_after_seconds?: number;
   trace_id?: string;
   protocol_version?: string;
-  blocker?: ProvisioningBlocker;
+  blocker?: string;
   missing_consents?: readonly string[];
   [key: string]: unknown;
+}
+
+const KNOWN_BLOCKERS: ReadonlySet<ProvisioningBlocker> = new Set([
+  'qbo_missing',
+  'identity_disabled',
+  'no_party',
+  'no_subscription',
+  'no_app_registration',
+  'enrollment_incomplete',
+  'unknown',
+]);
+
+/**
+ * Normalize the wire-format `blocker` token into the SDK's `ProvisioningBlocker`
+ * union. Returns `{ blocker, raw }` so the caller can preserve the raw token
+ * in `details` when it didn't round-trip cleanly.
+ *
+ * Aliases:
+ *   - `no_app` → `no_app_registration`  (Wizard's older vocabulary)
+ *
+ * Anything else → `'unknown'` with raw preserved.
+ */
+function normalizeBlocker(raw: string | undefined): {
+  blocker: ProvisioningBlocker;
+  raw: string | undefined;
+} {
+  if (raw === undefined) return { blocker: 'unknown', raw: undefined };
+  const aliased = raw === 'no_app' ? 'no_app_registration' : raw;
+  if (KNOWN_BLOCKERS.has(aliased as ProvisioningBlocker)) {
+    return { blocker: aliased as ProvisioningBlocker, raw };
+  }
+  return { blocker: 'unknown', raw };
 }
 
 /**
@@ -230,7 +284,14 @@ export function errorFromEnvelope(env: AuthErrorEnvelope): AuthSdkError {
     case 'AUTH_RATE_LIMITED':          return new AuthRateLimited(undefined, opts);
     case 'AUTH_SESSION_EXPIRED':       return new AuthSessionExpired(undefined, opts);
     case 'AUTH_SESSION_REVOKED':       return new AuthSessionRevoked(undefined, opts);
-    case 'PROVISIONING_INCOMPLETE':    return new ProvisioningIncomplete(env.blocker ?? 'identity_disabled', undefined, opts);
+    case 'PROVISIONING_INCOMPLETE': {
+      const { blocker, raw } = normalizeBlocker(env.blocker);
+      const provOpts: ConstructorParameters<typeof ProvisioningIncomplete>[2] = { ...opts };
+      if (blocker === 'unknown' && raw !== undefined) {
+        provOpts.details = { rawBlocker: raw };
+      }
+      return new ProvisioningIncomplete(blocker, undefined, provOpts);
+    }
     case 'PLAN_SUSPENDED':             return new PlanSuspended(undefined, opts);
     case 'FEATURE_NOT_ENTITLED':       return new FeatureNotEntitled(undefined, undefined, opts);
     case 'PASSKEY_UV_REQUIRED':        return new PasskeyUVRequired(undefined, opts);

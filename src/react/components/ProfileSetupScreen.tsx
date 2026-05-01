@@ -1,9 +1,9 @@
-// @bb/universal-auth | src/react/components/ProfileSetupScreen.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/react/components/ProfileSetupScreen.tsx | v1.0.1 | 2026-05-01 | BB
 // Drop-in profile setup per §5.5.1 — three render modes (automatic / guided /
 // deferred). Composes <AvatarPicker>, <ContactInfoForm>, <PersonaFieldsForm>,
 // <ProfileCompletenessBar>.
 
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { useAuth } from '../useAuth.js';
 import { useProfile } from '../useProfile.js';
 import { AvatarPicker } from './AvatarPicker.js';
@@ -37,6 +37,20 @@ export function ProfileSetupScreen({
   const { activePersona } = useAuth();
   const { profile, completeness, needsSetup, state } = useProfile();
 
+  // Fire onComplete exactly once when needsSetup transitions false. Lives in
+  // an effect (not render) so it never fires synchronously during render and
+  // is not subject to render-side-effect bugs under Strict Mode. The ref
+  // guards against double-fire under React 18 Strict Mode (which double-
+  // invokes effects in dev) and against parent re-renders.
+  const completeFiredRef = useRef<boolean>(false);
+  useEffect(() => {
+    if (completeFiredRef.current) return;
+    if (needsSetup) return;
+    if (onComplete === undefined) return;
+    completeFiredRef.current = true;
+    onComplete();
+  }, [needsSetup, onComplete]);
+
   if (mode === 'deferred') return null;
   if (state === 'loading' || profile === null) {
     return (
@@ -44,11 +58,6 @@ export function ProfileSetupScreen({
         Loading…
       </div>
     );
-  }
-
-  // Trigger onComplete when the user crosses the auto-prompt threshold OR hits 100
-  if (!needsSetup && onComplete !== undefined) {
-    queueMicrotask(() => onComplete());
   }
 
   const personaType = activePersona?.persona_type ?? 'crew';

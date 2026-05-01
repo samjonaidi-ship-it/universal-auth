@@ -1,4 +1,4 @@
-// @bb/universal-auth | src/react/components/PersonaFieldsForm.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/react/components/PersonaFieldsForm.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
 // Renders persona-specific fields from the server-driven registry per §5.4.6.
 // Reads the registry via getPersonaFieldsRegistry (1h cache).
 

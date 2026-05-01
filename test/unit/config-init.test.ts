@@ -97,9 +97,18 @@ describe('initUniversalAuth', () => {
   });
 
   it('throws when non-production mode used on prod hostname', async () => {
-    setHostname('app.bainbridgebuilders.com');
+    // v1.0.1: default cookieDomain is `.buildwithbainbridge.com` post-D20.
+    // Test setup uses default config, so use the matching prod hostname.
+    setHostname('app.buildwithbainbridge.com');
     await expect(
       initUniversalAuth({ ...baseConfig, mode: 'development' })
+    ).rejects.toThrow(/non-production mode/i);
+  });
+
+  it('throws on legacy prod hostname when cookieDomain is set explicitly', async () => {
+    setHostname('app.bainbridgebuilders.com');
+    await expect(
+      initUniversalAuth({ ...baseConfig, mode: 'development', cookieDomain: '.bainbridgebuilders.com' })
     ).rejects.toThrow(/non-production mode/i);
   });
 

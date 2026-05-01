@@ -1,4 +1,4 @@
-// @bb/universal-auth | src/react/components/PasskeyPrompt.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/react/components/PasskeyPrompt.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
 // Passkey CTA + Conditional UI hook. The actual WebAuthn ceremony lives in
 // flows/passkey-flow (lazy-imported per §8.2 to keep the core bundle slim).
 //

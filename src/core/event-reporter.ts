@@ -1,5 +1,9 @@
-// @bb/universal-auth | src/core/event-reporter.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/core/event-reporter.ts | v1.0.1 | 2026-05-01 | BB
 // Event batching + ingestion — POST /events/v1/ingest (§3.2 / §6).
+//
+// v1.0.1 (D5): the device id is cached at module level after first resolution.
+// device-id.ts also memoizes, but resolving through that path still costs a
+// JS hop per emit() — and emit() is in the hot path for every UI interaction.
 //
 // Invariants per spec:
 //   §3.2   Batch up to 50 events per request; rejects unknown event types
@@ -67,6 +71,15 @@ let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let inFlightFlush: Promise<void> | null = null;
 let configured = false;
 
+// v1.0.1 (D5): cache the device id at first resolution. Cleared by
+// __resetEventReporterForTests so unit tests get a fresh value per test.
+let cachedDeviceId: string | null = null;
+async function resolveDeviceId(): Promise<string> {
+  if (cachedDeviceId !== null) return cachedDeviceId;
+  cachedDeviceId = await getOrCreateDeviceId();
+  return cachedDeviceId;
+}
+
 // IDB handle — delegates to storage.getSharedDb so the upgrade callback
 // runs exactly once regardless of module init order.
 const getDb = getSharedDb;
@@ -102,7 +115,7 @@ export async function emit(
     app_id: clientConfig.appId,
     identity_id: getIdentityIdFn(),
     session_id: getCurrentSessionId(),
-    device_id: await getOrCreateDeviceId(),
+    device_id: await resolveDeviceId(),
     client_ts: new Date().toISOString(),
     payload,
     sdk_version: clientConfig.sdkVersion,
@@ -117,6 +130,10 @@ export async function emit(
   // Better to drop the event silently than crash the calling code, which
   // is typically a fire-and-forget `void emit(...)` chain.
   // (Look-back fix L12 2026-04-28.)
+  // v1.0.1 (Phase E8): also handle QuotaExceededError separately — when the
+  // browser refuses the write because user storage is full, emit
+  // sync.failed{reason:'quota_exceeded'} so the host app can surface the
+  // condition. Reusing the existing sync.failed taxonomy from src/offline/queue.ts.
   try {
     const db = await getDb();
     await db.add(STORE_EVENT_QUEUE, {
@@ -131,6 +148,18 @@ export async function emit(
       scheduleFlush();
     }
   } catch (e) {
+    if (isQuotaExceededError(e)) {
+      // Re-entry guard: if THIS emit() was itself a sync.failed event, do
+      // NOT recurse — drop silently to avoid an infinite quota loop.
+      if (eventType !== 'sync.failed') {
+        void emit('sync.failed', {
+          endpoint: '/events/v1/ingest',
+          reason: 'quota_exceeded',
+          dropped_event_type: eventType,
+        });
+      }
+      return;
+    }
     if (isTransientIdbError(e)) {
       // Drop the event. Same-tab next emit() will succeed once the
       // upgrade/close completes. Multi-tab: the other tab's emit() carries
@@ -139,6 +168,20 @@ export async function emit(
     }
     throw e;
   }
+}
+
+/**
+ * True for IDB QuotaExceededError. Browsers signal this either via
+ * DOMException with name `QuotaExceededError` or via legacy code 22.
+ *
+ * @internal — exported for unit tests only.
+ */
+export function isQuotaExceededError(e: unknown): boolean {
+  if (!(e instanceof Error)) return false;
+  if (e.name === 'QuotaExceededError') return true;
+  // Legacy DOMException code path (pre-2017 Safari, very-old Edge):
+  const code = (e as Error & { code?: number }).code;
+  return code === 22;
 }
 
 /**
@@ -268,5 +311,6 @@ export function __resetEventReporterForTests(): void {
     flushTimer = null;
   }
   inFlightFlush = null;
+  cachedDeviceId = null;
   // DB handle reset is owned by storage.__resetDbForTests — we're just a consumer.
 }

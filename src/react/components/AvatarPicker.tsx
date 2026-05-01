@@ -1,4 +1,4 @@
-// @bb/universal-auth | src/react/components/AvatarPicker.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/react/components/AvatarPicker.tsx | v1.0.1 | 2026-05-01 | BB
 // 3-tier avatar picker: upload, preset grid, or fall back to initials.
 // Per §5.4.4. Composable with <ProfileSetupScreen> or rendered standalone
 // (e.g. on a /me/profile page).
@@ -7,6 +7,7 @@ import { useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { useProfile } from '../useProfile.js';
 import { PRESET_AVATARS, findPresetByKey } from '../../profile/presets.js';
 import { resolveAvatar } from '../../profile/avatar.js';
+import { AuthSdkError } from '../../errors.js';
 
 export interface AvatarPickerProps {
   /** Heading override (i18n). */
@@ -43,7 +44,18 @@ export function AvatarPicker({
     try {
       await uploadAvatar(file);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload failed');
+      // Map known validation codes to user-friendly copy (Phase C7).
+      if (err instanceof AuthSdkError) {
+        if (err.code === 'AVATAR_UNSUPPORTED_FORMAT') {
+          setError('Photo must be a JPEG, PNG, or WebP image.');
+        } else if (err.code === 'AVATAR_TOO_LARGE') {
+          setError('Photo is too large. Please choose a file under 5 MB.');
+        } else {
+          setError(err.message);
+        }
+      } else {
+        setError(err instanceof Error ? err.message : 'Upload failed');
+      }
     } finally {
       setBusy(false);
       if (fileRef.current !== null) fileRef.current.value = '';
@@ -107,7 +119,7 @@ export function AvatarPicker({
       <input
         ref={fileRef}
         type="file"
-        accept="image/*"
+        accept="image/jpeg,image/png,image/webp"
         onChange={(e) => void handleFile(e)}
         style={{ display: 'none' }}
         aria-label={L.upload}

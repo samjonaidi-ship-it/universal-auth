@@ -1,4 +1,4 @@
-// @bb/universal-auth | src/profile/validators.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/profile/validators.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 // Profile field validators per §5.4.5.
 //
 // Phone:  libphonenumber-js (~4 KB) → E.164 normalization client-side.

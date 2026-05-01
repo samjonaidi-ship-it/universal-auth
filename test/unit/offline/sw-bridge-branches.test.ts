@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/offline/sw-bridge-branches.test.ts | v1.0.0-rc.4 | 2026-04-30 | BB
+// @bainbridgebuilders/universal-auth | test/unit/offline/sw-bridge-branches.test.ts | v1.0.1 | 2026-05-01 | BB
 // Branch coverage for src/offline/sw-bridge.ts (was 60.86% lines).
 // Targets §9.4 SW sync registration + main-thread bridge.
 //
@@ -69,8 +69,12 @@ describe('offline/sw-bridge — branch coverage', () => {
 
   it('onBridgeMessage receives messages dispatched by SW (via notify)', async () => {
     let messageHandler: ((ev: MessageEvent) => void) | null = null;
+    // Phase C5 hardening — bridge now validates origin + source. Stub
+    // controller so the synthetic event passes the guard.
+    const controllerStub = { id: 'controller' };
     (navigator as { serviceWorker: unknown }).serviceWorker = {
       register: vi.fn().mockResolvedValue({}),
+      controller: controllerStub,
       addEventListener: vi.fn(
         (type: string, listener: (ev: MessageEvent) => void) => {
           if (type === 'message') messageHandler = listener;
@@ -86,17 +90,24 @@ describe('offline/sw-bridge — branch coverage', () => {
     onBridgeMessage((m) => received.push(m));
     onBridgeMessage((m) => received.push(m));
 
-    // Simulate SW sending a message
+    // Simulate SW sending a message — must include origin + source for the
+    // C5 trust check.
     const payload = { type: 'flush_complete' as const, payload: { ok: 1 } };
-    (messageHandler as unknown as (ev: { data: unknown }) => void)({ data: payload });
+    (messageHandler as unknown as (ev: { data: unknown; origin: string; source: unknown }) => void)({
+      data: payload,
+      origin: self.location.origin,
+      source: controllerStub,
+    });
 
     expect(received).toEqual([payload, payload]);
   });
 
   it('a throwing listener does not block other listeners (notify isolation)', async () => {
     let messageHandler: ((ev: MessageEvent) => void) | null = null;
+    const controllerStub = { id: 'controller' };
     (navigator as { serviceWorker: unknown }).serviceWorker = {
       register: vi.fn().mockResolvedValue({}),
+      controller: controllerStub,
       addEventListener: vi.fn(
         (type: string, listener: (ev: MessageEvent) => void) => {
           if (type === 'message') messageHandler = listener;
@@ -115,8 +126,10 @@ describe('offline/sw-bridge — branch coverage', () => {
     });
 
     expect(() =>
-      (messageHandler as unknown as (ev: { data: unknown }) => void)({
+      (messageHandler as unknown as (ev: { data: unknown; origin: string; source: unknown }) => void)({
         data: { type: 'flush_failed', payload: {} },
+        origin: self.location.origin,
+        source: controllerStub,
       })
     ).not.toThrow();
     expect(goodListenerFired).toBe(true);
@@ -137,8 +150,10 @@ describe('offline/sw-bridge — branch coverage', () => {
 
   it('unsubscribe from onBridgeMessage stops further deliveries', async () => {
     let messageHandler: ((ev: MessageEvent) => void) | null = null;
+    const controllerStub = { id: 'controller' };
     (navigator as { serviceWorker: unknown }).serviceWorker = {
       register: vi.fn().mockResolvedValue({}),
+      controller: controllerStub,
       addEventListener: vi.fn(
         (type: string, listener: (ev: MessageEvent) => void) => {
           if (type === 'message') messageHandler = listener;
@@ -152,13 +167,17 @@ describe('offline/sw-bridge — branch coverage', () => {
     const unsubscribe = onBridgeMessage(() => {
       count += 1;
     });
-    (messageHandler as unknown as (ev: { data: unknown }) => void)({
+    (messageHandler as unknown as (ev: { data: unknown; origin: string; source: unknown }) => void)({
       data: { type: 'flush_complete' },
+      origin: self.location.origin,
+      source: controllerStub,
     });
     expect(count).toBe(1);
     unsubscribe();
-    (messageHandler as unknown as (ev: { data: unknown }) => void)({
+    (messageHandler as unknown as (ev: { data: unknown; origin: string; source: unknown }) => void)({
       data: { type: 'flush_complete' },
+      origin: self.location.origin,
+      source: controllerStub,
     });
     expect(count).toBe(1);
   });

@@ -1,10 +1,13 @@
-// @bb/universal-auth | src/offline/queue.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/offline/queue.ts | v1.0.1 | 2026-05-01 | BB
 // IDB-backed FIFO queue for offline mutations.
 //
 // Per spec §9.4:
-//   * Records shape: {id, endpoint, method, body, headers, idempotencyKey, createdAt, retryCount}
+//   * Records shape: {id, endpoint, method, body, headers, idempotencyKey, createdAt, retryCount, retryAfterTs?}
 //   * Flush order: strictly FIFO by createdAt (auto-increment id = proxy for createdAt)
 //   * maxQueueSize: when reached, drop OLDEST row + emit sync.failed (spec-sanctioned, §9.4 footnote)
+//
+// v1.0.1 (D4): added per-row `retryAfterTs`. Set when the server responds 429
+// with a `Retry-After` header. flush() skips rows where retryAfterTs > now().
 
 import { STORE_OFFLINE_QUEUE, STORE_DEAD_LETTER_QUEUE, getSharedDb } from '../core/storage.js';
 import { emit } from '../core/event-reporter.js';
@@ -20,6 +23,11 @@ export interface QueuedMutation {
   idempotencyKey: string;
   createdAt: number;
   retryCount: number;
+  /**
+   * Epoch ms — earliest time this row is eligible for re-flush.
+   * Set from a server `Retry-After` header on 429 (D4).
+   */
+  retryAfterTs?: number;
 }
 
 // ── Config ────────────────────────────────────────────────────────────────
@@ -75,6 +83,22 @@ export async function readAll(): Promise<readonly QueuedMutation[]> {
 export async function remove(id: number): Promise<void> {
   const db = await getDb();
   await db.delete(STORE_OFFLINE_QUEUE, id);
+}
+
+/**
+ * Set `retryAfterTs` on a queued row. Used by the reconciler when the server
+ * responds 429 with a `Retry-After` header (D4). No-op if row missing.
+ */
+export async function setRetryAfter(id: number, retryAfterTs: number): Promise<void> {
+  const db = await getDb();
+  const tx = db.transaction(STORE_OFFLINE_QUEUE, 'readwrite');
+  const store = tx.objectStore(STORE_OFFLINE_QUEUE);
+  const row = (await store.get(id)) as QueuedMutation | undefined;
+  if (row !== undefined) {
+    row.retryAfterTs = retryAfterTs;
+    await store.put(row);
+  }
+  await tx.done;
 }
 
 /**

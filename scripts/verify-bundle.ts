@@ -1,4 +1,4 @@
-// @bb/universal-auth | scripts/verify-bundle.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | scripts/verify-bundle.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 // Bundle audits per §8.2 + §15.1.
 // Enforced in CI — fails the build on any violation.
 

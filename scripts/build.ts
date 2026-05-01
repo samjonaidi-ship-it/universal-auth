@@ -1,4 +1,4 @@
-// @bb/universal-auth | scripts/build.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | scripts/build.ts | v1.0.1 | 2026-05-01 | BB
 // esbuild build pipeline — 3-chunk split per §12.1: core / passkey / sw.
 //
 // Outputs:
@@ -33,6 +33,9 @@ async function bundleEsm(): Promise<void> {
       'sw/index':             resolve(ROOT, 'src/sw/index.ts'),
       'profile/index':        resolve(ROOT, 'src/profile/index.ts'),
       'extendability/index':  resolve(ROOT, 'src/extendability/index.ts'),
+      // v1.0.1 (Phase C6): /internal subpath — low-level surfaces (e.g.,
+      // setSession) that are NOT part of the stable public API.
+      'internal/index':       resolve(ROOT, 'src/internal/index.ts'),
       // §8.2 Web Worker for crypto — bundled as its own entry so
       // crypto-client.ts can load it via `new Worker(new URL(...))`.
       //
@@ -97,7 +100,7 @@ async function main(): Promise<void> {
   console.log('[build] cleaning dist/');
   clean();
 
-  console.log('[build] bundling ESM (7 entry points, splitting: true)');
+  console.log('[build] bundling ESM (8 entry points, splitting: true)');
   await bundleEsm();
 
   console.log('[build] emitting .d.ts via tsc');

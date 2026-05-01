@@ -1,4 +1,4 @@
-// @bb/universal-auth | src/react/useProfile.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/react/useProfile.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 // useProfile hook (real impl, replaces Block 4 stub) — wraps profile-store
 // with reactive subscription + auto-hydrate-on-mount. Per §5.4.2.
 

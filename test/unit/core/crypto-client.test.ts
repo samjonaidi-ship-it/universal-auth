@@ -1,15 +1,17 @@
-// @bb/universal-auth | test/unit/core/crypto-client.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
-// Coverage push for crypto-client.ts (was 38%) — happy-dom doesn't ship a
-// real Worker; we exercise the fallback path AND simulate worker-mode by
-// stubbing globalThis.Worker.
+// @bainbridgebuilders/universal-auth | test/unit/core/crypto-client.test.ts | v1.0.1 | 2026-05-01 | BB
+// Coverage for crypto-client.ts. happy-dom doesn't ship a real Worker; we
+// exercise the fallback path AND simulate worker-mode by stubbing globalThis.Worker.
+//
+// v1.0.1 (B2): API now takes a CryptoKey directly (no deviceBoundInput string).
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   encryptString,
   decryptString,
   __resetCryptoClientForTests,
   __isWorkerActive,
 } from '../../../src/core/crypto-client.js';
+import { generateMasterKey } from '../../../src/core/storage-crypto.js';
 
 describe('crypto-client', () => {
   beforeEach(() => {
@@ -31,13 +33,13 @@ describe('crypto-client', () => {
 
   describe('fallback path (no Worker)', () => {
     it('encryptString falls back to pure crypto when Worker is undefined', async () => {
-      // happy-dom does NOT ship Worker — confirms fallback fires
       Object.defineProperty(globalThis, 'Worker', {
         value: undefined,
         writable: true,
         configurable: true,
       });
-      const blob = await encryptString('hello world', 'device-id-1');
+      const key = await generateMasterKey();
+      const blob = await encryptString('hello world', key);
       expect(blob.iv).toBeInstanceOf(Uint8Array);
       expect(blob.ciphertext).toBeInstanceOf(Uint8Array);
       expect(blob.iv.length).toBeGreaterThan(0);
@@ -51,26 +53,28 @@ describe('crypto-client', () => {
         writable: true,
         configurable: true,
       });
+      const key = await generateMasterKey();
       const original = 'super secret refresh token';
-      const blob = await encryptString(original, 'device-id-2');
-      const decrypted = await decryptString(blob, 'device-id-2');
+      const blob = await encryptString(original, key);
+      const decrypted = await decryptString(blob, key);
       expect(decrypted).toBe(original);
     });
 
-    it('decryptString with wrong device input fails', async () => {
+    it('decryptString with wrong key fails', async () => {
       Object.defineProperty(globalThis, 'Worker', {
         value: undefined,
         writable: true,
         configurable: true,
       });
-      const blob = await encryptString('secret', 'device-A');
-      await expect(decryptString(blob, 'device-B')).rejects.toThrow();
+      const keyA = await generateMasterKey();
+      const keyB = await generateMasterKey();
+      const blob = await encryptString('secret', keyA);
+      await expect(decryptString(blob, keyB)).rejects.toThrow();
     });
   });
 
   describe('worker construction failure', () => {
     it('worker constructor throwing → falls back gracefully', async () => {
-      // Stub Worker so its constructor throws
       const original = (globalThis as { Worker?: unknown }).Worker;
       (globalThis as { __originalWorker?: unknown }).__originalWorker = original;
       class ThrowingWorker {
@@ -84,8 +88,8 @@ describe('crypto-client', () => {
         configurable: true,
       });
 
-      // encryptString should still succeed via fallback
-      const blob = await encryptString('hello', 'device-id');
+      const key = await generateMasterKey();
+      const blob = await encryptString('hello', key);
       expect(blob.iv).toBeInstanceOf(Uint8Array);
       expect(__isWorkerActive()).toBe(false);
     });
@@ -93,8 +97,6 @@ describe('crypto-client', () => {
 
   describe('worker happy path', () => {
     it('uses worker when available + responds to postMessage', async () => {
-      // Build a Worker shim that handles encrypt/decrypt synchronously by
-      // posting back a fake response keyed by the same id.
       const original = (globalThis as { Worker?: unknown }).Worker;
       (globalThis as { __originalWorker?: unknown }).__originalWorker = original;
 
@@ -103,7 +105,6 @@ describe('crypto-client', () => {
           super();
         }
         postMessage(msg: { id: string; op: string; args: unknown }): void {
-          // Simulate worker work + respond on next tick
           queueMicrotask(() => {
             if (msg.op === 'encrypt') {
               const result = {
@@ -134,12 +135,13 @@ describe('crypto-client', () => {
         configurable: true,
       });
 
-      const blob = await encryptString('plaintext', 'device-id');
+      const key = await generateMasterKey();
+      const blob = await encryptString('plaintext', key);
       expect(blob.iv).toEqual(new Uint8Array([1, 2, 3]));
       expect(blob.ciphertext).toEqual(new Uint8Array([4, 5, 6]));
       expect(__isWorkerActive()).toBe(true);
 
-      const decrypted = await decryptString(blob, 'device-id');
+      const decrypted = await decryptString(blob, key);
       expect(decrypted).toBe('decrypted-string');
     });
 
@@ -149,7 +151,6 @@ describe('crypto-client', () => {
 
       class CrashingWorker extends EventTarget {
         postMessage(): void {
-          // Crash the worker after the message is queued
           queueMicrotask(() => {
             this.dispatchEvent(
               new ErrorEvent('error', { message: 'worker exploded' })
@@ -166,12 +167,8 @@ describe('crypto-client', () => {
         configurable: true,
       });
 
-      // Encrypt should ultimately succeed via fallback after worker crash
-      // (or reject — depends on whether the fallback fires for the same op)
-      // The contract: handleWorkerError marks workerFailed and rejects
-      // pending. Since the SDK only falls back on `worker-unavailable`, a
-      // worker-error rejection propagates as the original error.
-      await expect(encryptString('p', 'd')).rejects.toThrow(/worker exploded/);
+      const key = await generateMasterKey();
+      await expect(encryptString('p', key)).rejects.toThrow(/worker exploded/);
       expect(__isWorkerActive()).toBe(false);
     });
   });

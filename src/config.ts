@@ -1,6 +1,7 @@
-// @bb/universal-auth | src/config.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/config.ts | v1.0.1 | 2026-05-01 | BB
 // SDK initialization config + mode-safety assertion (§10.6).
 // Day 3-4: wires core modules (client, token-manager) via configureClient().
+// v1.0.1: assertModeSafety now consumes config.cookieDomain (no hardcoded domain).
 
 /**
  * Operating modes per §10.
@@ -68,24 +69,35 @@ export interface UniversalAuthConfig {
 
 /**
  * Mode-safety assertion per §10.6.
- * Throws if non-production mode attempted on a `.bainbridgebuilders.com` hostname.
+ * Throws if non-production mode is attempted on the configured production domain.
+ *
+ * v1.0.1: consumes `cookieDomain` from config rather than a hardcoded literal,
+ * so the D20 domain cutover (2026-05-03) is data-only with no SDK rebuild.
  *
  * Exported for unit testing; called from `initUniversalAuth`.
  */
 export function assertModeSafety(
   mode: SdkMode,
-  hostname: string
+  hostname: string,
+  cookieDomain?: string
 ): void {
-  if (mode !== 'production' && hostname.endsWith('.bainbridgebuilders.com')) {
+  if (mode === 'production') return;
+  // Strip leading dot from cookieDomain (cookies use `.example.com`; hostnames do not).
+  const productionDomain = (cookieDomain ?? '.buildwithbainbridge.com').replace(/^\./, '');
+  // Match either the bare apex (`example.com`) or any proper subdomain
+  // (`anything.example.com`) — but NOT a look-alike like `notexample.com`.
+  const isProductionDomain =
+    hostname === productionDomain || hostname.endsWith(`.${productionDomain}`);
+  if (isProductionDomain) {
     throw new Error(
-      `[@bb/universal-auth] Non-production mode '${mode}' forbidden on production domain '${hostname}'. ` +
+      `[@bainbridgebuilders/universal-auth] Non-production mode '${mode}' forbidden on production domain '${hostname}'. ` +
         `See SDK spec §10.6.`
     );
   }
 }
 
 /** Current SDK version. Stamped on every event + every outbound HTTP request. */
-export const SDK_VERSION = '1.0.0';
+export const SDK_VERSION = '1.0.1';
 
 /**
  * Initialize the SDK. Called once at app startup.
@@ -99,7 +111,7 @@ export async function initUniversalAuth(config: UniversalAuthConfig): Promise<vo
 
   // Browser-context safety check (skipped in Node test harness)
   if (typeof window !== 'undefined' && typeof window.location !== 'undefined') {
-    assertModeSafety(mode, window.location.hostname);
+    assertModeSafety(mode, window.location.hostname, config.cookieDomain);
   }
 
   // Wire the HTTP client (registers the refresh callback with token-manager internally)

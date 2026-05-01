@@ -1,4 +1,4 @@
-// @bb/universal-auth | src/sw/purge-helpers.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @bainbridgebuilders/universal-auth | src/sw/purge-helpers.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Pure algorithm bits extracted from sw/index.ts so they can be unit-tested
 // without an SW global scope. The SW entry imports these and wires them
 // to the actual `caches` API.

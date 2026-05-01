@@ -1,4 +1,4 @@
-// @bb/universal-auth | scripts/verify-no-jose.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | scripts/verify-no-jose.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 // Asserts `jose` (and other forbidden deps per §Appendix B) do not appear
 // in the PRODUCTION dependency tree. Dev-only appearances are permitted.
 

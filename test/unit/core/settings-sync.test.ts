@@ -81,7 +81,7 @@ describe('core/settings-sync', () => {
     expect(getSettings()).toEqual({ locale: 'en' });
   });
 
-  it('rehydrates on 409 conflict', async () => {
+  it('preserves local patch on 409 conflict (v1.0.1 C8 — caller rebases)', async () => {
     // Initial hydrate
     fetchSpy.mockResolvedValueOnce(
       jsonResp(200, { settings: { theme: 'dark' }, version: 1 })
@@ -100,7 +100,12 @@ describe('core/settings-sync', () => {
     updateSettings({ theme: 'light' });
     await flushSettingsNow();
 
+    // v1.0.1 C8: do NOT silently drop the user's pending patch. Local state
+    // keeps the in-progress edit; the SDK emits sync.conflict with both
+    // pendingPatch and serverState so consumers can rebase via
+    // applySettingsPatch(). The version pointer DOES advance to the server's
+    // value so subsequent saves carry the right If-Match.
     expect(getSettingsVersion()).toBe(9);
-    expect(getSettings()).toEqual({ theme: 'system' });
+    expect(getSettings()).toEqual({ theme: 'light' });
   });
 });
