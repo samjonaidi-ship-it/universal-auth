@@ -231,6 +231,45 @@ The current `/auth/v1/enroll/activate` flow accepts a WebAuthn credential payloa
 
 ---
 
+## 5c. Consent re-prompt on policy version bump (recommended)
+
+When you bump a `consent_documents` row's `policy_version` server-side (say, your Privacy Policy gets revised), users who already accepted the old version need to be re-prompted. The SDK ships `<ConsentVersionWatcher>` — wrap it around your authenticated app routes:
+
+```tsx
+import {
+  AuthProvider,
+  ConsentVersionWatcher,
+} from '@bainbridgebuilders/universal-auth/react';
+
+export function App() {
+  return (
+    <AuthProvider>
+      <ConsentVersionWatcher>
+        <Routes />
+      </ConsentVersionWatcher>
+    </AuthProvider>
+  );
+}
+```
+
+What it does:
+- On `status === 'authenticated'`, fetches `getConsentDocuments(audience)` + `listConsents()`
+- Compares each REQUIRED document's `policy_version` against the user's accepted version (semver-ish compare)
+- If any are stale, renders a modal-style overlay with `<ConsentScreen required={[...stale]}>` blocking the rest of the app until accepted
+- Optional consents are NOT re-prompted here — they belong in `<ConsentCenter>` settings UI
+- Persona-change events (e.g. Stripe webhook flips `client → homeowner`) automatically re-evaluate via `activePersona` change
+
+Failure mode: fail-open with one transient retry per spec §11. Server-side `CONSENT_REQUIRED` enforcement on protected endpoints is the actual gate; the SDK watcher is UX-only.
+
+Custom audience override (rare):
+```tsx
+<ConsentVersionWatcher audience="homeowner" heading="Updated terms">
+  <Routes />
+</ConsentVersionWatcher>
+```
+
+---
+
 ## 6. Feature flag pattern (gradual rollout)
 
 Recommended pattern for migrating an existing app:

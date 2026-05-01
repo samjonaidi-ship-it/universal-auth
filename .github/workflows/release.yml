@@ -1,5 +1,17 @@
-# @bb/universal-auth | .github/workflows/release.yml | v1.0.0-rc.1 | 2026-04-24 | BB
-# Publishes to GitHub Packages on tag with --provenance per §15.1 L1359
+# @bb/universal-auth | .github/workflows/release.yml | v1.0.1 | 2026-05-01 | BB
+# Publishes to GitHub Packages on tag.
+#
+# Supply-chain attestation strategy (per spec §15.1 + D21 canonical decision):
+#   - npm CLI's --provenance flag is incompatible with --access=restricted
+#     (npm rejects with EUSAGE: "Can't generate provenance for new or private
+#     package, you must set access to public"). For our private GitHub Packages
+#     registry, we cannot use --provenance directly.
+#   - Instead, we use `actions/attest-build-provenance@v1` AFTER the publish.
+#     This generates a SLSA provenance attestation for the published artifact
+#     via GitHub's attestation API + sigstore. The attestation is verifiable
+#     via `gh attestation verify`.
+#   - Lockfile (pnpm-lock.yaml) provides upstream SRI; GitHub Packages access
+#     control provides distribution-side authorization.
 
 name: Release
 
@@ -40,19 +52,27 @@ jobs:
       - name: Size check before publish
         run: pnpm size-check
 
-      # Note: --provenance is incompatible with --access=restricted (npm
-      # CLI rejects with EUSAGE: "Can't generate provenance for new or
-      # private package, you must set access to public"). SLSA provenance
-      # requires public packages because the attestation URL must be
-      # publicly verifiable.
-      #
-      # Spec §15.1 calls for `npm publish --provenance` but spec also
-      # mandates private GitHub Packages registry. These conflict.
-      # v1.0-rc.1 ships restricted without provenance; v1.1 should
-      # revisit — options: (a) flip to public scoped access, (b) drop
-      # provenance requirement from spec, (c) add a post-publish
-      # cosign/sigstore attestation step.
       - name: Publish (restricted)
-        run: npm publish --access=restricted
+        id: publish
+        run: |
+          npm publish --access=restricted
+          # Capture tarball path for attestation step
+          PKG_NAME=$(node -p "require('./package.json').name")
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          TARBALL="$(echo "$PKG_NAME" | tr / -)-${PKG_VERSION#v}.tgz"
+          # Some npm versions name with @-prefix stripped; the pack output is reliable
+          PACK_OUT=$(npm pack --silent 2>/dev/null | tail -1)
+          echo "tarball-path=$PACK_OUT" >> "$GITHUB_OUTPUT"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # SLSA build provenance attestation per spec §15.1 + D21.
+      # Resolves the long-standing conflict: npm CLI --provenance requires
+      # public access, but our package is restricted. GitHub's attestation
+      # API generates a sigstore-backed provenance attestation regardless of
+      # registry access mode. Verifiable via `gh attestation verify <tarball>
+      # --owner BainbridgeBuilders`.
+      - name: Generate SLSA provenance attestation
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: ${{ steps.publish.outputs.tarball-path }}

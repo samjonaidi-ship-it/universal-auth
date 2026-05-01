@@ -1,5 +1,13 @@
-# @bb/universal-auth | test/integration/docker-compose.test.yml | v1.0.0-rc.1 | 2026-04-28 | BB
+# @bb/universal-auth | test/integration/docker-compose.test.yml | v1.1.0 | 2026-05-01 | BB
 # Integration test stack per SDK spec §11.3 + plan Block 6 Day 18-19.
+#
+# v1.1.0 (2026-05-01): added bb_runtime_app schema bootstrap. Without it,
+# CT BFF migration 018_bbscan_feature_flags.sql fails on `bb_runtime_app.ct_users(id)`
+# FK with "schema bb_runtime_app does not exist" because that schema is owned
+# by the sibling Bridge repo, not CT BFF. Production shares one Neon DB across
+# both apps; fresh test postgres doesn't. The seed file at
+# `00_seed_bb_runtime_app.sql` is loaded FIRST (alphabetical) and creates the
+# schema + ct_users table stub. Refresh procedure documented inside the file.
 #
 # Brings up: ct-bff + postgres (Neon-compatible schema) + twilio-mock + resend-mock
 #
@@ -37,8 +45,17 @@ services:
       timeout: 3s
       retries: 30
     volumes:
-      # Apply CT BFF migrations 000-058 on first start so the schema matches prod
-      - ../../../BB_ControlTower/bff/migrations:/docker-entrypoint-initdb.d:ro
+      # Order matters: postgres processes /docker-entrypoint-initdb.d/*.sql alphabetically.
+      # 1. `00_seed_bb_runtime_app.sql` (this dir) creates bb_runtime_app schema + ct_users
+      #    stub — required by CT BFF migration 018+ which has FKs to that schema.
+      # 2. CT BFF's `bff/migrations/*.sql` (numbered 001+) runs after the seed.
+      - ./00_seed_bb_runtime_app.sql:/docker-entrypoint-initdb.d/00_seed_bb_runtime_app.sql:ro
+      - ../../../BB_ControlTower/bff/migrations:/docker-entrypoint-initdb.d/ct_bff:ro
+      # Concat trick: mount the bff/migrations folder under a subdir so they don't
+      # mix with our seed but ALSO get processed. Postgres only walks the top
+      # level of /docker-entrypoint-initdb.d, so use a chained init script that
+      # processes the subdir.
+      - ./run-ct-bff-migrations.sh:/docker-entrypoint-initdb.d/01_run_ct_bff_migrations.sh:ro
 
   twilio-mock:
     # Port 8443 host → 8080 container; captures POST /2010-04-01/Accounts/.../Messages.json
