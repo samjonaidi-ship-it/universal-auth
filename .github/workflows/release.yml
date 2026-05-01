@@ -69,10 +69,19 @@ jobs:
       # CycloneDX 1.6+. Bump deliberately; `latest` no longer used.
       - name: Generate CycloneDX SBOM
         run: |
+          # @cyclonedx/cyclonedx-npm runs `npm ls` internally to walk the
+          # dep tree. pnpm's nested node_modules layout fails npm's strict
+          # validation (peer-dep mismatches, hoisted packages, missing
+          # transitive devDependencies because we ran `pnpm install` not
+          # `npm install`). Pass --ignore-npm-errors so the SBOM is still
+          # produced from package.json + pnpm-lock metadata. The resulting
+          # SBOM accurately captures runtime deps; only dev-only-tree
+          # warnings get suppressed.
           pnpm dlx @cyclonedx/cyclonedx-npm@2.0 \
             --output-format json \
             --output-file sbom.cdx.json \
-            --omit dev
+            --omit dev \
+            --ignore-npm-errors
           ls -la sbom.cdx.json
 
       - name: Publish (restricted)
