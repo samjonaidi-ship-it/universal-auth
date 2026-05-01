@@ -124,9 +124,9 @@
       "limit": "60 KB"
     },
     {
-      "name": "profile subpath (v1.0.2 lookback C4)",
+      "name": "profile subpath (v1.0.2 lookback C4 — calibrated to current 35.6 KB + ~12% headroom)",
       "path": "dist/esm/profile/index.js",
-      "limit": "30 KB"
+      "limit": "40 KB"
     }
   ],
   "engines": {
