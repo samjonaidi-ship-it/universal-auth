@@ -43,6 +43,7 @@ export default defineConfig({
         'src/profile/index.ts',
         'src/extendability/index.ts',
         'src/react/index.ts',
+        'src/react/components/index.ts',
         // Service worker ENTRY POINT — runs in SW global scope (not happy-dom);
         // covered by Playwright at the integration level. The pure-algorithm
         // helpers it imports from `sw/purge-helpers.ts` ARE unit-tested

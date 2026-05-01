@@ -154,4 +154,113 @@ describe('GearSection', () => {
     expect(screen.queryByText('Add gear')).toBeNull();
     expect(screen.queryByLabelText(/Remove Personal drill/i)).toBeNull();
   });
+
+  // Coverage push 2026-04-30 — handler branches (rc.4 → 1.0 GA gate #1)
+
+  it('successful add invokes addResource with trimmed name + clears form', async () => {
+    // First fetch: profile load. Subsequent: addResource POST + reload.
+    fetchSpy.mockImplementation((url) => {
+      const u = String(url);
+      if (u.includes('/identity/v1/profile/resources') && !u.match(/\/$/)) {
+        return Promise.resolve(jsonResp(200, { id: 'g-new', name: 'Hammer' }));
+      }
+      return Promise.resolve(jsonResp(200, { ...BASE, resources: [] }));
+    });
+    render(
+      <AuthProvider initialSession={SESSION}>
+        <GearSection />
+      </AuthProvider>
+    );
+    await waitFor(() => expect(screen.getByText('Add gear')).toBeTruthy());
+    fireEvent.click(screen.getByText('Add gear'));
+    fireEvent.change(screen.getByLabelText(/Item name/i), {
+      target: { value: '  Hammer  ' },
+    });
+    await act(async () => {
+      fireEvent.submit(screen.getByLabelText('Add personal gear'));
+    });
+    await waitFor(() => {
+      // Form should close (no longer shows "Add personal gear" form)
+      expect(screen.queryByLabelText('Add personal gear')).toBeNull();
+    });
+    // The POST should have been made with trimmed name
+    const postCall = fetchSpy.mock.calls.find(
+      ([u, opts]) =>
+        String(u).includes('/identity/v1/profile/resources') &&
+        (opts as RequestInit | undefined)?.method === 'POST'
+    );
+    expect(postCall).toBeDefined();
+    const body = JSON.parse(String((postCall![1] as RequestInit).body));
+    expect(body.name).toBe('Hammer');
+    expect(body.resource_type).toBe('gear');
+  });
+
+  it('add error from addResource surfaces as alert', async () => {
+    fetchSpy.mockImplementation((url) => {
+      const u = String(url);
+      if (u.includes('/identity/v1/profile/resources') && !u.match(/\/$/)) {
+        return Promise.resolve(
+          jsonResp(500, { code: 'INTERNAL', message: 'Disk full' })
+        );
+      }
+      return Promise.resolve(jsonResp(200, { ...BASE, resources: [] }));
+    });
+    render(
+      <AuthProvider initialSession={SESSION}>
+        <GearSection />
+      </AuthProvider>
+    );
+    await waitFor(() => expect(screen.getByText('Add gear')).toBeTruthy());
+    fireEvent.click(screen.getByText('Add gear'));
+    fireEvent.change(screen.getByLabelText(/Item name/i), {
+      target: { value: 'Wrench' },
+    });
+    await act(async () => {
+      fireEvent.submit(screen.getByLabelText('Add personal gear'));
+    });
+    await waitFor(() => {
+      // Alert appears (error caught + setError called)
+      const alert = screen.queryByRole('alert');
+      expect(alert).not.toBeNull();
+    });
+  });
+
+  it('Remove button on gear item triggers archiveResource', async () => {
+    fetchSpy.mockImplementation((url) => {
+      const u = String(url);
+      if (
+        u.includes('/identity/v1/profile/resources/g-1') &&
+        !u.endsWith('/profile/resources/g-1')
+      ) {
+        // archive sub-route
+        return Promise.resolve(jsonResp(200, { ok: true }));
+      }
+      if (u.match(/\/identity\/v1\/profile\/resources\/g-1$/)) {
+        // PUT to archive (status: archived)
+        return Promise.resolve(jsonResp(200, { ok: true }));
+      }
+      return Promise.resolve(jsonResp(200, WITH_GEAR));
+    });
+    render(
+      <AuthProvider initialSession={SESSION}>
+        <GearSection />
+      </AuthProvider>
+    );
+    await waitFor(() => expect(screen.getByText('Personal drill')).toBeTruthy());
+    const removeBtn = screen.getByLabelText(/Remove Personal drill/i);
+    await act(async () => {
+      fireEvent.click(removeBtn);
+    });
+    // Archive request fires (DELETE or PUT depending on impl)
+    await waitFor(() => {
+      const call = fetchSpy.mock.calls.find(
+        ([u, opts]) =>
+          String(u).includes('/profile/resources/g-1') &&
+          ['DELETE', 'PUT', 'PATCH'].includes(
+            String((opts as RequestInit | undefined)?.method ?? '')
+          )
+      );
+      expect(call).toBeDefined();
+    });
+  });
 });

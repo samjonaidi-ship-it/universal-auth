@@ -263,6 +263,80 @@ describe('PersonaFieldsForm', () => {
     });
   });
 
+  // Coverage push 2026-04-30 — handleSubmit + buildPatch branches (rc.4 → 1.0 GA gate #1)
+
+  it('successful submit calls save() with built patch (PUT issued)', async () => {
+    // Override profile with all required crew fields satisfied so saveProfile's
+    // enforceRequired check passes and PUT is actually issued
+    const COMPLETE_PROFILE = {
+      ...PROFILE,
+      phone_e164: '+12125551234',
+      emergency_contact: {
+        name: 'Jane Doe',
+        phone_e164: '+12125551235',
+        relationship: 'spouse',
+      },
+    };
+    fetchSpy.mockImplementation(async (req) => {
+      const url = typeof req === 'string' ? req : (req as Request).url;
+      if (url.includes('/persona-fields-registry')) return jsonResp(200, REGISTRY);
+      return jsonResp(200, COMPLETE_PROFILE);
+    });
+    render(
+      <AuthProvider initialSession={SESSION}>
+        <PersonaFieldsForm persona="crew" />
+      </AuthProvider>
+    );
+    // Wait for both registry hydrate AND profile hydrate (latter required for save)
+    await waitFor(() => expect(screen.getByLabelText(/osha card/i)).toBeTruthy());
+    await waitFor(() => {
+      const select = screen.getByLabelText(/trade/i) as HTMLSelectElement;
+      expect(select.value).toBe('electrical');  // proves profile hydrated
+    });
+    fireEvent.change(screen.getByLabelText(/osha card/i), {
+      target: { value: '987654' },
+    });
+    // Click the submit button (more reliable than fireEvent.submit)
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    // Wait for ANY PUT to /identity/v1/profile
+    await waitFor(
+      () => {
+        const found = fetchSpy.mock.calls.find(
+          ([u, init]) =>
+            String(u).includes('/identity/v1/profile') &&
+            (init as RequestInit | undefined)?.method === 'PUT'
+        );
+        expect(found).toBeDefined();
+      },
+      { timeout: 3000 }
+    );
+  });
+
+  it('catches submit error and surfaces it as alert', async () => {
+    fetchSpy.mockImplementation(async (req, init) => {
+      const url = typeof req === 'string' ? req : (req as Request).url;
+      const method = (init as RequestInit | undefined)?.method ?? 'GET';
+      if (url.includes('/persona-fields-registry')) {
+        return jsonResp(200, REGISTRY);
+      }
+      if (url.includes('/identity/v1/profile') && method === 'PUT') {
+        return jsonResp(500, { code: 'INTERNAL', message: 'DB unavailable' });
+      }
+      return jsonResp(200, PROFILE);
+    });
+    render(
+      <AuthProvider initialSession={SESSION}>
+        <PersonaFieldsForm persona="crew" />
+      </AuthProvider>
+    );
+    await waitFor(() => expect(screen.getByLabelText(/trade/i)).toBeTruthy());
+    fireEvent.submit(screen.getByRole('form'));
+    await waitFor(() => {
+      const alert = screen.queryByRole('alert');
+      expect(alert).not.toBeNull();
+    });
+  });
+
   it('humanize is used when field def has no label', async () => {
     // Override the registry to give a field WITHOUT a label
     fetchSpy.mockImplementation(async (req) => {
