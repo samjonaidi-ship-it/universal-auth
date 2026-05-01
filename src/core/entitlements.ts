@@ -1,4 +1,4 @@
-// @bb/universal-auth | src/core/entitlements.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/core/entitlements.ts | v1.0.1 | 2026-05-01 | BB
 // Entitlement (feature + app_access) cache with stale-while-revalidate.
 //
 // Invariants per spec:
@@ -18,6 +18,7 @@
 
 import { get } from './client.js';
 import type { Entitlements } from '../types/api.js';
+import { AuthSessionRevoked } from '../errors.js';
 
 // ── Constants ─────────────────────────────────────────────────────────────
 
@@ -153,9 +154,17 @@ export async function refreshEntitlements(): Promise<CacheShape | null> {
       };
       saveToDisk(next);
       return next;
-    } catch {
-      // Network or server error — keep the existing cache; consumer sees
-      // `offline: true` on the snapshot.
+    } catch (err) {
+      // v1.0.1 (D2): re-throw session-revoked so the session-watcher / useAuth
+      // hook can drive a sign-out. Only swallow transient network errors —
+      // those leave the cache intact + consumer sees `offline: true`.
+      if (err instanceof AuthSessionRevoked) {
+        throw err;
+      }
+      if (err instanceof TypeError || (err instanceof Error && err.name === 'AbortError')) {
+        return loadFromDisk();
+      }
+      // Other AuthSdkErrors (rate limit, server error, etc.) — also keep cache.
       return loadFromDisk();
     } finally {
       inFlightRefresh = null;

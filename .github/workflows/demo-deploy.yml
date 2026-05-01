@@ -1,4 +1,4 @@
-# BB Universal Auth | .github/workflows/demo-deploy.yml | v1.0.0-rc.1 | 2026-04-25 | BB
+# @bainbridgebuilders/universal-auth | .github/workflows/demo-deploy.yml | v1.0.1 | 2026-05-01 | BB
 # Railway deploy of demo/ to auth-sdk-demo.bainbridgebuilders.com.
 # Triggers: pushes to main that touch demo/ OR src/ (new SDK code → demo refresh).
 #
@@ -36,9 +36,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: '20'
 

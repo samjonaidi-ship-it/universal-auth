@@ -1,4 +1,4 @@
-// @bb/universal-auth | src/react/components/AppChooser.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/react/components/AppChooser.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
 // Per §D2.5 — shown at app root, persona-mismatch fallback, or in user menu
 // when an identity has access to multiple BB apps (D10).
 //

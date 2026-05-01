@@ -1,4 +1,4 @@
-// @bb/universal-auth | src/core/client.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/core/client.ts | v1.0.1 | 2026-05-01 | BB
 // HTTP client for CT BFF. Owns:
 //
 //   §3   Every endpoint at `https://ct-bff.bainbridgebuilders.com/auth/v1/*`
@@ -16,6 +16,14 @@
 //     then surface AuthSessionExpired/Revoked
 //   * On non-2xx: parse envelope → throw typed error
 //   * On network error: throw native Error (offline queue layer catches)
+//
+// v1.0.1 hardening:
+//   B3 — `/session/refresh` Idempotency-Key is derived from
+//        SHA-256(refresh_token).slice(0,16) so two tabs that race past the
+//        in-tab mutex still send the SAME key, letting the server dedupe.
+//   B4 — Every fetch() uses `redirect: 'manual'` + `referrerPolicy:
+//        'strict-origin-when-cross-origin'`. The CT BFF never legitimately
+//        redirects an SDK call, so any 0/3xx is treated as an error.
 
 import { nanoid } from 'nanoid';
 import {
@@ -146,6 +154,12 @@ async function requestInternal<T>(
     method,
     headers,
     credentials: 'include',
+    // v1.0.1 (B4): the CT BFF never legitimately redirects an SDK call.
+    // `redirect: 'manual'` returns an opaque-redirect (status 0) on any 3xx,
+    // which we surface as an error below. Avoids open-redirect chains.
+    redirect: 'manual',
+    // Limit Referer leakage on cross-origin auth requests.
+    referrerPolicy: 'strict-origin-when-cross-origin',
   };
   if (opts.body !== undefined) {
     init.body = isBinaryBody
@@ -159,6 +173,18 @@ async function requestInternal<T>(
   // Native fetch throws on network failure — offline queue layer (Block 3 Day 7-8)
   // catches to persist the mutation for later flush. Non-mutations propagate normally.
   const response = await fetch(url, init);
+
+  // v1.0.1 (B4): redirect:'manual' returns an opaque-redirect with status 0
+  // and `response.type === 'opaqueredirect'`. Either is treated as a failure
+  // — the BFF never returns 3xx for SDK endpoints under normal operation.
+  // EXCEPT 304 Not Modified, which is a cache validator response (no Location
+  // header, not a true redirect) and is the spec-prescribed ETag path (§8.1).
+  if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400 && response.status !== 304)) {
+    throw new AuthSdkError(
+      'UNEXPECTED_REDIRECT',
+      `Request was redirected (status ${response.status}); expected direct response from CT BFF.`
+    );
+  }
 
   // ETag 304 path — §8.1
   if (response.status === 304) {
@@ -223,22 +249,37 @@ async function refreshTokenRequest(refreshToken: string): Promise<{
   access_token: string;
   refresh_token?: string;
   expires_at: string;
+  refresh_expires_at?: string;
   session_id: string;
 }> {
   const cfg = requireConfig();
   const url = joinUrl(cfg.apiBaseUrl, '/auth/v1/session/refresh');
+  // v1.0.1 (B3): derive the idempotency key from the refresh token so two tabs
+  // racing past the in-tab mutex send the SAME key — the server dedupes.
+  // 16 hex chars (64 bits) is plenty for this dedupe window without leaking
+  // the token (preimage-resistant under SHA-256).
+  const idempotencyKey = await deriveRefreshIdempotencyKey(refreshToken);
   const response = await fetch(url, {
     method: 'POST',
     credentials: 'include',
+    // v1.0.1 (B4): same redirect + referrer hardening as primary fetch path.
+    redirect: 'manual',
+    referrerPolicy: 'strict-origin-when-cross-origin',
     headers: {
       'Content-Type': 'application/json',
       'X-Auth-Protocol-Version': PROTOCOL_VERSION,
       'X-App-Id': cfg.appId,
       'X-SDK-Version': cfg.sdkVersion,
-      'Idempotency-Key': nanoid(),
+      'Idempotency-Key': idempotencyKey,
     },
     body: JSON.stringify({ refresh_token: refreshToken }),
   });
+  if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400)) {
+    throw new AuthSdkError(
+      'UNEXPECTED_REDIRECT',
+      `Refresh was redirected (status ${response.status}); expected direct response from CT BFF.`
+    );
+  }
   const bodyText = await response.text();
   if (!response.ok) {
     let env: AuthErrorEnvelope;
@@ -253,9 +294,28 @@ async function refreshTokenRequest(refreshToken: string): Promise<{
     access_token: string;
     refresh_token?: string;
     expires_at: string;
+    refresh_expires_at?: string;
     session_id: string;
   };
 }
+
+/**
+ * Derive an idempotency key for `/session/refresh` from the refresh token.
+ * SHA-256 → first 16 hex chars (64 bits). Identical input → identical key,
+ * which is exactly what we want for cross-tab dedupe on the server.
+ *
+ * Exported only for unit tests via `__deriveRefreshIdempotencyKeyForTests`.
+ */
+async function deriveRefreshIdempotencyKey(refreshToken: string): Promise<string> {
+  const bytes = new TextEncoder().encode(refreshToken);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  const hex = Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+  return hex.slice(0, 16);
+}
+
+export const __deriveRefreshIdempotencyKeyForTests = deriveRefreshIdempotencyKey;
 
 // ── Convenience methods ──────────────────────────────────────────────────
 

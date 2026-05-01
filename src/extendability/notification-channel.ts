@@ -1,4 +1,4 @@
-// @bb/universal-auth | src/extendability/notification-channel.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/extendability/notification-channel.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 // Per §8.5.2 — notification channel adapter interface.
 // v1 ships SMS (Twilio) + email (Resend) as built-ins behind this interface.
 // v1.1+ may register Push, Slack, Teams, WhatsApp, etc., without an SDK bump.

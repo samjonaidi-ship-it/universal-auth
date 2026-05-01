@@ -35,6 +35,10 @@
     "./extendability": {
       "import": "./dist/esm/extendability/index.js",
       "types": "./dist/types/extendability/index.d.ts"
+    },
+    "./internal": {
+      "import": "./dist/esm/internal/index.js",
+      "types": "./dist/types/internal/index.d.ts"
     }
   },
   "scripts": {

@@ -1,14 +1,18 @@
-// @bb/universal-auth | src/offline/reconciler.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/offline/reconciler.ts | v1.0.1 | 2026-05-01 | BB
 // Queue flush + reconciliation per §9.4 status-code matrix.
 //
 // Matrix:
 //   2xx or 4xx (except 429) → delete from queue
 //   5xx or network error    → exponential backoff, max 5 retries, then dead-letter + sync.failed
-//   429                     → respect Retry-After, pause flush
+//   429                     → respect Retry-After (D4: per-row retryAfterTs), pause flush
 //   401                     → stop, trigger re-auth, resume on success
 //   409                     → emit sync.conflict, delete from queue (client can re-queue)
+//
+// v1.0.1 (D4): Retry-After parsing supports BOTH delta-seconds and HTTP-date
+// per RFC 7231 §7.1.3. The parsed timestamp is persisted on the row so a
+// later flush() correctly waits even if the page reloaded in between.
 
-import { readAll, remove, incrementRetry, moveToDeadLetter, type QueuedMutation } from './queue.js';
+import { readAll, remove, setRetryAfter, incrementRetry, moveToDeadLetter, type QueuedMutation } from './queue.js';
 import { getClientConfig } from '../core/client.js';
 import { getAccessToken } from '../core/token-manager.js';
 import { emit } from '../core/event-reporter.js';
@@ -33,7 +37,13 @@ export async function flush(): Promise<FlushResult> {
     const result: FlushResult = { flushed: 0, failed: 0, deferred: 0 };
     const rows = await readAll();
 
+    const now = Date.now();
     for (const row of rows) {
+      // v1.0.1 (D4): skip rows still under server-assigned cooldown.
+      if (row.retryAfterTs !== undefined && row.retryAfterTs > now) {
+        result.deferred += 1;
+        continue;
+      }
       const outcome = await flushOne(row);
       if (outcome === 'ok') result.flushed += 1;
       else if (outcome === 'fail') result.failed += 1;
@@ -97,8 +107,15 @@ async function flushOne(row: QueuedMutation): Promise<Outcome> {
     return 'defer';
   }
 
-  // 429 → respect Retry-After, stop flushing
+  // 429 → respect Retry-After (D4), stamp the row, stop flushing.
   if (status === 429) {
+    if (row.id !== undefined) {
+      const retryAfterHeader = response.headers.get('Retry-After');
+      const retryAfterTs = parseRetryAfter(retryAfterHeader);
+      if (retryAfterTs !== null) {
+        await setRetryAfter(row.id, retryAfterTs);
+      }
+    }
     return 'defer';
   }
 
@@ -137,6 +154,33 @@ function joinUrl(base: string, path: string): string {
   const p = path.startsWith('/') ? path : `/${path}`;
   return `${b}${p}`;
 }
+
+/**
+ * Parse a `Retry-After` header value into an epoch-ms timestamp.
+ * RFC 7231 §7.1.3 — accepts EITHER:
+ *   - delta-seconds: a non-negative decimal integer ("120")
+ *   - HTTP-date:     an IMF-fixdate timestamp ("Wed, 21 Oct 2026 07:28:00 GMT")
+ * Returns null if the value can't be parsed.
+ *
+ * Exported via `__parseRetryAfterForTests` for unit coverage.
+ */
+function parseRetryAfter(value: string | null): number | null {
+  if (value === null) return null;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  // delta-seconds: digits only.
+  if (/^\d+$/.test(trimmed)) {
+    const seconds = Number.parseInt(trimmed, 10);
+    if (!Number.isFinite(seconds) || seconds < 0) return null;
+    return Date.now() + seconds * 1000;
+  }
+  // HTTP-date.
+  const parsed = Date.parse(trimmed);
+  if (Number.isNaN(parsed)) return null;
+  return parsed;
+}
+
+export const __parseRetryAfterForTests = parseRetryAfter;
 
 // ── Test-only ─────────────────────────────────────────────────────────────
 

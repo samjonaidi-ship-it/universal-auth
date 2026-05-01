@@ -1,10 +1,16 @@
-// @bb/universal-auth | src/core/device-id.ts | v1.0.0-rc.1 | 2026-04-24 | BB
-// Device identifier derived from User-Agent per §15.2.
+// @bainbridgebuilders/universal-auth | src/core/device-id.ts | v1.0.1 | 2026-05-01 | BB
+// Device identifier derived from User-Agent per §15.2 — TELEMETRY ONLY.
 //
 // Current: SHA-256(navigator.userAgent).hex.slice(0, 32)
 //   → 32-char hex. Not cryptographic binding — observable to server via UA anyway.
-//   → Matches CalExp5 convention (getOrCreateDeviceId in src/utils/auth.js L167-L183)
-//     so CT BFF device-id matching is stable during the SDK transition.
+//   → Used for event correlation in CT BFF (`device_id` field on every event).
+//
+// v1.0.1 (B2): the previous "device-bound" PBKDF2 input path that fed this
+// value into at-rest encryption is RETIRED. UA-derivation is brittle (Chrome
+// UA-Reduction silently invalidated stored ciphertext) and offers no real
+// device binding. The SDK now generates a fresh AES-256-GCM key via
+// crypto.subtle.generateKey() and persists its CryptoKey handle in IDB.
+// Device ID remains exclusively for server-side event correlation.
 //
 // Phase 2 (§16.2): replace with DPoP (RFC 9449) cryptographic device binding.
 // Today's API is intentionally compatible with a future `deriveKeyedDeviceId()` upgrade.

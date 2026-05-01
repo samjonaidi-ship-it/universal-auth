@@ -1,4 +1,4 @@
-// @bb/universal-auth | src/profile/persona-fields.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/profile/persona-fields.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 // Server-driven persona-fields registry per §5.4.6.
 //
 // New personas / new fields don't need an SDK version bump — the SDK fetches

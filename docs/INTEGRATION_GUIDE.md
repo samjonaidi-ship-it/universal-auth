@@ -1,4 +1,4 @@
-# Integration Guide | `@bainbridgebuilders/universal-auth` | v1.0.0 | 2026-04-30 | BB
+# Integration Guide | `@bainbridgebuilders/universal-auth` | v1.0.1 | 2026-05-01 | BB
 
 > **Read first**: [`CREW_UX_PRINCIPLES.md`](./CREW_UX_PRINCIPLES.md). BB
 > Express users wear gloves and have dirty hands. Every UX decision in
@@ -6,7 +6,14 @@
 > requires the user to type, scroll precisely, or hit a small target
 > repeatedly, you're doing it wrong.
 
-How to add `@bainbridgebuilders/universal-auth` to a Bainbridge Builders consumer app (CalExp5/BB_Express, ControlTower SPA, future Customer Portal, future Buddy Console). Spec citations point to `BB_UNIVERSAL_AUTH_SDK_SPEC.md v1.5.0`.
+How to add `@bainbridgebuilders/universal-auth` to a Bainbridge Builders consumer app (CalExp5/BB_Express, ControlTower SPA, future Customer Portal, future Buddy Console). Spec citations point to `BB_UNIVERSAL_AUTH_SDK_SPEC.md v1.6.0`.
+
+**v1.0.1 changes affecting consumers:**
+- Domain consolidation per D20: `cookieDomain` defaults to `.buildwithbainbridge.com`; `apiBaseUrl` defaults to `https://api.buildwithbainbridge.com` (cutover 2026-05-03).
+- `setSession` moved to `@bainbridgebuilders/universal-auth/internal` subpath. Existing imports from the main barrel emit a one-time `console.warn` deprecation; v1.1 retires them.
+- At-rest refresh-token encryption now uses a non-extractable random AES-256-GCM CryptoKey (handle persisted in IDB). Legacy ciphertext from v1.0.0 is wiped on first v1.0.1 boot — users see one re-sign-in. No code change required by consumers.
+- Cross-tab refresh coalescing via `navigator.locks` (replaces former SharedWorker plan). No API change.
+- `Retry-After` header honored on offline queue 429 responses. No API change.
 
 **Audience:** Sam (CalExp5 cutover), future ControlTower implementer, third-party integrator.
 
@@ -392,3 +399,113 @@ Expected line delta: **−1,800 / +200** per spec §13.2 (replaces ~1,800 lines 
 | Tests fail with ENOTFOUND ct-bff.test | docker stack not running | `docker compose -f test/integration/docker-compose.test.yml up -d` |
 
 For anything else, file an issue in `BainbridgeBuilders/universal-auth` with: SDK version, consumer app + version, network HAR, Sentry trace.
+
+---
+
+## 9. Hardening checklist for SDK consumers (v1.0.1+)
+
+The SDK does its part to keep tokens safe (encrypted IDB, non-extractable CryptoKey, off-main-thread crypto, Web Locks coordination), but **the consumer app's HTML envelope is half the threat model**. Apply this checklist on every BB consumer app.
+
+### 9.1 Content Security Policy (required)
+
+Modern, nonce-based CSP with `'strict-dynamic'` is the 2025 baseline ([web.dev security headers](https://web.dev/articles/security-headers)). At minimum:
+
+```http
+Content-Security-Policy:
+  default-src 'self';
+  script-src 'self' 'nonce-RANDOM_PER_REQUEST' 'strict-dynamic';
+  style-src 'self' 'nonce-RANDOM_PER_REQUEST';
+  img-src 'self' data: https://*.r2.cloudflarestorage.com;
+  font-src 'self' data:;
+  connect-src 'self' https://api.buildwithbainbridge.com;
+  worker-src 'self' blob:;
+  frame-ancestors 'none';
+  base-uri 'self';
+  form-action 'self';
+  object-src 'none';
+  upgrade-insecure-requests;
+```
+
+Notes:
+- The SDK ships zero inline scripts (verified by `scripts/verify-bundle.ts`); `'strict-dynamic'` is safe.
+- `worker-src 'self' blob:` is required because `crypto-worker.ts` is loaded as a Web Worker. Without it, the Worker fails silently and the SDK falls back to main-thread crypto (functional but slower).
+- `connect-src` must allow your CT BFF origin (`api.buildwithbainbridge.com` post-D20 cutover, `ct-bff.bainbridgebuilders.com` pre-cutover, or your dev BFF for local development).
+- `img-src` + your R2 avatar CDN if you upload user avatars.
+
+### 9.2 Trusted Types (recommended)
+
+`Content-Security-Policy: require-trusted-types-for 'script'` blocks trivial DOM-XSS sinks ([MDN Trusted Types](https://developer.mozilla.org/en-US/docs/Web/API/Trusted_Types_API)). Roll out in **report-only** first to surface any policy violations from your own code:
+
+```http
+Content-Security-Policy-Report-Only:
+  require-trusted-types-for 'script';
+  trusted-types default;
+  report-to csp-endpoint;
+```
+
+The SDK does not call `innerHTML`, `eval`, or `new Function()` (verified by source audit). If your `Content-Security-Policy-Report-Only` log is clean for 7 days, promote to enforcing.
+
+### 9.3 Cross-Origin-Opener-Policy + Cross-Origin-Embedder-Policy (recommended)
+
+```http
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp
+```
+
+Enables cross-origin isolation (prerequisite for `SharedArrayBuffer` and high-precision timers if you ever need them). **The SDK uses redirect flows + BFF — it has no popup-based OAuth flow** that would conflict with strict COOP. Set `same-origin` safely. ([web.dev COOP/COEP](https://web.dev/articles/coop-coep))
+
+If your app embeds third-party iframes (analytics, payments, etc.), use `same-origin-allow-popups` instead of `same-origin`, or set `Cross-Origin-Embedder-Policy: credentialless` (broader compatibility).
+
+### 9.4 HSTS + preconnect (required)
+
+```http
+Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
+```
+
+Submit to the [HSTS preload list](https://hstspreload.org/) once you've verified the policy works for 30+ days.
+
+In your HTML `<head>`:
+
+```html
+<link rel="preconnect" href="https://api.buildwithbainbridge.com" crossorigin>
+<link rel="dns-prefetch" href="https://api.buildwithbainbridge.com">
+```
+
+This shaves ~100-200ms off the first auth handshake on cold loads.
+
+### 9.5 Other essentials
+
+```http
+X-Content-Type-Options: nosniff
+Referrer-Policy: strict-origin-when-cross-origin
+Permissions-Policy: camera=(self), microphone=(self), geolocation=(self), payment=()
+```
+
+The SDK sets `redirect: 'manual'` and `referrerPolicy: 'strict-origin-when-cross-origin'` on every fetch, so the consumer's `Referrer-Policy` is mostly cosmetic for SDK-issued requests, but should be set anyway for non-SDK code on the page.
+
+### 9.6 Subresource integrity for cross-origin scripts (if any)
+
+If you load any third-party JS (analytics, monitoring) via `<script src="https://...">`, use `integrity="sha384-..."` and `crossorigin="anonymous"`. Native browser SRI ([MDN SRI](https://developer.mozilla.org/en-US/docs/Web/Security/Subresource_Integrity)).
+
+### 9.7 SDK-specific config knobs
+
+| Knob | Default (v1.0.1) | When to change |
+|---|---|---|
+| `cookieDomain` | `.buildwithbainbridge.com` | Override for non-`buildwithbainbridge.com` deployments (e.g., consumer apps on a tenant's own domain) |
+| `apiBaseUrl` | `https://api.buildwithbainbridge.com` | Override for staging / e2e environments |
+| `mode` | `'production'` | Switch to `'development'` / `'test'` / `'e2e'` per spec §10 |
+| `offline.maxQueueSize` | 1000 | Lower for memory-constrained devices; spec §9.4 evicts oldest on overflow with `sync.failed` event |
+
+### 9.8 Verification
+
+After deploy, run:
+
+```bash
+# Headers check
+curl -sI https://your-app.example.com | grep -E '^(content-security-policy|strict-transport|x-frame-options|cross-origin-opener|cross-origin-embedder)'
+
+# Mozilla Observatory
+# https://observatory.mozilla.org/analyze/your-app.example.com
+```
+
+Aim for an A+ grade. The SDK + this checklist together should give you a high score by default.

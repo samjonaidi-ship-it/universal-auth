@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/flows/permission-grants.ts | v1.0.0-rc.4 | 2026-04-30 | BB
+// @bainbridgebuilders/universal-auth | src/flows/permission-grants.ts | v1.0.1 | 2026-05-01 | BB
 // Browser/device permission-grant recording.
 //
 // Per spec:
@@ -26,7 +26,9 @@ export type PermissionKey =
 export type PermissionState = 'granted' | 'denied' | 'revoked';
 
 export interface RecordGrantInput {
-  permission_key: PermissionKey | string;
+  // v1.0.1 (D6): tightened from `PermissionKey | string` — open string defeats
+  // the union (typos compile silently). Add to the union when a new key ships.
+  permission_key: PermissionKey;
   state: PermissionState;
   /** True if the browser prompted the user before this state was reached. */
   prompted?: boolean;

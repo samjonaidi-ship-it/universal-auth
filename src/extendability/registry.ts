@@ -1,4 +1,4 @@
-// @bb/universal-auth | src/extendability/registry.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/extendability/registry.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 // Adapter registry — consumer apps register plugins at init time.
 // v1 only wires NotificationChannelAdapter; AuthFlow + RiskSignal are
 // reserved interfaces (no built-in dispatch yet).

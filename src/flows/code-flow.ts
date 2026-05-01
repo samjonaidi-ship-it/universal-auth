@@ -1,4 +1,4 @@
-// @bb/universal-auth | src/flows/code-flow.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/flows/code-flow.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 // Code-first sign-in flow — §3.1:
 //   POST /auth/v1/code/request  (rate-limited 3/hr/destination)
 //   POST /auth/v1/code/verify   (rate-limited 10/min/IP)

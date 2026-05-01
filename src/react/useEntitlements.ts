@@ -1,4 +1,4 @@
-// @bb/universal-auth | src/react/useEntitlements.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/react/useEntitlements.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 // Public useEntitlements hook — subscribes to EntitlementsContext only.
 // Components using only this hook DO NOT re-render on identity or status changes
 // (the §8.4 context-split invariant).

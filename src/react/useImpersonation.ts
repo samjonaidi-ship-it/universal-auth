@@ -1,4 +1,4 @@
-// @bb/universal-auth | src/react/useImpersonation.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/react/useImpersonation.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 // Hook for admin impersonation flows + reactive actingAs state.
 
 import { useCallback, useEffect, useState } from 'react';

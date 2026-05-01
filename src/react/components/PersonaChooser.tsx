@@ -1,4 +1,4 @@
-// @bb/universal-auth | src/react/components/PersonaChooser.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/react/components/PersonaChooser.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
 // Per §D2.5 + BB_EXPRESS_APP_SPEC §2.3 — persona picker for multi-persona users.
 // Shown after login when personas.length > 1 and no last_active_persona match.
 

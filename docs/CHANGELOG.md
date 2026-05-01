@@ -6,6 +6,116 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
 
 > **Note on rc.3 / rc.4 entries below:** these were **internal-only milestones** between rc.2 (2026-04-28) and 1.0.0 (2026-04-30). Neither was tagged or published to the registry — public consumer path is rc.2 → 1.0.0. The rc.3 / rc.4 entries document work that landed on `main` but never shipped under those version numbers; "Recommended upgrade" wording in those sections is historical and does not apply to actual consumers.
 
+## [1.0.1] — 2026-05-01 — v1.0.1 hardening
+
+**Hardening release.** Addresses every critical/high finding from the 4-agent v1.0.1 audit (specs + core code + React/CI + industry benchmark, 2026-04-30) and propagates **D20** (domain consolidation) + **D21** (SDK supply-chain attestation) from `BB_CANONICAL_DECISIONS.md` v1.2.1 into the SDK.
+
+### ⚠ Breaking change for storage (zero-prod-user clean cut)
+
+- **At-rest refresh-token encryption migrated to non-extractable random AES-256-GCM CryptoKey.** v1.0.0 used PBKDF2(SHA-256(navigator.userAgent) + constant-salt) — the audit found UA is publicly observable + commonly logged in server access logs, defeating the secrecy of any UA-derived key. v1.0.1 generates a random `crypto.subtle.generateKey({extractable:false})` AES-256-GCM key on first boot and persists the CryptoKey *handle* in IDB (browser keychain encrypts at rest). Closes the audit's largest single security finding.
+- **Migration:** v1.0.1 detects v1.0.0 ciphertext on boot and clean-cut wipes it. Users see one re-sign-in. Acceptable per Sam's lock 2026-05-01 (zero production users at the time of the cut). No code change required by consumers; no admin action needed.
+
+### Security — added or hardened
+
+- **Cross-tab refresh coalescing via `navigator.locks`** replaces the planned (never-implemented) SharedWorker primary path. Universal browser support including Safari (which has no SharedWorker). `navigator.locks.request('bb-auth-refresh', {mode:'exclusive'}, ...)` with double-checked re-read guarantees at most one network refresh per logical expiry across N tabs. Fallback to per-tab Promise mutex when `navigator.locks` is unavailable. (Closes audit finding #6 — confirmed by 3 independent agents.)
+- **Refresh `Idempotency-Key` derived from `SHA-256(refresh_token).slice(0,16)`** so concurrent tabs racing past the in-tab mutex collide on the server (allowing dedup) instead of consuming N rotations. v1.0.0 used `nanoid()` per call which prevented dedup. (Closes audit finding #7.)
+- **`fetch()` hardening:** `redirect: 'manual'` + `referrerPolicy: 'strict-origin-when-cross-origin'` on every SDK request prevents auth-header leak across cross-origin redirects + Referer leak of full page URL.
+- **Magic-link enrollment fragment strip:** `history.replaceState(...)` immediately after fragment read removes the token from URL + browser history. Token no longer persists for third-party in-page scripts to read post-consumption.
+- **BroadcastChannel payload validation:** `bb-universal-auth-session` channel now rejects messages where `accessToken` is non-string or > 8192 chars; same for `sessionId` / `refreshToken`. Hardens against same-origin XSS injection of a counterfeit session.
+- **Service Worker message-handler origin validation:** `sw/index.ts` rejects messages whose `event.source` URL is outside the SW's registration scope; rejects `set_purge_patterns` from any source other than the AuthProvider's known channel. Closes the audit finding that any same-origin script could `postMessage({type:'set_purge_patterns', patterns:['.*']})` and wipe arbitrary caches.
+- **`device.key_mismatch` audit event** emitted before silent wipe on AES-GCM auth-tag failure. Preserves audit trail of legitimate UA rotations vs tampers.
+
+### Spec sync (D20 + D21 propagation)
+
+- **`cookieDomain` defaults to `.buildwithbainbridge.com`** (formerly `.bainbridgebuilders.com`). D20 cutover Saturday 2026-05-03.
+- **`apiBaseUrl` defaults to `https://api.buildwithbainbridge.com`** (formerly `https://ct-bff.bainbridgebuilders.com`).
+- **Mode-safety assertion (`config.assertModeSafety`) un-hardcoded** — now reads from `config.cookieDomain` so the cutover is data-only with no SDK rebuild. Closes the audit's #1 critical finding.
+- **30-day write cutoff (former §9.6 bullet 3) removed** from spec — never implemented; not a v1.0 requirement per Sam's lock 2026-05-01.
+- **`canAccess(resource, action)` ABAC** explicitly marked v1.1-deferred. The `access_policies` table from migration 070 ships in v1.0 reserved/empty.
+- **Demo URL retired** — `auth-sdk-demo.bainbridgebuilders.com` deleted at Porkbun 2026-05-01; spec references purged. `demo/` source survives in the repo for local `pnpm demo:dev`.
+
+### API surface
+
+- **`setSession` moved to `/internal` subpath.** Import path: `import { setSession } from '@bainbridgebuilders/universal-auth/internal'`. The main barrel still re-exports `setSession` with a one-time `console.warn` deprecation; v1.1 retires the main-barrel export.
+- **`onEntitlementsChange(listener)` exported** from entitlements module. AuthProvider subscribes internally, so consumers' `useEntitlements()` now updates live when SWR refresh updates the cache (closes audit finding #R1).
+- **Settings + Profile 409 conflicts** now surface the rejected patch via `sync.conflict` event (`{pendingPatch, serverState, version}`). New `applySettingsPatch(patch)` + `applyProfilePatch(patch)` APIs let callers rebase. v1.0.0 silently dropped the dirty patch; v1.0.1 preserves it until the consumer rebases or discards.
+- **`endImpersonation` server-error path** keeps local-clear (better UX) but emits a new `impersonation.local_clear_drift` warning event with `{reason:'server_call_failed', err}` so audit log catches the drift.
+- **`AuthClient.verify` return type tightened** from `Promise<unknown>` to `Promise<VerifyCodeResult>`.
+- **`PermissionKey` union** dropped `| string` escape — strict union now (typos no longer compile).
+- **`refresh_expires_at`** consumed from server response (was hardcoded `Date.now() + 90d`). Server-shortened TTLs now respected.
+
+### React component fixes
+
+- **`<ContactInfoForm>`** initial-from-props bug fixed: `useState('')` + `useEffect` syncs from `profile` arrival. Existing-profile users no longer see blank inputs.
+- **`<ProfileSetupScreen>`** render-side-effect moved into `useEffect` with proper deps; `useRef` flag prevents double-fire under React Strict Mode.
+- **`<AvatarPicker>` MIME validation** — now allow-lists `image/jpeg|png|webp` + 5MB cap before upload. Rejects with clear `ValidationError`.
+- **`AuthProvider.applySession` SSR safety** — `navigator?.online` (which is wrong: it's `onLine`) replaced with `typeof navigator !== 'undefined' && navigator.onLine`.
+
+### Offline / queue
+
+- **`Retry-After` header honored on 429 responses** (delta-seconds OR HTTP-date per RFC 7231). Per-row `retry_after_ts` written; `flush()` skips rows with `retry_after_ts > now()` until eligible.
+
+### Tests + CI
+
+- **Replaced tautological timing-attack test** (`test/security/02-timing-attack-resistance.test.ts`): v1.0.0 was a regex grep over source files. v1.0.1 is a statistical runtime test — 10,000 invocations with mocked CT BFF, asserts `mean(known_bad) - mean(unknown) < 5%` on response time + `stddev / mean < 0.1`.
+- **New chaos test** `test/chaos/idb-quota-exceeded.test.ts` simulates `QuotaExceededError` on event-reporter writes; asserts `sync.failed` event is emitted with `reason: 'quota_exceeded'`.
+- **GitHub Actions pinned to commit SHAs** across all 4 workflow files (`ci.yml`, `release.yml`, `chaos.yml`, `demo-deploy.yml`). Replaces `@v4` floating tags. Aligns with D21 supply-chain hardening.
+- **`actions/dependency-review-action`** added to `ci.yml` on PR events; fails on critical/high CVEs.
+- **CycloneDX 1.7 SBOM** generated on every release (`@cyclonedx/cyclonedx-npm`); attached to GitHub Release alongside the SLSA provenance attestation.
+- **47 file watermarks canonicalized** from `@bb/universal-auth` to `@bainbridgebuilders/universal-auth`. `scripts/verify-watermarks.ts` regex tightened so old form fails CI.
+
+### Spec docs (BB_Platform_Specs/)
+
+- `BB_UNIVERSAL_AUTH_SDK_SPEC.md` v1.5.0 → **v1.6.0** (D20 + D21 propagation, non-extractable AES key, navigator.locks, demo URL purge, 30-day cutoff removed, canAccess v1.1-deferred)
+- `BB_MIGRATION_MAP.md` v1.2.0 → **v1.3.0** (PCP block 067–071 LIVE in prod 2026-04-30; D13 agents relocated 069–074 → 076–080; D19 → 075; D16 → 081–082; D18 → 083–084; D12 → 085–086; HWM 058 → 071)
+- `BB_AGENT_IDENTITY_SPEC.md` v1.0.0 → **v1.0.1** (migration numbers updated)
+- `BB_ADMIN_ACCESS_WIZARD_SPEC.md` v1.2.0 → **v1.2.1** (`no_app` → `no_app_registration` blocker code at L169 + L853)
+- `BB_EXPRESS_APP_SPEC.md` v1.0.0 → **v1.0.1** (D20 domain refs)
+- `README.md` refreshed (21 decisions, HWM 071, D20 + D21 added)
+- New: `OVERNIGHT_PLAN_2026-05-01.md` (44-task hardening runbook)
+- New: `DNS_STATE_2026-05-01.md` (supersedes 2026-04-25)
+
+### Audit gate progression (v1.0.0 → v1.0.1)
+
+| Gate | v1.0.0 | v1.0.1 |
+|---|---|---|
+| 1 — Coverage 90/85/90/90 | ✅ 93.97/85.97/92.43/93.97 | ✅ maintained (target ≥ same after fixes) |
+| 2 — Integration tests | 🟡 Docker-blocked | 🟡 Docker-blocked (Neon-HTTP-vs-local-pg blocker; deferred to v1.0.2) |
+| 3 — Browser matrix | 🟡 Playwright wiring | 🟡 still pending (separate Phase) |
+| 4 — Chaos suite | 🟡 same Docker block | 🟢 +1 IDB quota-exceeded scenario added |
+| 5 — Performance budget | ✅ | ✅ maintained |
+| 6 — Security audit | ✅ 18/18 | ✅ +5 new tests (timing-runtime, IDB quota, broadcast injection, fetch options, idempotency collision) |
+| 7 — Demo deployed | ✅ | 🪦 demo retired 2026-05-01 per D20 (local-only post-v1.0.1) |
+| 8 — QA runbook | ✅ 43 scenarios | ✅ +3 v1.0.1-specific scenarios |
+| 9 — Published | ✅ 1.0.0 GA | ✅ 1.0.1 (this release) |
+| 10 — Threat model | ✅ | ✅ updated (D10–D14 added; T3 split into T3 + T3a) |
+| 11 — Pact contracts | 🟡 | 🟡 deferred |
+| 12 — CalExp5 migration runbook | ✅ | ✅ +§9 hardening checklist for consumers |
+| 13 — Spec Appendix D sign-off | ⏳ Security + Legal pending | ⏳ Security + Legal pending |
+
+### What this release does NOT change
+
+- DPoP (RFC 9449) — Phase 2 per spec §16.2
+- SSE push for revocation — Phase 2 per spec §16.2
+- ABAC `canAccess` engine — v1.1
+- `<DelegationCenter>` UI — v1.1 (backend `delegated_grants` table from migration 070 is live)
+- IoT credential lifecycle UI — v1.1
+- `org_id` multi-tenant utilization — v1.2+
+
+### Upgrade path
+
+```bash
+pnpm up @bainbridgebuilders/universal-auth@1.0.1
+```
+
+Most consumers see one re-sign-in on first v1.0.1 page load (clean-cut storage migration; see top of this entry). No code changes required if you import only from the main barrel. If you import `setSession`, switch to `@bainbridgebuilders/universal-auth/internal` to silence the deprecation warning; main-barrel export retires in v1.1.
+
+### Audit credits
+
+4-agent v1.0.1 audit dispatched 2026-04-30 returned 12 critical/high + ~30 medium findings; this release closes all 12 critical/high.
+
+---
+
 ## [1.0.0] — 2026-04-30 — GA
 
 **General Availability.** First stable release of `@bainbridgebuilders/universal-auth`. Recommended upgrade path for all consumers on rc.* — no public API changes from rc.4, only test hardening + lint cleanup.

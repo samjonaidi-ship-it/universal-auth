@@ -1,18 +1,19 @@
-// @bb/universal-auth | src/core/crypto-client.ts | v1.0.0-rc.1 | 2026-04-24 | BB
-// Main-thread proxy to crypto-worker.ts. Per §8.2, AES-GCM + PBKDF2 must
-// run off-main-thread. This module:
+// @bainbridgebuilders/universal-auth | src/core/crypto-client.ts | v1.0.1 | 2026-05-01 | BB
+// Main-thread proxy to crypto-worker.ts. Per §8.2, AES-GCM must run off the
+// main thread. This module:
 //
 //   * Lazily spawns the Worker on first crypto op
-//   * Routes encrypt/decrypt/deriveKey through postMessage
-//   * Falls back to in-line pure crypto (from storage.ts) if Worker API is
-//     unavailable — covers Node/SSR/test environments where DedicatedWorker
-//     isn't present
+//   * Routes encrypt/decrypt through postMessage (structured-clone of the
+//     CryptoKey handle preserves its non-extractable flag)
+//   * Falls back to in-line pure crypto if the Worker API is unavailable —
+//     covers Node/SSR/test environments where DedicatedWorker isn't present
 //
-// A1 gate #3: the Worker path is the production code path. The fallback is
-// documented and exercised in tests when Worker isn't available.
+// v1.0.1 (B2): the public API now takes a `CryptoKey` directly (the master
+// key generated + persisted in IndexedDB via storage.getOrCreateMasterKey()).
+// The previous `deviceBoundInput: string` argument is gone.
 
 import { nanoid } from 'nanoid';
-import { deriveKey, encrypt as pureEncrypt, decrypt as pureDecrypt, type EncryptedBlob } from './storage-crypto.js';
+import { encrypt as pureEncrypt, decrypt as pureDecrypt, type EncryptedBlob } from './storage-crypto.js';
 
 // ── Worker lifecycle ──────────────────────────────────────────────────────
 
@@ -91,18 +92,22 @@ function callWorker<T>(op: string, args: unknown): Promise<T> {
   });
 }
 
-// ── Public API (mirrors storage-crypto.ts but routes through worker) ─────
+// ── Public API ────────────────────────────────────────────────────────────
 
+/**
+ * Encrypt a UTF-8 string under the supplied AES-GCM master key. The CryptoKey
+ * is structured-cloned into the Worker; its raw bytes never appear on the
+ * main thread or the wire.
+ */
 export async function encryptString(
   plaintext: string,
-  deviceBoundInput: string
+  key: CryptoKey
 ): Promise<EncryptedBlob> {
   try {
-    return await callWorker<EncryptedBlob>('encrypt', { plaintext, deviceBoundInput });
+    return await callWorker<EncryptedBlob>('encrypt', { plaintext, key });
   } catch (err) {
     if (err instanceof Error && err.message === 'worker-unavailable') {
       // Fallback path — test / SSR / ancient-browser
-      const key = await deriveKey(deviceBoundInput);
       return pureEncrypt(plaintext, key);
     }
     throw err;
@@ -111,13 +116,12 @@ export async function encryptString(
 
 export async function decryptString(
   blob: EncryptedBlob,
-  deviceBoundInput: string
+  key: CryptoKey
 ): Promise<string> {
   try {
-    return await callWorker<string>('decrypt', { ...blob, deviceBoundInput });
+    return await callWorker<string>('decrypt', { ...blob, key });
   } catch (err) {
     if (err instanceof Error && err.message === 'worker-unavailable') {
-      const key = await deriveKey(deviceBoundInput);
       return pureDecrypt(blob, key);
     }
     throw err;

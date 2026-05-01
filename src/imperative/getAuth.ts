@@ -1,4 +1,4 @@
-// @bb/universal-auth | src/imperative/getAuth.ts | v1.0.0-rc.3 | 2026-04-29 | BB
+// @bainbridgebuilders/universal-auth | src/imperative/getAuth.ts | v1.0.1 | 2026-05-01 | BB
 // Non-React imperative entry per spec §5.3. Returns a small client wrapping
 // the token-manager + flow surfaces so consumers (e.g. CalExp5's api-base.js
 // wrapper) can read the current access token, observe session changes, and
@@ -23,7 +23,7 @@ import {
   onSessionChange as tmOnSessionChange,
 } from '../core/token-manager.js';
 import { signOut as recoverySignOut } from '../flows/recovery.js';
-import { requestCode, verifyCode } from '../flows/code-flow.js';
+import { requestCode, verifyCode, type VerifyCodeResult } from '../flows/code-flow.js';
 
 /**
  * Minimal session projection exposed by the imperative API. Reflects what
@@ -57,8 +57,10 @@ export interface AuthClient {
    * Verify the code the user entered after `signIn()`. Returns the
    * server response. After this resolves, `getSession()` reflects the
    * new authenticated state.
+   *
+   * v1.0.1 (D6): typed return — was `Promise<unknown>`.
    */
-  verify(params: { destination: string; code: string }): Promise<unknown>;
+  verify(params: { destination: string; code: string }): Promise<VerifyCodeResult>;
 
   /**
    * Returns a snapshot of the current session as the token-manager sees it.

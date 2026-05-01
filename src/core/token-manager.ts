@@ -1,14 +1,25 @@
-// @bb/universal-auth | src/core/token-manager.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/core/token-manager.ts | v1.0.1 | 2026-05-01 | BB
 // Access + refresh token lifecycle. Enforces spec invariants:
 //
 //   §15.1  Access token in memory only, never disk
 //   §5.0   v1.4.0       Access TTL 15 min (prod), refresh TTL 90 days
-//   §8.2    Mutex-coalesced refresh (Shared Worker primary;
-//                       BroadcastChannel fallback for multi-tab coordination)
+//   §8.2    Mutex-coalesced refresh (navigator.locks across tabs +
+//                       in-tab Promise mutex; BroadcastChannel for token
+//                       broadcast on success)
 //
-// Multi-tab note: Day 3 implementation uses BroadcastChannel for cross-tab
-// signaling (which tab is refreshing + new-token broadcast on success).
-// Shared Worker primary path lands in A3 per plan Block 4 Day 9-10.
+// v1.0.1 hardening:
+//   B7 — refresh_expires_at now reads from the server response. The previous
+//        hardcoded `Date.now() + 90d` survived as a fallback for legacy server
+//        builds with a one-shot console warning.
+//   D8 — BroadcastChannel handler validates message shape (token typeof +
+//        bounded length) before adopting state, so a same-origin XSS injection
+//        can't smuggle a fake session.
+//   C1 — performRefresh() wraps the network call in navigator.locks
+//        ('bb-auth-refresh', exclusive). Inside the lock we double-check
+//        token freshness, so a tab that won the lock after another tab
+//        already refreshed simply adopts the new token. Polyfill: if
+//        navigator.locks is unavailable, falls back to the in-tab mutex
+//        with a one-shot console.warn.
 
 import {
   getRefreshToken,
@@ -29,18 +40,25 @@ export interface SessionTokens {
   sessionId: string;
 }
 
+/**
+ * Refresh response shape. v1.0.1 (B7): `refresh_expires_at` is REQUIRED
+ * (typed `string`); a missing value triggers a fallback warning + 90-day default.
+ */
+export interface RefreshResponse {
+  access_token: string;
+  refresh_token?: string; // rotated if server provides a new one
+  expires_at: string;     // ISO — access token expiry
+  refresh_expires_at?: string; // ISO — refresh token expiry (REQUIRED in v1.0.1)
+  session_id: string;
+}
+
 export interface RefreshCallback {
   /**
    * Called when the access token needs rotation. Implementation lives in
    * `core/client.ts` (POST /auth/v1/session/refresh). Decoupled so this
    * module has no HTTP dependency.
    */
-  (refreshToken: string): Promise<{
-    access_token: string;
-    refresh_token?: string; // rotated if server provides a new one
-    expires_at: string;      // ISO — access token expiry
-    session_id: string;
-  }>;
+  (refreshToken: string): Promise<RefreshResponse>;
 }
 
 // ── Internal state (memory only) ──────────────────────────────────────────
@@ -65,9 +83,20 @@ let refreshCallback: RefreshCallback | null = null;
 // Safety margin — refresh 30 s before actual expiry to cover clock skew + flight time
 const REFRESH_MARGIN_MS = 30_000;
 
-// ── Multi-tab coordination (BroadcastChannel primary; Shared Worker A3+) ──
+// Default refresh TTL when the server doesn't return refresh_expires_at (legacy fallback).
+const DEFAULT_REFRESH_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+
+// Bound for BroadcastChannel-shipped token strings. Real JWTs are typically
+// ~1-3 KB; 8 KB is a safe ceiling that still rejects obvious garbage.
+const MAX_BROADCAST_TOKEN_LEN = 8192;
+
+let warnedMissingRefreshExpiresAt = false;
+let warnedNoNavigatorLocks = false;
+
+// ── Multi-tab coordination (BroadcastChannel + navigator.locks) ───────────
 
 const BROADCAST_CHANNEL_NAME = 'bb-universal-auth-session';
+const REFRESH_LOCK_NAME = 'bb-auth-refresh';
 
 type BroadcastMessage =
   | { type: 'session_updated'; accessToken: string; accessExpiresAt: number; sessionId: string }
@@ -80,7 +109,7 @@ function getBroadcastChannel(): BroadcastChannel | null {
   if (broadcastChannel !== null) return broadcastChannel;
   try {
     broadcastChannel = new BroadcastChannel(BROADCAST_CHANNEL_NAME);
-    broadcastChannel.addEventListener('message', (e: MessageEvent<BroadcastMessage>) => {
+    broadcastChannel.addEventListener('message', (e: MessageEvent<unknown>) => {
       handleBroadcast(e.data);
     });
     return broadcastChannel;
@@ -89,13 +118,37 @@ function getBroadcastChannel(): BroadcastChannel | null {
   }
 }
 
-function handleBroadcast(msg: BroadcastMessage): void {
-  switch (msg.type) {
+/**
+ * v1.0.1 (D8): validate the shape of every BroadcastChannel message before
+ * adopting state. Same-origin XSS could inject a forged "session_updated"
+ * with a malicious access token; rejecting unexpected shapes containment-walls
+ * the SDK against that.
+ */
+function isValidBroadcastMessage(raw: unknown): raw is BroadcastMessage {
+  if (raw === null || typeof raw !== 'object') return false;
+  const msg = raw as Record<string, unknown>;
+  if (msg.type === 'session_cleared') return true;
+  if (msg.type !== 'session_updated') return false;
+  if (typeof msg.accessToken !== 'string' || msg.accessToken.length === 0) return false;
+  if (msg.accessToken.length > MAX_BROADCAST_TOKEN_LEN) return false;
+  if (typeof msg.accessExpiresAt !== 'number' || !Number.isFinite(msg.accessExpiresAt)) return false;
+  if (typeof msg.sessionId !== 'string' || msg.sessionId.length === 0) return false;
+  if (msg.sessionId.length > MAX_BROADCAST_TOKEN_LEN) return false;
+  return true;
+}
+
+function handleBroadcast(raw: unknown): void {
+  if (!isValidBroadcastMessage(raw)) {
+    // Silent reject — don't give an attacker feedback. Real bugs surface in
+    // unit tests, not via runtime probing.
+    return;
+  }
+  switch (raw.type) {
     case 'session_updated':
       // Another tab refreshed; adopt its access token without re-fetching
-      state.accessToken = msg.accessToken;
-      state.accessExpiresAt = msg.accessExpiresAt;
-      state.sessionId = msg.sessionId;
+      state.accessToken = raw.accessToken;
+      state.accessExpiresAt = raw.accessExpiresAt;
+      state.sessionId = raw.sessionId;
       notifyListeners();
       break;
     case 'session_cleared':
@@ -159,7 +212,7 @@ export async function setSession(tokens: SessionTokens): Promise<void> {
   state.accessExpiresAt = tokens.expiresAt;
   state.sessionId = tokens.sessionId;
 
-  const refreshExpiresAt = tokens.refreshExpiresAt ?? Date.now() + 90 * 24 * 60 * 60 * 1000;
+  const refreshExpiresAt = tokens.refreshExpiresAt ?? Date.now() + DEFAULT_REFRESH_TTL_MS;
   await storeRefreshToken(tokens.refreshToken, refreshExpiresAt);
 
   broadcast({
@@ -218,48 +271,101 @@ async function performRefresh(): Promise<string | null> {
     return state.accessToken;
   }
 
-  const rt = await getRefreshToken();
-  if (rt === null) {
-    // No refresh token — need re-auth
-    return null;
-  }
-
-  try {
-    const result = await refreshCallback(rt);
-    const newExpiresAt = new Date(result.expires_at).getTime();
-
-    state.accessToken = result.access_token;
-    state.accessExpiresAt = newExpiresAt;
-    state.sessionId = result.session_id;
-
-    if (result.refresh_token !== undefined) {
-      // Server rotated refresh token — persist new one
-      const refreshExpiresAt = Date.now() + 90 * 24 * 60 * 60 * 1000;
-      await storeRefreshToken(result.refresh_token, refreshExpiresAt);
+  // v1.0.1 (C1): use Web Locks API to coordinate refreshes across tabs. The
+  // in-tab mutex (state.inFlightRefresh) is still the inner ring; navigator.
+  // locks is the outer ring that prevents two tabs from each issuing their
+  // own refresh in parallel.
+  return runUnderRefreshLock(async () => {
+    // Double-check inside the lock — if another tab refreshed while we were
+    // waiting, its session_updated broadcast already populated our state.
+    if (state.accessToken !== null && !isExpiringSoon(state.accessExpiresAt)) {
+      return state.accessToken;
     }
 
-    broadcast({
-      type: 'session_updated',
-      accessToken: result.access_token,
-      accessExpiresAt: newExpiresAt,
-      sessionId: result.session_id,
-    });
-    notifyListeners();
+    const rt = await getRefreshToken();
+    if (rt === null) {
+      // No refresh token — need re-auth
+      return null;
+    }
 
-    return result.access_token;
-  } catch (err) {
-    // Refresh failed — most likely AUTH_SESSION_REVOKED or AUTH_SESSION_EXPIRED
-    // Clear everything so the next getAccessToken() returns null → consumer re-auths
-    await clearRefreshToken();
-    state.accessToken = null;
-    state.accessExpiresAt = 0;
-    state.sessionId = null;
-    broadcast({ type: 'session_cleared' });
-    notifyListeners();
-    // Re-throw so callers (client.ts retry logic) can distinguish refresh-failure
-    // from no-token-present
-    throw err;
+    try {
+      const result = await refreshCallback!(rt);
+      const newExpiresAt = new Date(result.expires_at).getTime();
+
+      state.accessToken = result.access_token;
+      state.accessExpiresAt = newExpiresAt;
+      state.sessionId = result.session_id;
+
+      if (result.refresh_token !== undefined) {
+        // v1.0.1 (B7): use server-returned refresh_expires_at when present.
+        // Legacy servers (pre-v1.0.1) won't return the field; fall back to
+        // 90 days and warn once so the gap is visible in logs.
+        let refreshExpiresAt: number;
+        if (result.refresh_expires_at !== undefined) {
+          refreshExpiresAt = new Date(result.refresh_expires_at).getTime();
+        } else {
+          if (!warnedMissingRefreshExpiresAt) {
+            warnedMissingRefreshExpiresAt = true;
+             
+            console.warn(
+              '[@bainbridgebuilders/universal-auth] Refresh response is missing `refresh_expires_at`; falling back to 90-day default. Update CT BFF to v1.0.1+.'
+            );
+          }
+          refreshExpiresAt = Date.now() + DEFAULT_REFRESH_TTL_MS;
+        }
+        await storeRefreshToken(result.refresh_token, refreshExpiresAt);
+      }
+
+      broadcast({
+        type: 'session_updated',
+        accessToken: result.access_token,
+        accessExpiresAt: newExpiresAt,
+        sessionId: result.session_id,
+      });
+      notifyListeners();
+
+      return result.access_token;
+    } catch (err) {
+      // Refresh failed — most likely AUTH_SESSION_REVOKED or AUTH_SESSION_EXPIRED
+      // Clear everything so the next getAccessToken() returns null → consumer re-auths
+      await clearRefreshToken();
+      state.accessToken = null;
+      state.accessExpiresAt = 0;
+      state.sessionId = null;
+      broadcast({ type: 'session_cleared' });
+      notifyListeners();
+      // Re-throw so callers (client.ts retry logic) can distinguish refresh-failure
+      // from no-token-present
+      throw err;
+    }
+  });
+}
+
+interface NavigatorWithLocks {
+  locks?: {
+    request<T>(
+      name: string,
+      opts: { mode: 'exclusive' | 'shared' },
+      cb: () => Promise<T>
+    ): Promise<T>;
+  };
+}
+
+async function runUnderRefreshLock<T>(work: () => Promise<T>): Promise<T> {
+  const nav = (typeof navigator !== 'undefined' ? navigator : undefined) as
+    | NavigatorWithLocks
+    | undefined;
+  if (nav?.locks?.request === undefined) {
+    if (!warnedNoNavigatorLocks) {
+      warnedNoNavigatorLocks = true;
+       
+      console.warn(
+        '[@bainbridgebuilders/universal-auth] navigator.locks is unavailable; falling back to in-tab refresh mutex only. Cross-tab refreshes may run in parallel.'
+      );
+    }
+    return work();
   }
+  return nav.locks.request(REFRESH_LOCK_NAME, { mode: 'exclusive' }, work);
 }
 
 /**
@@ -299,6 +405,8 @@ export function __resetTokenManagerForTests(): void {
   state.inFlightRefresh = null;
   refreshCallback = null;
   listeners.clear();
+  warnedMissingRefreshExpiresAt = false;
+  warnedNoNavigatorLocks = false;
   if (broadcastChannel !== null) {
     try {
       broadcastChannel.close();

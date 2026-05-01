@@ -1,4 +1,4 @@
-// @bb/universal-auth | src/flows/enroll-flow.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/flows/enroll-flow.ts | v1.0.1 | 2026-05-01 | BB
 // Magic-link enrollment flow (v1.4.0 §3.1bis).
 //
 // Endpoints:
@@ -157,11 +157,37 @@ export async function activateEnrollment(
  * Parse the enrollment token from a URL fragment — e.g.,
  *   https://express.bainbridgebuilders.com/enroll#abc123
  * Returns the token string or null.
+ *
+ * v1.0.1 (B5): when reading from `window.location` (i.e. the caller didn't
+ * pass an explicit URL), the token is stripped from the address bar AND the
+ * browser history entry via `history.replaceState`. Prevents the token
+ * leaking via Referer headers, screen-share recordings, or "share this URL"
+ * UI. Server consumes the token server-side on activate; the client never
+ * needs the fragment again.
  */
 export function parseEnrollmentTokenFromUrl(url: string = ''): string | null {
+  const readingFromLiveLocation = url.length === 0;
   const source = url.length > 0 ? url : typeof window !== 'undefined' ? window.location.href : '';
   const hashIdx = source.indexOf('#');
   if (hashIdx === -1) return null;
   const token = source.slice(hashIdx + 1);
-  return token.length > 0 ? token : null;
+  if (token.length === 0) return null;
+
+  // Strip the fragment from the live URL + history entry. Skip for explicit
+  // URL inputs (the caller already controls history).
+  if (
+    readingFromLiveLocation &&
+    typeof history !== 'undefined' &&
+    typeof location !== 'undefined' &&
+    typeof history.replaceState === 'function'
+  ) {
+    try {
+      history.replaceState(null, '', location.pathname + location.search);
+    } catch {
+      // Some sandboxed iframes throw on replaceState — non-fatal, the token
+      // simply remains in the bar. Activate still works.
+    }
+  }
+
+  return token;
 }

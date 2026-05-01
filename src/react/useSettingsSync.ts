@@ -1,4 +1,4 @@
-// @bb/universal-auth | src/react/useSettingsSync.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/react/useSettingsSync.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 // Hook around core/settings-sync — keeps consumer state in sync with the SDK store.
 
 import { useEffect, useState, useCallback } from 'react';

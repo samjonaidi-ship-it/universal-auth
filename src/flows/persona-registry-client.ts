@@ -1,4 +1,4 @@
-// @bb/universal-auth | src/flows/persona-registry-client.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/flows/persona-registry-client.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 // Client for GET /auth/v1/persona-registry with 1-hour in-memory cache.
 //
 // Source of truth is `ct_bff.persona_registry` (D6). This client caches

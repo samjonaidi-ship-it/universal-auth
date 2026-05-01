@@ -1,4 +1,4 @@
-// @bb/universal-auth | src/profile/index.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/profile/index.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 // `@bainbridgebuilders/universal-auth/profile` subpath — keeps libphonenumber-js
 // out of the core 40 KB budget. Components in `/react` import from here lazily.
 

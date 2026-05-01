@@ -1,4 +1,4 @@
-// @bb/universal-auth | src/profile/completeness.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/profile/completeness.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 // Per-persona profile completeness scoring (§5.4.3).
 //
 // Weighting:

@@ -23,7 +23,7 @@ const SW_VERSION = '1.0.0-rc.1';
 const SYNC_TAG = 'bb-universal-auth-flush';
 
 // Cache-name patterns to purge on logout (configurable via message).
-let purgePatterns: readonly RegExp[] = DEFAULT_PURGE_PATTERNS;
+const purgePatterns: readonly RegExp[] = DEFAULT_PURGE_PATTERNS;
 
 // Typed self ref
 const sw = self as unknown as ServiceWorkerGlobalScope;

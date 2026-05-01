@@ -1,4 +1,4 @@
-// @bb/universal-auth | src/types/api.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/types/api.ts | v1.0.1 | 2026-05-01 | BB
 // v1 HTTP request/response + session types per §3 + §D2.1.
 //
 // Day 1: top-level shape stubs. Day 3-4 (Block 2) fleshes out every request/response.

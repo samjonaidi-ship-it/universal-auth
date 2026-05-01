@@ -1,4 +1,4 @@
-// @bb/universal-auth | src/core/settings-sync.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | src/core/settings-sync.ts | v1.0.1 | 2026-05-01 | BB
 // Settings sync with debounced PUT + If-Match optimistic locking.
 //
 // Invariants per spec:
@@ -8,6 +8,12 @@
 //   §6.1     Emits `settings.changed` on successful PUT; `settings.restored` on
 //            first hydrate against a new device (§8.1 restore-prompt)
 //   §9.4     On 409 Conflict → emit `sync.conflict`, re-hydrate, consumer resolves
+//
+// v1.0.1 (C8): the 409 path now emits a `sync.conflict` event with the FULL
+// shape `{ pendingPatch, serverState, version }` so the consumer can present
+// a real merge UI. The dirty flag is held — consumers MUST call either
+// `applySettingsPatch()` (rebase + retry) or `discardPendingPatch()` (drop).
+// Silently dropping the patch in v1.0.0 was a data-loss bug.
 
 import { get, put } from './client.js';
 import { AuthSdkError } from '../errors.js';
@@ -31,6 +37,12 @@ interface LocalState {
   version: number;         // last known server version
   dirty: boolean;          // true when local has unsaved changes
   hydrated: boolean;
+  /**
+   * v1.0.1 (C8): when a 409 conflict has been emitted, the patch the user
+   * tried to apply is parked here until the consumer rebases via
+   * applySettingsPatch() or drops it via discardPendingPatch().
+   */
+  pendingPatch: SettingsShape | null;
 }
 
 const state: LocalState = {
@@ -38,6 +50,7 @@ const state: LocalState = {
   version: 0,
   dirty: false,
   hydrated: false,
+  pendingPatch: null,
 };
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -91,8 +104,32 @@ export function updateSettings(patch: SettingsShape): void {
   // Shallow merge — callers can pass nested objects; they replace wholesale.
   state.settings = { ...state.settings, ...patch };
   state.dirty = true;
+  state.pendingPatch = { ...(state.pendingPatch ?? {}), ...patch };
   notify();
   scheduleWrite();
+}
+
+/**
+ * v1.0.1 (C8): consumer-driven conflict resolution. After receiving
+ * `sync.conflict`, the consumer presents a merge UI; on resolve, it calls
+ * this with the rebased patch (against the freshly-hydrated `serverState`).
+ * The patch is merged + scheduled as a normal write.
+ */
+export function applySettingsPatch(patch: SettingsShape): void {
+  state.settings = { ...state.settings, ...patch };
+  state.dirty = true;
+  state.pendingPatch = { ...(state.pendingPatch ?? {}), ...patch };
+  notify();
+  scheduleWrite();
+}
+
+/**
+ * v1.0.1 (C8): consumer chose to drop the patch instead of merging. Clears
+ * dirty + pending state.
+ */
+export function discardPendingPatch(): void {
+  state.pendingPatch = null;
+  state.dirty = false;
 }
 
 export function onSettingsChange(listener: Listener): () => void {
@@ -116,6 +153,9 @@ async function flushWrite(): Promise<void> {
   if (inFlightPut !== null) return inFlightPut;
   if (!state.dirty) return;
 
+  // Snapshot the patch we're about to PUT so a 409 can return it to the consumer.
+  const patchInFlight: SettingsShape = state.pendingPatch ?? { ...state.settings };
+
   inFlightPut = (async () => {
     try {
       const { data } = await put<GetResponse>(
@@ -126,6 +166,7 @@ async function flushWrite(): Promise<void> {
       state.version = data.version;
       state.settings = data.settings;
       state.dirty = false;
+      state.pendingPatch = null;
       notify();
       void emit('settings.changed', {
         changed_keys: Object.keys(state.settings),
@@ -133,13 +174,30 @@ async function flushWrite(): Promise<void> {
       });
     } catch (err) {
       if (err instanceof AuthSdkError && isConflict(err)) {
-        void emit('sync.conflict', { endpoint: '/identity/v1/settings' });
-        // Rehydrate from server — caller's responsibility to re-apply patch
+        // v1.0.1 (C8): rehydrate first so the conflict event carries the
+        // freshly-pulled server state. Keep dirty=true and pendingPatch set —
+        // the consumer must rebase via applySettingsPatch() OR drop via
+        // discardPendingPatch(). We refuse to silently drop their edit.
+        let serverState: SettingsShape | null = null;
+        let serverVersion: number | null = null;
         try {
-          await hydrateSettings();
+          const { data: refreshed } = await get<GetResponse>('/identity/v1/settings');
+          state.version = refreshed.version;
+          // NOTE: state.settings still holds the user's local view; we do NOT
+          // overwrite it. The conflict payload exposes the server state for the
+          // consumer's merge UI without clobbering the in-memory edit.
+          serverState = refreshed.settings;
+          serverVersion = refreshed.version;
         } catch {
-          // Rehydrate failed — leave dirty flag for retry on next call
+          // Best-effort — even without a server snapshot, we still emit the
+          // conflict so the consumer sees something happened.
         }
+        void emit('sync.conflict', {
+          endpoint: '/identity/v1/settings',
+          pendingPatch: patchInFlight,
+          serverState,
+          version: serverVersion,
+        });
         return;
       }
       // Network / 5xx — leave dirty; next updateSettings() re-schedules
@@ -186,6 +244,7 @@ export function __resetSettingsSyncForTests(): void {
   state.version = 0;
   state.dirty = false;
   state.hydrated = false;
+  state.pendingPatch = null;
   if (debounceTimer !== null) {
     clearTimeout(debounceTimer);
     debounceTimer = null;
