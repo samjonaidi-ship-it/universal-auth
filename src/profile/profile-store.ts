@@ -131,7 +131,7 @@ export async function saveProfile(
 ): Promise<UniversalProfile> {
   if (state.profile === null) {
     throw new Error(
-      '[@bb/universal-auth] saveProfile called before hydrateProfile completed.'
+      '[@bainbridgebuilders/universal-auth] saveProfile called before hydrateProfile completed.'
     );
   }
 

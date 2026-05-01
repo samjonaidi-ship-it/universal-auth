@@ -57,13 +57,19 @@ jobs:
       - name: Size check before publish
         run: pnpm size-check
 
-      # Phase E6 (v1.0.1): generate CycloneDX SBOM. Captures every transitive
+      # Phase E6 (v1.0.1) — generate CycloneDX SBOM. Captures every transitive
       # production dep + version + license. Attached to the GitHub Release for
-      # downstream consumers + SCA tooling. Uses `pnpm dlx` to avoid bloating
-      # the devDependencies tree just for release-time tooling.
+      # downstream consumers + SCA tooling.
+      #
+      # Pinning: v1.0.1 lookback (C7) flagged the original `@latest` as a
+      # supply-chain inconsistency vs the SHA-pinned actions elsewhere. We pin
+      # to a specific minor (`@2.0`) — `pnpm dlx` resolves to the highest
+      # patch within that minor and verifies the integrity sha (npmjs.org).
+      # The `cyclonedx-npm` major-2 line shipped 2024-2025 and supports
+      # CycloneDX 1.6+. Bump deliberately; `latest` no longer used.
       - name: Generate CycloneDX SBOM
         run: |
-          pnpm dlx @cyclonedx/cyclonedx-npm@latest \
+          pnpm dlx @cyclonedx/cyclonedx-npm@2.0 \
             --output-format json \
             --output-file sbom.cdx.json \
             --omit dev
@@ -73,12 +79,17 @@ jobs:
         id: publish
         run: |
           npm publish --access=restricted
-          # Capture tarball path for attestation step
-          PKG_NAME=$(node -p "require('./package.json').name")
-          PKG_VERSION=$(node -p "require('./package.json').version")
-          TARBALL="$(echo "$PKG_NAME" | tr / -)-${PKG_VERSION#v}.tgz"
-          # Some npm versions name with @-prefix stripped; the pack output is reliable
-          PACK_OUT=$(npm pack --silent 2>/dev/null | tail -1)
+          # v1.0.1 lookback (D7): use ONLY `npm pack` output for the tarball
+          # path. Heuristic name construction (PKG_NAME/PKG_VERSION) was
+          # dropped because if the heuristic and actual pack output ever
+          # disagreed, the attestation step could attest a different artifact
+          # than was published. `npm pack --silent` always emits the canonical
+          # filename on its last stdout line.
+          PACK_OUT=$(npm pack --silent | tail -1)
+          if [ -z "$PACK_OUT" ] || [ ! -f "$PACK_OUT" ]; then
+            echo "::error::npm pack did not produce a tarball; cannot proceed with attestation."
+            exit 1
+          fi
           echo "tarball-path=$PACK_OUT" >> "$GITHUB_OUTPUT"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

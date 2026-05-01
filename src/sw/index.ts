@@ -15,14 +15,17 @@
 
 import {
   DEFAULT_PURGE_PATTERNS,
-  parsePurgePatterns,
   selectCachesToPurge,
 } from './purge-helpers.js';
 
-const SW_VERSION = '1.0.0-rc.1';
+const SW_VERSION = '1.0.1';
 const SYNC_TAG = 'bb-universal-auth-flush';
 
-// Cache-name patterns to purge on logout (configurable via message).
+// Cache-name patterns to purge on logout. Bake-time const since v1.0.1 lookback
+// (D5): the runtime `set_purge_patterns` message handler is rejected by the
+// origin-validation check, so making this mutable adds attack surface without
+// any consumer benefit. If a consumer needs different patterns, they ship a
+// different SW build.
 const purgePatterns: readonly RegExp[] = DEFAULT_PURGE_PATTERNS;
 
 // Typed self ref
@@ -89,12 +92,6 @@ sw.addEventListener('message', (event: ExtendableMessageEvent) => {
   if (!isTrustedClient(event.source)) return;
 
   switch (data.type) {
-    case 'set_purge_patterns': {
-      // `set_purge_patterns` is privileged config — never accept it from a
-      // page client. Pattern updates go through the build/SW-install path.
-      // Drop silently to avoid leaking that we recognize the type.
-      return;
-    }
     case 'purge_caches': {
       event.waitUntil(purgeCaches());
       break;
@@ -103,13 +100,12 @@ sw.addEventListener('message', (event: ExtendableMessageEvent) => {
       event.source?.postMessage({ type: 'pong', version: SW_VERSION });
       break;
     }
+    // v1.0.1 lookback (D5): the `set_purge_patterns` runtime message type
+    // and `parsePurgePatterns` import were removed in v1.0.1. Patterns are
+    // bake-time only via `DEFAULT_PURGE_PATTERNS`. If a consumer needs
+    // different patterns, ship a different SW build.
   }
 });
-
-// `parsePurgePatterns` is retained for build-time pattern hydration (when
-// patterns ship baked into the SW bundle). It's intentionally unused at
-// runtime now that `set_purge_patterns` is rejected at the boundary.
-void parsePurgePatterns;
 
 async function purgeCaches(): Promise<void> {
   const names = await caches.keys();

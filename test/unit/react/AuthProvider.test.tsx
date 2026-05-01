@@ -1,4 +1,4 @@
-// @bb/universal-auth | test/unit/react/AuthProvider.test.tsx | v1.0.1 | 2026-04-29 | BB
+// @bainbridgebuilders/universal-auth | test/unit/react/AuthProvider.test.tsx | v1.0.1 | 2026-04-29 | BB
 // v1.0.1 LOOKBACK_2026-04-29-overnight audit fix F-N5: stub global.fetch
 //        so AuthProvider's hydration call (`/auth/v1/me`) doesn't trigger
 //        a real DNS lookup against `ct-bff.test.example.com`. Eliminates

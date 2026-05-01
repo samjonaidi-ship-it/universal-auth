@@ -1,4 +1,4 @@
-// @bb/universal-auth | test/chaos/05-multi-tab-refresh-race.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @bainbridgebuilders/universal-auth | test/chaos/05-multi-tab-refresh-race.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Spec §11.6 scenario 5 — multi-tab refresh race.
 //
 // Toxic: 2-second latency on /session/refresh, simulating slow upstream.

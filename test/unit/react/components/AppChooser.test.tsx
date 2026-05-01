@@ -1,4 +1,4 @@
-// @bb/universal-auth | test/unit/react/components/AppChooser.test.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | test/unit/react/components/AppChooser.test.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
 // Smoke + fallback to useEntitlements().app_access (Gap 3 fix).
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';

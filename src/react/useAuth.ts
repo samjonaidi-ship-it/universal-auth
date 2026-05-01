@@ -43,7 +43,7 @@ export function useAuth(): UseAuthReturn {
   const st = useContext(StatusContext);
   if (id === null || st === null) {
     throw new Error(
-      '[@bb/universal-auth] useAuth() called outside <AuthProvider>. ' +
+      '[@bainbridgebuilders/universal-auth] useAuth() called outside <AuthProvider>. ' +
         'Wrap your app: <AuthProvider><App /></AuthProvider>.'
     );
   }

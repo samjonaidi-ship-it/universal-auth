@@ -1,4 +1,4 @@
-// @bb/universal-auth | test/integration/04-event-batching.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @bainbridgebuilders/universal-auth | test/integration/04-event-batching.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Integration test #4 per spec §11.3 — event batching → /events/v1/ingest.
 //
 // Asserts:

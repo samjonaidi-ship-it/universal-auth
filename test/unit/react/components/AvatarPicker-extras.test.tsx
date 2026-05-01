@@ -1,4 +1,4 @@
-// @bb/universal-auth | test/unit/react/components/AvatarPicker-extras.test.tsx | v1.0.0-rc.1 | 2026-04-28 | BB
+// @bainbridgebuilders/universal-auth | test/unit/react/components/AvatarPicker-extras.test.tsx | v1.0.0-rc.1 | 2026-04-28 | BB
 // Coverage push for AvatarPicker.tsx — file upload handler + clear handler
 // + error states + the already-has-avatar branch (clear button visible).
 

@@ -132,6 +132,14 @@ export function discardPendingPatch(): void {
   state.dirty = false;
 }
 
+/**
+ * v1.0.1 (C8): read the patch that's awaiting consumer rebase after a 409.
+ * Returns null when no conflict is pending. Mirror of `getPendingProfilePatch`.
+ */
+export function getPendingSettingsPatch(): SettingsShape | null {
+  return state.pendingPatch === null ? null : { ...state.pendingPatch };
+}
+
 export function onSettingsChange(listener: Listener): () => void {
   listeners.add(listener);
   return () => {

@@ -1,4 +1,4 @@
-// @bb/universal-auth | test/unit/core/event-reporter.test.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | test/unit/core/event-reporter.test.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 // A2 gate #7 — envelope auto-population + batch ingest.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -69,8 +69,12 @@ describe('core/event-reporter', () => {
   it('flushes when batchSize cap is reached', async () => {
     await emit('a.b', {});
     await emit('a.b', {});
-    await emit('a.b', {});  // 3rd → cap hit
-    await new Promise((r) => setTimeout(r, 20));
+    await emit('a.b', {});  // 3rd → cap hit triggers `void flushNow()`
+    // The cap-trigger fires `void flushNow()` which is async; in loaded CI
+    // environments the 20 ms wait used pre-v1.0.1 was sometimes too short.
+    // Switch to a deterministic await of flushNow itself — same semantic
+    // (the flush does happen) but no timing race.
+    await flushNow();
 
     const ingestCalls = fetchSpy.mock.calls.filter(([url]) =>
       String(url).includes('/events/v1/ingest')

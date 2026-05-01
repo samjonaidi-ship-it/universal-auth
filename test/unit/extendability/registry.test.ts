@@ -1,4 +1,4 @@
-// @bb/universal-auth | test/unit/extendability/registry.test.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | test/unit/extendability/registry.test.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 // A4 gate #7 — throwaway mock NotificationChannelAdapter registers + delivers.
 
 import { describe, it, expect, beforeEach } from 'vitest';

@@ -1,4 +1,4 @@
-// @bb/universal-auth | test/chaos/02-5xx-burst-events.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @bainbridgebuilders/universal-auth | test/chaos/02-5xx-burst-events.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Spec §11.6 scenario 2 — 5xx burst on event ingestion.
 //
 // Toxiproxy operates at TCP layer (cannot return synthetic 5xx). Closest

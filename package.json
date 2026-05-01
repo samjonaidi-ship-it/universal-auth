@@ -117,6 +117,16 @@
       "name": "sw lazy (§12.1 L1203 budget 5 KB)",
       "path": "dist/esm/sw/index.js",
       "limit": "5 KB"
+    },
+    {
+      "name": "react subpath (v1.0.2 lookback C4 — was unbudgeted; 60 KB ceiling pending Block 4 calibration)",
+      "path": "dist/esm/react/index.js",
+      "limit": "60 KB"
+    },
+    {
+      "name": "profile subpath (v1.0.2 lookback C4)",
+      "path": "dist/esm/profile/index.js",
+      "limit": "30 KB"
     }
   ],
   "engines": {

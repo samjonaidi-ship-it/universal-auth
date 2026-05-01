@@ -1,4 +1,4 @@
-// @bb/universal-auth | test/integration/08-revoke-all-cascades.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @bainbridgebuilders/universal-auth | test/integration/08-revoke-all-cascades.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Integration test #8 per spec §11.3 — POST /auth/v1/session/revoke-all cascades to all sessions.
 //
 // Scenario: same user signs in 3 times (3 different devices). Then calls

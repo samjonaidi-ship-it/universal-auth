@@ -136,6 +136,7 @@ export {
   hasAppAccess,
   getEntitlementsSnapshot,
   refreshEntitlements,
+  onEntitlementsChange,
 } from './core/entitlements.js';
 export {
   getSettings,
@@ -144,6 +145,10 @@ export {
   onSettingsChange,
   hydrateSettings,
   flushSettingsNow,
+  // v1.0.1 (C8) — caller-side rebase on 409 sync.conflict.
+  applySettingsPatch,
+  getPendingSettingsPatch,
+  discardPendingPatch as discardPendingSettingsPatch,
   type SettingsShape,
 } from './core/settings-sync.js';
 export { getSDKMetrics, type SDKMetrics } from './core/sdk-metrics.js';

@@ -17,7 +17,7 @@ export function useEntitlements(): UseEntitlementsReturn {
   const e = useContext(EntitlementsContext);
   if (e === null) {
     throw new Error(
-      '[@bb/universal-auth] useEntitlements() called outside <AuthProvider>.'
+      '[@bainbridgebuilders/universal-auth] useEntitlements() called outside <AuthProvider>.'
     );
   }
   return e;

@@ -1,4 +1,4 @@
-// @bb/universal-auth | test/unit/setup.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | test/unit/setup.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 // Vitest global setup. happy-dom provides DOM + navigator + crypto, but Node
 // 25+ injects a broken `localStorage` stub (requires --localstorage-file CLI
 // arg for full functionality — unused by vitest). We shim with a Map-backed

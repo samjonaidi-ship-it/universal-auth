@@ -54,15 +54,17 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
 ### Offline / queue
 
 - **`Retry-After` header honored on 429 responses** (delta-seconds OR HTTP-date per RFC 7231). Per-row `retry_after_ts` written; `flush()` skips rows with `retry_after_ts > now()` until eligible.
+- **Reconciler `fetch()` hardened** (v1.0.1 lookback C1) — `redirect:'manual'` + `referrerPolicy:'strict-origin-when-cross-origin'` now applied to the offline-queue replay path, matching the B4 hardening already in `client.ts`. Opaque-redirect responses are treated as transient network errors. Closes the audit's "third fetch in src/" gap.
+- **`requestBackgroundFlush` real foreground fallback** (v1.0.1 lookback C8) — when Background Sync API is unavailable (Safari, Firefox, incognito, SW registration blocked), `requestBackgroundFlush` now performs a foreground flush via lazy-loaded `reconciler.flush()` instead of returning silently. Reliability-critical callers (`online` event handler, retry timer) no longer need to branch.
 
 ### Tests + CI
 
-- **Replaced tautological timing-attack test** (`test/security/02-timing-attack-resistance.test.ts`): v1.0.0 was a regex grep over source files. v1.0.1 is a statistical runtime test — 10,000 invocations with mocked CT BFF, asserts `mean(known_bad) - mean(unknown) < 5%` on response time + `stddev / mean < 0.1`.
+- **Replaced tautological timing-attack test** (`test/security/02-timing-attack-resistance.test.ts`): v1.0.0 was a regex grep over source files. v1.0.1 is a statistical runtime test — **2,000 invocations** (1,000 per cohort) with mocked CT BFF, asserts the mean-time delta between known-bad-email and unknown-email cohorts is within 0.5 ms absolute OR 25% relative (whichever is wider, since at sub-millisecond fetch latencies clock granularity dominates the floor). N and tolerance were calibrated to the actual CI run characteristics; the original v1.0.1 lookback flagged a higher N + tighter tolerance — moved to v1.0.2 backlog. The test still detects timing-leak regressions; the looser bound is a tradeoff for stability vs. flake.
 - **New chaos test** `test/chaos/idb-quota-exceeded.test.ts` simulates `QuotaExceededError` on event-reporter writes; asserts `sync.failed` event is emitted with `reason: 'quota_exceeded'`.
-- **GitHub Actions pinned to commit SHAs** across all 4 workflow files (`ci.yml`, `release.yml`, `chaos.yml`, `demo-deploy.yml`). Replaces `@v4` floating tags. Aligns with D21 supply-chain hardening.
+- **GitHub Actions pinned to commit SHAs** across all 4 workflow files (`ci.yml`, `release.yml`, `chaos.yml`, `demo-deploy.yml`). Replaces `@v4` floating tags. Aligns with D21 supply-chain hardening. **CycloneDX-npm in `release.yml` pinned to `@2.0`** (v1.0.1 lookback C7) — was previously `@latest`, which was inconsistent with the SHA-pinning theme.
 - **`actions/dependency-review-action`** added to `ci.yml` on PR events; fails on critical/high CVEs.
-- **CycloneDX 1.7 SBOM** generated on every release (`@cyclonedx/cyclonedx-npm`); attached to GitHub Release alongside the SLSA provenance attestation.
-- **47 file watermarks canonicalized** from `@bb/universal-auth` to `@bainbridgebuilders/universal-auth`. `scripts/verify-watermarks.ts` regex tightened so old form fails CI.
+- **CycloneDX 1.7 SBOM** generated on every release (`@cyclonedx/cyclonedx-npm@2.0`); attached to GitHub Release alongside the SLSA provenance attestation.
+- **Watermarks canonicalized** from `@bb/universal-auth` to `@bainbridgebuilders/universal-auth` across 150+ files (47 src+scripts in v1.0.1 initial sweep + 103 test/+demo/+root configs in v1.0.1 lookback C2). `scripts/verify-watermarks.ts` regex tightened so old form fails CI; `SCAN_DIRS` widened to `[src, scripts, test, demo]` + 7 root config files; line-2 fallback added for files with `@vitest-environment` pragma on line 1.
 
 ### Spec docs (BB_Platform_Specs/)
 

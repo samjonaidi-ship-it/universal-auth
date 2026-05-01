@@ -1,4 +1,4 @@
-// @bb/universal-auth | test/unit/flows/persona-registry-client.test.ts | v1.0.0-rc.1 | 2026-04-25 | BB
+// @bainbridgebuilders/universal-auth | test/unit/flows/persona-registry-client.test.ts | v1.0.0-rc.1 | 2026-04-25 | BB
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {

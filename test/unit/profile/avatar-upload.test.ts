@@ -1,4 +1,4 @@
-// @bb/universal-auth | test/unit/profile/avatar-upload.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @bainbridgebuilders/universal-auth | test/unit/profile/avatar-upload.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Coverage push for src/profile/avatar.ts upload paths (lines 112-188 were 48%).
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';

@@ -1,4 +1,4 @@
-// @bb/universal-auth | test/integration/setup.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @bainbridgebuilders/universal-auth | test/integration/setup.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Integration test setup. Waits for the docker-compose stack (or a remote
 // staging URL via INTEGRATION_BASE_URL env var) to be reachable before any
 // test runs. Throws if services aren't healthy after timeout.

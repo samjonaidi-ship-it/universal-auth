@@ -1,4 +1,4 @@
-// @bb/universal-auth | test/integration/passkey-simulator.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @bainbridgebuilders/universal-auth | test/integration/passkey-simulator.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Minimal authenticator simulator for integration tests. NOT a real WebAuthn
 // implementation — produces shapes the BFF can verify in test mode (where
 // signature verification can be relaxed / bypassed).

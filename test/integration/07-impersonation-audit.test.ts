@@ -1,4 +1,4 @@
-// @bb/universal-auth | test/integration/07-impersonation-audit.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @bainbridgebuilders/universal-auth | test/integration/07-impersonation-audit.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Integration test #7 per spec §11.3 — impersonation audit log integrity.
 //
 // Asserts:

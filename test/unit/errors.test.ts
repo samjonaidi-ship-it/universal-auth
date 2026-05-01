@@ -1,4 +1,4 @@
-// @bb/universal-auth | test/unit/errors.test.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | test/unit/errors.test.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 // A1 gate #5 — every canonical error code has a typed class + factory mapping
 
 import { describe, it, expect } from 'vitest';

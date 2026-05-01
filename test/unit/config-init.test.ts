@@ -1,4 +1,4 @@
-// @bb/universal-auth | test/unit/config-init.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @bainbridgebuilders/universal-auth | test/unit/config-init.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Coverage push for src/config.ts initUniversalAuth flow (lines 97-134).
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';

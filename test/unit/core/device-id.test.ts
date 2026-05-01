@@ -1,4 +1,4 @@
-// @bb/universal-auth | test/unit/core/device-id.test.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | test/unit/core/device-id.test.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 // A1 gate #10 coverage for src/core/device-id.ts
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';

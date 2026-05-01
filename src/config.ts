@@ -9,7 +9,9 @@
  * - `development`: accelerated TTLs, verbose logs, DEV banner
  * - `test`: header-gated, seed users, ephemeral events, TEST banner
  * - `e2e`: dedicated `ct_bff_e2e` schema, outbox captures
- * - `simulate`: RESERVED v1.4.0 §10.5 — not implemented; treated as `test` if passed
+ * - `simulate`: RESERVED v1.4.0 §10.5 — currently normalized to `test` at
+ *    `initUniversalAuth` time so all gates that check `mode === 'test'` apply.
+ *    A future revision will split simulate into its own gate set.
  */
 export type SdkMode = 'production' | 'development' | 'test' | 'e2e' | 'simulate';
 
@@ -107,7 +109,13 @@ export const SDK_VERSION = '1.0.1';
  * React providers (Block 4).
  */
 export async function initUniversalAuth(config: UniversalAuthConfig): Promise<void> {
-  const mode: SdkMode = config.mode ?? 'production';
+  // v1.0.1 lookback (D8): normalize `simulate` → `test` per §10.5 docstring.
+  // Until simulate gets its own gate set, every consumer-facing gate that
+  // checks `mode === 'test'` should also apply to simulate. Doing the
+  // normalization at init time means downstream code only ever sees the
+  // four "real" modes.
+  const requested: SdkMode = config.mode ?? 'production';
+  const mode: SdkMode = requested === 'simulate' ? 'test' : requested;
 
   // Browser-context safety check (skipped in Node test harness)
   if (typeof window !== 'undefined' && typeof window.location !== 'undefined') {

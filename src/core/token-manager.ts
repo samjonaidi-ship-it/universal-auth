@@ -296,24 +296,37 @@ async function performRefresh(): Promise<string | null> {
       state.accessExpiresAt = newExpiresAt;
       state.sessionId = result.session_id;
 
-      if (result.refresh_token !== undefined) {
-        // v1.0.1 (B7): use server-returned refresh_expires_at when present.
-        // Legacy servers (pre-v1.0.1) won't return the field; fall back to
-        // 90 days and warn once so the gap is visible in logs.
-        let refreshExpiresAt: number;
-        if (result.refresh_expires_at !== undefined) {
-          refreshExpiresAt = new Date(result.refresh_expires_at).getTime();
-        } else {
-          if (!warnedMissingRefreshExpiresAt) {
-            warnedMissingRefreshExpiresAt = true;
-             
-            console.warn(
-              '[@bainbridgebuilders/universal-auth] Refresh response is missing `refresh_expires_at`; falling back to 90-day default. Update CT BFF to v1.0.1+.'
-            );
-          }
-          refreshExpiresAt = Date.now() + DEFAULT_REFRESH_TTL_MS;
+      // v1.0.1 (B7): use server-returned refresh_expires_at when present.
+      // Legacy servers (pre-v1.0.1) won't return the field; fall back to
+      // 90 days and warn once so the gap is visible in logs.
+      // v1.0.1 (lookback C5): also honor refresh_expires_at when the refresh
+      // token isn't rotated — server may extend lifetime without re-issuing.
+      let refreshExpiresAt: number | null = null;
+      if (result.refresh_expires_at !== undefined) {
+        refreshExpiresAt = new Date(result.refresh_expires_at).getTime();
+      } else if (result.refresh_token !== undefined) {
+        // Only warn when we get a rotated token without a TTL — that's the
+        // "old server" case. Missing TTL with no rotation is normal (server
+        // declined to rotate this round; existing TTL stands).
+        if (!warnedMissingRefreshExpiresAt) {
+          warnedMissingRefreshExpiresAt = true;
+          console.warn(
+            '[@bainbridgebuilders/universal-auth] Refresh response is missing `refresh_expires_at`; falling back to 90-day default. Update CT BFF to v1.0.1+.'
+          );
         }
+        refreshExpiresAt = Date.now() + DEFAULT_REFRESH_TTL_MS;
+      }
+
+      if (result.refresh_token !== undefined && refreshExpiresAt !== null) {
+        // Rotated token — persist new ciphertext + new TTL.
         await storeRefreshToken(result.refresh_token, refreshExpiresAt);
+      } else if (refreshExpiresAt !== null) {
+        // Server extended TTL without rotating — re-encrypt the existing
+        // refresh token under the new expiry so subsequent reads see it.
+        const existing = await getRefreshToken();
+        if (existing !== null) {
+          await storeRefreshToken(existing, refreshExpiresAt);
+        }
       }
 
       broadcast({

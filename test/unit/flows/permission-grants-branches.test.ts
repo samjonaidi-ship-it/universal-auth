@@ -1,4 +1,4 @@
-// @bb/universal-auth | test/unit/flows/permission-grants-branches.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @bainbridgebuilders/universal-auth | test/unit/flows/permission-grants-branches.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Branch coverage for requestAndRecord — Notification path + permissions API
 // + error fallback.
 

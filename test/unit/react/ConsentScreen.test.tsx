@@ -1,4 +1,4 @@
-// @bb/universal-auth | test/unit/react/ConsentScreen.test.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
+// @bainbridgebuilders/universal-auth | test/unit/react/ConsentScreen.test.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
 // A3 gate #3 — ConsentScreen 9-consent atomic submit (crew hard-gate).
 
 import { describe, it, expect, vi } from 'vitest';
