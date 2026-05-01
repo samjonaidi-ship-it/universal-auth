@@ -24,7 +24,6 @@ import {
 } from '../core/token-manager.js';
 import { signOut as recoverySignOut } from '../flows/recovery.js';
 import { requestCode, verifyCode } from '../flows/code-flow.js';
-import type { Session } from '../types/api.js';
 
 /**
  * Minimal session projection exposed by the imperative API. Reflects what

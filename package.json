@@ -1,6 +1,6 @@
 {
   "name": "@bainbridgebuilders/universal-auth",
-  "version": "1.0.0-rc.4",
+  "version": "1.0.0",
   "description": "Bainbridge Builders universal authentication SDK — one package, every consumer app (BB_Express, ControlTower, future Customer Portal, Buddy Console).",
   "license": "UNLICENSED",
   "type": "module",
