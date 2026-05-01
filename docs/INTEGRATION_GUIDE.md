@@ -1,4 +1,4 @@
-# Integration Guide | `@bainbridgebuilders/universal-auth` | v1.0.0-rc.3 | 2026-04-29 | BB
+# Integration Guide | `@bainbridgebuilders/universal-auth` | v1.0.0 | 2026-04-30 | BB
 
 > **Read first**: [`CREW_UX_PRINCIPLES.md`](./CREW_UX_PRINCIPLES.md). BB
 > Express users wear gloves and have dirty hands. Every UX decision in
@@ -6,7 +6,7 @@
 > requires the user to type, scroll precisely, or hit a small target
 > repeatedly, you're doing it wrong.
 
-How to add `@bainbridgebuilders/universal-auth` to a Bainbridge Builders consumer app (CalExp5/BB_Express, ControlTower SPA, future Customer Portal, future Buddy Console). Spec citations point to `BB_UNIVERSAL_AUTH_SDK_SPEC.md v1.4.3`.
+How to add `@bainbridgebuilders/universal-auth` to a Bainbridge Builders consumer app (CalExp5/BB_Express, ControlTower SPA, future Customer Portal, future Buddy Console). Spec citations point to `BB_UNIVERSAL_AUTH_SDK_SPEC.md v1.5.0`.
 
 **Audience:** Sam (CalExp5 cutover), future ControlTower implementer, third-party integrator.
 
@@ -117,7 +117,7 @@ curl -X POST https://ct-bff.bainbridgebuilders.com/events/v1/ingest \
     "event_type":"session.heartbeat",
     "app_id":"bb_express",
     "client_ts":"2026-04-28T20:00:00Z",
-    "sdk_version":"1.0.0-rc.2",
+    "sdk_version":"1.0.0",
     "protocol_version":"v1",
     "payload":{}
   }]}'

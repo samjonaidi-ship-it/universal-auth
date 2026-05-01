@@ -22,17 +22,28 @@ CalExp5 dead-file cleanup landed during the rc.3/rc.4 cycle. From `OVERNIGHT_NOT
 
 ### Gate #2 — Deleted files confirmed
 
-**State:** ✅ **MET**
+**State:** 🟡 **PARTIAL** (3 of 6 from cutover plan deleted; 3 kept by design pending api-base.js refactor)
 
-Confirmed deleted from CalExp5 `main`:
+**Verified deleted from CalExp5 `main`:**
 - `src/components/auth/LoginScreen.jsx` ✅
 - `src/components/auth/EnrollmentFlow.jsx` ✅
 - `src/components/auth/BiometricButton.jsx` ✅
-- `src/utils/auth.js` (legacy) ✅
-- `src/store/authStore.js` (legacy) ✅
-- `src/utils/indexed-db.js` (legacy) ✅
 
-`src/utils/api-base.js` partial cleanup carry-forward (~800 LOC) — tracked in `SDK_COMPLETION_BACKLOG.md` §3.1.
+**Kept by design** (still in active use by `src/utils/api-base.js`; deletion deferred to v1.0.1 per `SDK_COMPLETION_BACKLOG.md §3.1`):
+- `src/utils/auth.js` — kept
+- `src/store/authStore.js` — kept
+- `src/utils/indexed-db.js` — kept
+
+**Net delta achieved:** −1,002 LOC (cutover plan §13.2 target was −1,800; remaining −800 LOC blocked behind api-base.js refactor).
+
+**Verification command:**
+```bash
+for f in LoginScreen.jsx EnrollmentFlow.jsx BiometricButton.jsx; do
+  test ! -f /c/Users/samjo/Desktop/CalExp5/src/components/auth/$f && echo "deleted: $f"
+done
+```
+
+**Audit correction (2026-05-01):** original draft of this gate listed all 6 files as deleted. Lookback audit caught the discrepancy via filesystem check; SDK_COMPLETION_BACKLOG.md §3.1 is the canonical source and was always correct.
 
 ### Gate #3 — Sentry zero regression during 24h soak
 

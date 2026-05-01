@@ -11,7 +11,8 @@
     "docs/CHANGELOG.md",
     "docs/RELEASE_NOTES.md",
     "docs/INTEGRATION_GUIDE.md",
-    "docs/THREAT_MODEL.md"
+    "docs/THREAT_MODEL.md",
+    "docs/QA_RUNBOOK.md"
   ],
   "exports": {
     ".": {

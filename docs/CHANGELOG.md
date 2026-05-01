@@ -4,14 +4,16 @@ All notable changes to `@bainbridgebuilders/universal-auth` are documented here.
 
 Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line numbers drift on every version bump; section numbers are stable.
 
+> **Note on rc.3 / rc.4 entries below:** these were **internal-only milestones** between rc.2 (2026-04-28) and 1.0.0 (2026-04-30). Neither was tagged or published to the registry — public consumer path is rc.2 → 1.0.0. The rc.3 / rc.4 entries document work that landed on `main` but never shipped under those version numbers; "Recommended upgrade" wording in those sections is historical and does not apply to actual consumers.
+
 ## [1.0.0] — 2026-04-30 — GA
 
 **General Availability.** First stable release of `@bainbridgebuilders/universal-auth`. Recommended upgrade path for all consumers on rc.* — no public API changes from rc.4, only test hardening + lint cleanup.
 
 ### What's in 1.0.0 vs rc.4
 
-- **A5 audit gate #1 fully cleared** — function coverage 85.64% → **92.43%**, branches 84.91% → **85.97%**, lines 91.32% → **93.97%**. All four spec §11 thresholds (90/85/90/90) now CI-enforced and passing.
-  - 27 new component-handler tests across `SignInForm`, `ContactInfoForm`, `GearSection`, `PersonaFieldsForm`, `PropertySection`. Cover: passkey CTA click, error-message branching (AuthSdkError vs generic), back/resend handlers, valid-submit success paths, error-catch surfacing as alerts, archive button handlers, asset add+cancel flows.
+- **A5 audit gate #1 fully cleared** — function coverage 85.64% → **92.43%**, branches 84.91% → **86.00%**, lines 91.32% → **93.97%**. All four spec §11 thresholds (90/85/90/90) now CI-enforced and passing.
+  - **20 new** component-handler tests (`+5 SignInForm, +4 ContactInfoForm, +3 GearSection, +2 PersonaFieldsForm, +6 PropertySection`). Cover: passkey CTA click, error-message branching (AuthSdkError vs generic), back/resend handlers, valid-submit success paths, error-catch surfacing as alerts, archive button handlers, asset add+cancel flows.
   - `src/react/components/index.ts` added to coverage exclude (barrel re-export, same pattern as other indexes).
 - **Lint cleanup** — removed unused `Session` type import in `src/imperative/getAuth.ts` (cosmetic).
 - **`SDK_VERSION`** bumped `1.0.0-rc.3` → `1.0.0`.
