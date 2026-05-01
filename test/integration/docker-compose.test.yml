@@ -57,6 +57,25 @@ services:
       # processes the subdir.
       - ./run-ct-bff-migrations.sh:/docker-entrypoint-initdb.d/01_run_ct_bff_migrations.sh:ro
 
+  # ── KNOWN BLOCKER 2026-05-01 ──────────────────────────────────────────────
+  # CT BFF cannot connect to this local postgres because it uses
+  # `@neondatabase/serverless` which speaks HTTP (Neon's serverless protocol),
+  # not raw TCP postgres. Error: `TypeError: fetch failed [ENOTFOUND postgres]`.
+  #
+  # The seed bootstrap above is correct + ready, but ct-bff itself can't talk
+  # to this stack until one of:
+  #   (a) CT BFF adds dual driver support (use `pg` when DATABASE_URL points
+  #       at a non-Neon host, `@neondatabase/serverless` when Neon)
+  #   (b) Run a Neon HTTP-protocol shim in front of local postgres (e.g.
+  #       https://github.com/neondatabase-labs/wsproxy or similar)
+  #   (c) Use a real Neon test branch via INTEGRATION_BASE_URL — the integration
+  #       harness in test/integration/setup.ts already supports this
+  #
+  # Recommended unblock: option (c) — `neonctl branches create` + tear down per
+  # CI run. Cleaner than maintaining a parallel driver in CT BFF.
+  # Tracked in SDK_COMPLETION_BACKLOG.md §Bucket B + §8.2 v1.0.1 carry-forward.
+  # ──────────────────────────────────────────────────────────────────────────
+
   twilio-mock:
     # Port 8443 host → 8080 container; captures POST /2010-04-01/Accounts/.../Messages.json
     # Returns a fake Twilio response shape so the SDK's enroll-flow + code-flow
