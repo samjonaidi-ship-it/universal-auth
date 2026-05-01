@@ -109,10 +109,27 @@ jobs:
       # API generates a sigstore-backed provenance attestation regardless of
       # registry access mode. Verifiable via `gh attestation verify <tarball>
       # --owner BainbridgeBuilders`.
+      #
+      # v1.0.1 (2026-05-01): the `actions/attest-build-provenance` API requires
+      # **GitHub Team plan or higher** for private repos. BainbridgeBuilders
+      # is on Free plan today, which returns "Feature not available" 403.
+      # Until BB upgrades OR the SDK repo goes public, this step is
+      # `continue-on-error: true` — package still publishes, SBOM still
+      # uploads, just no attestation. Tracked in SDK_COMPLETION_BACKLOG §13.
       - name: Generate SLSA provenance attestation
+        id: attest
+        continue-on-error: true
         uses: actions/attest-build-provenance@ef244123eb79f2f7a7e75d99086184180e6d0018 # v1.4.4
         with:
           subject-path: ${{ steps.publish.outputs.tarball-path }}
+
+      - name: Attestation status
+        run: |
+          if [ "${{ steps.attest.outcome }}" = "success" ]; then
+            echo "::notice::SLSA provenance attestation succeeded — verify with gh attestation verify"
+          else
+            echo "::warning::SLSA provenance attestation skipped — BB org needs GitHub Team plan OR repo must be public. Package still published; SBOM still attached."
+          fi
 
       # Phase E6: attach SBOM (and the tarball it describes) to the GitHub
       # Release that GH auto-creates for the pushed v* tag. `gh release upload`
