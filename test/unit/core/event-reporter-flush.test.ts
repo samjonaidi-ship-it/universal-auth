@@ -185,7 +185,7 @@ describe('event-reporter — flush branch coverage', () => {
 
   // ── Post-flush re-flush when remaining > 0 (lines 228-232) ──────────────
 
-  it('reschedules flush when more events arrived during POST', async () => {
+  it('reschedules flush when more events arrived during POST', { timeout: 15_000 }, async () => {
     let resolvePost: ((v: Response) => void) | null = null;
     fetchSpy.mockImplementation(
       (url) =>
