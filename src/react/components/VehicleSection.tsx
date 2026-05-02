@@ -213,6 +213,7 @@ function VehicleAddForm({ onCancel, onSubmit }: VehicleAddFormProps): ReactNode 
   const [model, setModel] = useState('');
   const [year, setYear] = useState('');
   const [plate, setPlate] = useState('');
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   return (
     <form
@@ -220,6 +221,11 @@ function VehicleAddForm({ onCancel, onSubmit }: VehicleAddFormProps): ReactNode 
       aria-label="Add vehicle"
       onSubmit={(e) => {
         e.preventDefault();
+        const errs: Record<string, string> = {};
+        if (make.trim().length === 0) errs.make = 'Make is required.';
+        if (model.trim().length === 0) errs.model = 'Model is required.';
+        setErrors(errs);
+        if (Object.keys(errs).length > 0) return;
         const attrs: VehicleAttrs = {};
         if (make.length > 0) attrs.make = make;
         if (model.length > 0) attrs.model = model;
@@ -229,8 +235,22 @@ function VehicleAddForm({ onCancel, onSubmit }: VehicleAddFormProps): ReactNode 
       }}
     >
       <SimpleField label="Name" id="bb-veh-name" value={name} onChange={setName} />
-      <SimpleField label="Make" id="bb-veh-make" value={make} onChange={setMake} required />
-      <SimpleField label="Model" id="bb-veh-model" value={model} onChange={setModel} required />
+      <SimpleField
+        label="Make"
+        id="bb-veh-make"
+        value={make}
+        onChange={(v) => { setMake(v); if (errors.make !== undefined) setErrors((s) => { const n = { ...s }; delete n.make; return n; }); }}
+        required
+        error={errors.make}
+      />
+      <SimpleField
+        label="Model"
+        id="bb-veh-model"
+        value={model}
+        onChange={(v) => { setModel(v); if (errors.model !== undefined) setErrors((s) => { const n = { ...s }; delete n.model; return n; }); }}
+        required
+        error={errors.model}
+      />
       <SimpleField label="Year" id="bb-veh-year" value={year} onChange={setYear} />
       <SimpleField label="Plate" id="bb-veh-plate" value={plate} onChange={setPlate} />
       <div className="bb-auth-actions">
@@ -255,6 +275,7 @@ interface SimpleFieldProps {
   value: string;
   onChange: (v: string) => void;
   required?: boolean;
+  error?: string | undefined;
 }
 
 function SimpleField({
@@ -263,6 +284,7 @@ function SimpleField({
   value,
   onChange,
   required,
+  error,
 }: SimpleFieldProps): ReactNode {
   return (
     <label className="bb-auth-field" htmlFor={id}>
@@ -273,7 +295,14 @@ function SimpleField({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         aria-required={required}
+        aria-invalid={error !== undefined}
+        aria-describedby={error !== undefined ? `${id}-error` : undefined}
       />
+      {error !== undefined ? (
+        <span id={`${id}-error`} className="bb-auth-field-error" role="alert">
+          {error}
+        </span>
+      ) : null}
     </label>
   );
 }

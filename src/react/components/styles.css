@@ -28,6 +28,8 @@
   --bb-spacing: 12px;
   --bb-font: system-ui, -apple-system, sans-serif;
   --bb-touch-target-min: 44px;
+  --bb-color-focus: #005fcc;
+  --bb-color-success: #1a7a3a;
 
   font-family: var(--bb-font);
   color: var(--bb-color-text);
@@ -53,17 +55,26 @@
   margin-bottom: 4px;
 }
 
-.bb-auth-field input {
+.bb-auth-field input,
+.bb-auth-field select {
   width: 100%;
   padding: 8px 12px;
   border: 1px solid var(--bb-color-border);
   border-radius: var(--bb-radius);
   font-size: 1rem;
   min-height: var(--bb-touch-target-min);
+  font-family: inherit;
 }
 
 .bb-auth-field input[aria-invalid='true'] {
   border-color: var(--bb-color-error);
+}
+
+.bb-auth-field input:focus-visible,
+.bb-auth-field select:focus-visible {
+  outline: 2px solid var(--bb-color-focus, #005fcc);
+  outline-offset: 0;
+  border-color: var(--bb-color-focus, #005fcc);
 }
 
 .bb-auth-button {
@@ -78,6 +89,11 @@
   font-size: 1rem;
   font-family: inherit;
   cursor: pointer;
+}
+
+.bb-auth-button:focus-visible {
+  outline: 2px solid var(--bb-color-focus, #005fcc);
+  outline-offset: 2px;
 }
 
 .bb-auth-button:disabled {
@@ -323,7 +339,7 @@
 }
 
 .bb-auth-permission-pill-granted {
-  background: #1a7a3a;
+  background: var(--bb-color-success);
   color: #fff;
 }
 
@@ -333,7 +349,7 @@
 }
 
 .bb-auth-permission-pill-revoked {
-  background: var(--bb-color-disabled);
+  background: #6b6b6b;
   color: #fff;
 }
 

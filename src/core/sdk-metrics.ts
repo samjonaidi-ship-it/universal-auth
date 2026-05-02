@@ -12,7 +12,7 @@ import { SDK_VERSION } from '../config.js';
 interface Counters {
   tokenRefreshCount: number;
   tokenRefreshTotalMs: number;
-  tokenRefreshP95Samples: number[];  // ring buffer of last 100
+  tokenRefreshP95Samples: number[];  // sliding window of last 100 samples (oldest dropped via shift)
   eventBatchCount: number;
   eventBatchTotalMs: number;
   errorCount: number;

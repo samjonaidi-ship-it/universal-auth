@@ -54,8 +54,22 @@ describe('offline/sw-bridge — branch coverage', () => {
       addEventListener: vi.fn(),
       ready: Promise.resolve({ sync: { register: syncRegister } }),
     };
-    await expect(requestBackgroundFlush()).resolves.toBeUndefined();
-    expect(syncRegister).toHaveBeenCalled();
+    // When sync.register rejects, runForegroundFlush() is invoked which
+    // calls the reconciler via dynamic import. The reconciler calls fetch()
+    // when there are queued items — mock it to prevent real DNS lookups that
+    // would exceed the 5000ms test timeout.
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+    try {
+      await expect(requestBackgroundFlush()).resolves.toBeUndefined();
+      expect(syncRegister).toHaveBeenCalled();
+    } finally {
+      fetchMock.mockRestore();
+    }
   });
 
   it('requestBackgroundFlush no-ops when SW registration has no sync property', async () => {

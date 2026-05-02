@@ -88,7 +88,7 @@ export async function verifyEnrollmentToken(token: string): Promise<EnrollVerify
     {},
     { anonymous: true }
   );
-  void emit('enrollment.started', { invite_id: data.invite.dispatched_to });
+  void emit('enrollment.started', { dispatched_to: data.invite.dispatched_to });
   return data;
 }
 

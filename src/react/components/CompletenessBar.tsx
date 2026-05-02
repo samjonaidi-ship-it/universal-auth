@@ -94,7 +94,7 @@ export function CompletenessBar({
           </p>
           <ul role="list" className="bb-auth-completeness-missing-list">
             {missingRequired.map((key) => {
-              const label = humanLabel(key, fieldLabels);
+              const stepLabel = humanLabel(key, fieldLabels);
               return (
                 <li key={key}>
                   {onFieldClick !== undefined ? (
@@ -103,10 +103,10 @@ export function CompletenessBar({
                       className="bb-auth-button bb-auth-button-link"
                       onClick={() => onFieldClick(key)}
                     >
-                      {label}
+                      {stepLabel}
                     </button>
                   ) : (
-                    <span>{label}</span>
+                    <span>{stepLabel}</span>
                   )}
                 </li>
               );

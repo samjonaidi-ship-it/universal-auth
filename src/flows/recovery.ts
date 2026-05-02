@@ -66,6 +66,9 @@ export async function signOutEverywhere(): Promise<void> {
       // Same best-effort policy as signOut.
     }
     await post('/auth/v1/session/revoke-all', {});
+  } catch {
+    // Even if server call fails (network / already revoked), local cleanup
+    // must still happen — `finally` fires. Consistent with signOut().
   } finally {
     void emit('logout', { forced: false, scope: 'all_devices' });
     clearEntitlements();

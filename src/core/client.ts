@@ -36,7 +36,7 @@ import {
   getAccessToken,
   registerRefreshCallback,
   setSession,
-  hasLiveAccessToken,
+  invalidateAccessToken,
 } from './token-manager.js';
 
 // ── Configuration ────────────────────────────────────────────────────────
@@ -238,11 +238,12 @@ async function requestInternal<T>(
 // ── Internal refresh helper ──────────────────────────────────────────────
 
 async function tryRefresh(): Promise<void> {
-  // Forces token-manager to refresh via the callback we registered
-  // If refresh fails, it throws — we let it propagate
-  if (!hasLiveAccessToken()) {
-    await getAccessToken();
-  }
+  // Invalidate the cached access token so getAccessToken() is forced into
+  // performRefresh() even when the local token hasn't hit its REFRESH_MARGIN.
+  // This covers server-side revocation / clock skew where the server returns
+  // 401 on a token we still consider locally valid.
+  invalidateAccessToken();
+  await getAccessToken();
 }
 
 async function refreshTokenRequest(refreshToken: string): Promise<{

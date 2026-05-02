@@ -128,6 +128,7 @@ async function doPoll(): Promise<void> {
     }
     // Any other AuthSdkError with a 401/403 class treated as revocation.
     if (err instanceof AuthSdkError && isRevocationCode(err.code)) {
+      void emit('session.revoked', { reason: 'server' });
       await clearSession();
       stopSessionWatcher();
       return;

@@ -127,6 +127,7 @@ export function ContactInfoForm({
         id="bb-auth-display-name"
         value={displayName}
         onChange={setDisplayName}
+        required
         {...errorOf(errors.display_name)}
         autoComplete="name"
       />
@@ -136,6 +137,7 @@ export function ContactInfoForm({
         id="bb-auth-email"
         value={email}
         onChange={setEmail}
+        required
         {...errorOf(errors.email)}
         type="email"
         autoComplete="email"
@@ -146,6 +148,7 @@ export function ContactInfoForm({
         id="bb-auth-phone"
         value={phone}
         onChange={setPhone}
+        required
         {...errorOf(errors.phone)}
         type="tel"
         autoComplete="tel"
@@ -159,6 +162,7 @@ export function ContactInfoForm({
             id="bb-auth-ec-name"
             value={ec.name}
             onChange={(v) => setEc({ ...ec, name: v })}
+            required
             {...errorOf(errors['emergency_contact.name'])}
           />
           <Field
@@ -166,6 +170,7 @@ export function ContactInfoForm({
             id="bb-auth-ec-phone"
             value={ec.phone_e164}
             onChange={(v) => setEc({ ...ec, phone_e164: v })}
+            required
             {...errorOf(errors['emergency_contact.phone_e164'])}
             type="tel"
           />
@@ -174,6 +179,7 @@ export function ContactInfoForm({
             id="bb-auth-ec-rel"
             value={ec.relationship}
             onChange={(v) => setEc({ ...ec, relationship: v })}
+            required
             {...errorOf(errors['emergency_contact.relationship'])}
           />
         </fieldset>
@@ -206,6 +212,7 @@ interface FieldProps {
   id: string;
   value: string;
   onChange: (value: string) => void;
+  required?: boolean;
   error?: string;
   type?: 'text' | 'email' | 'tel';
   autoComplete?: string;
@@ -216,6 +223,7 @@ function Field({
   id,
   value,
   onChange,
+  required,
   error,
   type = 'text',
   autoComplete,
@@ -229,6 +237,7 @@ function Field({
         value={value}
         autoComplete={autoComplete}
         onChange={(e) => onChange(e.target.value)}
+        aria-required={required}
         aria-invalid={error !== undefined}
         aria-describedby={error !== undefined ? `${id}-error` : undefined}
       />

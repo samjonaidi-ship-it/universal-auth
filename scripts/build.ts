@@ -13,9 +13,12 @@
 import { build } from 'esbuild';
 import { execSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, rmSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const ROOT = resolve(import.meta.dirname ?? '.', '..');
+// import.meta.dirname is only available Node >=21.2; use fileURLToPath for Node 20 compat.
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const ROOT = resolve(__dirname, '..');
 const OUT  = resolve(ROOT, 'dist');
 
 function clean(): void {

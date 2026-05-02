@@ -3,9 +3,12 @@
 // Enforced in CI — fails the build on any violation.
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { extname, join, resolve } from 'node:path';
+import { dirname, extname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const ROOT = resolve(import.meta.dirname ?? '.', '..');
+// import.meta.dirname is only available Node >=21.2; use fileURLToPath for Node 20 compat.
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const ROOT = resolve(__dirname, '..');
 
 // ── Check 1: package.json declares sideEffects: false ─────────────────────
 function checkSideEffects(): void {

@@ -75,6 +75,10 @@ describe('Integration #6 — settings 409 conflict + rehydrate (§11.3, §3.3)',
 
     // After conflict + rehydrate, version should reflect server's latest
     expect(getSettingsVersion()).toBeGreaterThanOrEqual(v0 + 1);
-    expect(getSettings()).toMatchObject({ from_other_tab: true });
+    // Per v1.0.1 (C8) spec: on 409, state.settings is NOT overwritten —
+    // the SDK preserves the user's local edit and the consumer must rebase
+    // via applySettingsPatch() or discard via discardPendingPatch().
+    // Assert that the SDK's local pending state is intact.
+    expect(getSettings()).toMatchObject({ from_sdk: true });
   });
 });

@@ -209,6 +209,7 @@ describe('core/client', () => {
       );
       try {
         await get('/profile', { anonymous: true });
+        expect.fail('should have thrown');
       } catch (err) {
         expect(err).toBeInstanceOf(ConsentRequired);
         expect((err as ConsentRequired).missingConsents).toEqual([

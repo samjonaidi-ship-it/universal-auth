@@ -85,6 +85,12 @@ async function handleRequest(req: WorkerRequest): Promise<void> {
         self.postMessage({ id: req.id, result: plaintext });
         break;
       }
+      default: {
+        // Unknown op — reject so the caller's Promise doesn't hang indefinitely
+        const unknown = req as unknown as { id: string; op: string };
+        self.postMessage({ id: unknown.id, error: `crypto-worker: unknown op "${unknown.op}"` });
+        break;
+      }
     }
   } catch (err) {
     self.postMessage({

@@ -1,8 +1,15 @@
-// @bainbridgebuilders/universal-auth | test/unit/config-init.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @bainbridgebuilders/universal-auth | test/unit/config-init.test.ts | v1.0.1 | 2026-05-02 | BB
 // Coverage push for src/config.ts initUniversalAuth flow (lines 97-134).
+// v1.0.1: vi.mock stubs for dynamically-imported modules prevent DNS hangs
+// when the full suite runs in parallel and client singleton is already armed.
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { initUniversalAuth, type UniversalAuthConfig } from '../../src/config.js';
+
+vi.mock('../../src/core/client.js', () => ({ configureClient: vi.fn(), get: vi.fn(), put: vi.fn(), patch: vi.fn(), post: vi.fn(), del: vi.fn() }));
+vi.mock('../../src/core/event-reporter.js', () => ({ configureEventReporter: vi.fn(), emit: vi.fn() }));
+vi.mock('../../src/core/settings-sync.js', () => ({ configureSettingsSync: vi.fn() }));
+vi.mock('../../src/offline/queue.js', () => ({ setMaxQueueSize: vi.fn() }));
 
 const baseConfig: UniversalAuthConfig = {
   apiBaseUrl: 'https://ct-bff.test',

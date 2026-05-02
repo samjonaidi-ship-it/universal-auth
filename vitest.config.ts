@@ -1,15 +1,10 @@
-// @bainbridgebuilders/universal-auth | vitest.config.ts | v1.0.1 | 2026-05-01 | BB
-// Vitest unit-test config. Coverage gates activate starting Days 16-17 per plan Block 6.
-// During Days 1-15 scaffold + implementation phase, passWithNoTests allows the CI step
-// to succeed before any test files exist.
+// @bainbridgebuilders/universal-auth | vitest.config.ts | v1.0.2 | 2026-05-02 | BB
+// Vitest unit-test config. Coverage gates per §11 thresholds.
 
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    // Block 1 Day 1 — no tests yet. Prevents ELIFECYCLE on empty suite.
-    passWithNoTests: true,
-
     include: ['test/unit/**/*.test.ts', 'test/unit/**/*.test.tsx'],
     environment: 'happy-dom',
     setupFiles: ['./test/unit/setup.ts'],

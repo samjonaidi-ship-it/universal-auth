@@ -26,6 +26,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type KeyboardEvent,
   type ReactNode,
 } from 'react';
 import { useAuth } from './useAuth.js';
@@ -67,6 +68,7 @@ export function ConsentVersionWatcher({
   const { activePersona, status } = useAuth();
   const [state, setState] = useState<ReprompState>(INITIAL);
   const inFlightRef = useRef(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   const resolvedAudience =
     audience ?? activePersona?.persona_type ?? null;
@@ -113,13 +115,47 @@ export function ConsentVersionWatcher({
     [evaluate]
   );
 
-  if (state.needed && state.stale.length > 0) {
+  // Move focus into the dialog when it opens (WCAG 2.4.3 — Focus Order).
+  const isDialogVisible = state.needed && state.stale.length > 0;
+  useEffect(() => {
+    if (!isDialogVisible) return;
+    dialogRef.current?.focus();
+  }, [isDialogVisible]);
+
+  // Keyboard handler — Escape is intentionally blocked here because this
+  // dialog is a hard-block (required consent re-prompt). Per spec §11 the
+  // only exit is accepting the updated policies.
+  function handleKeyDown(e: KeyboardEvent<HTMLDivElement>): void {
+    if (e.key === 'Tab') {
+      // Constrain focus within the dialog (basic focus trap).
+      const el = dialogRef.current;
+      if (el === null) return;
+      const focusable = el.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (first === undefined || last === undefined) return;
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+  }
+
+  if (isDialogVisible) {
     return (
       <div
+        ref={dialogRef}
         className="bb-auth-consent-version-overlay"
         role="dialog"
         aria-modal="true"
         aria-labelledby="bb-auth-consent-version-heading"
+        tabIndex={-1}
+        onKeyDown={handleKeyDown}
       >
         <div className="bb-auth-consent-version-modal">
           <h2 id="bb-auth-consent-version-heading" className="bb-auth-heading">

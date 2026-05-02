@@ -169,8 +169,29 @@ function renderInput(
   required: boolean
 ): ReactNode {
   switch (def.type) {
+    case 'multiselect': {
+      const selected = value.length > 0 ? value.split(',') : [];
+      return (
+        <select
+          id={id}
+          multiple
+          value={selected}
+          onChange={(e) => {
+            const picked = Array.from(e.target.selectedOptions, (o) => o.value);
+            onChange(picked.join(','));
+          }}
+          required={required && selected.length === 0}
+          size={Math.min((def.options ?? []).length, 5)}
+        >
+          {(def.options ?? []).map((opt) => (
+            <option key={opt} value={opt}>
+              {opt}
+            </option>
+          ))}
+        </select>
+      );
+    }
     case 'select':
-    case 'multiselect':
       return (
         <select
           id={id}

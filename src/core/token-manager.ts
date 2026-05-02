@@ -405,6 +405,16 @@ export function hasLiveAccessToken(): boolean {
   return state.accessToken !== null && !isExpiringSoon(state.accessExpiresAt);
 }
 
+/**
+ * Mark the in-memory access token as expired without clearing the refresh token.
+ * Called by client.ts when the server returns 401 on an apparently-valid token
+ * (e.g., server-side revocation, clock skew). Forces the next getAccessToken()
+ * call to attempt a real refresh rather than returning the stale cached value.
+ */
+export function invalidateAccessToken(): void {
+  state.accessExpiresAt = 0;
+}
+
 // ── Test-only helper ──────────────────────────────────────────────────────
 
 /**

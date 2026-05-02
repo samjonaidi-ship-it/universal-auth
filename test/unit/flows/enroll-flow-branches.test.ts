@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/flows/enroll-flow-branches.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @bainbridgebuilders/universal-auth | test/unit/flows/enroll-flow-branches.test.ts | v1.0.0-rc.2 | 2026-05-02 | BB
 // Coverage push for enroll-flow.ts — branch lines 130-137 (D14 employee
 // linking) + 149-151 (optional session fields).
 
@@ -77,10 +77,10 @@ describe('flows/enroll-flow — branch coverage', () => {
       })
     );
     const result = await activateEnrollment({
-      enroll_token: 't',
+      token: 't',
       method: 'webauthn',
-      device_id: 'd',
-      consents: [{ document_key: 'privacy_policy', version: '1.0' }],
+      credential: { attestationObject: 'ao', clientDataJSON: 'cd' },
+      consents: [{ consent_type: 'privacy_policy', policy_version: '1.0' }],
     });
     expect(result.session.identity.identity_id).toBe('sam');
     expect(result.session.personas?.[0]?.persona_type).toBe('crew');
@@ -112,9 +112,9 @@ describe('flows/enroll-flow — branch coverage', () => {
       })
     );
     const result = await activateEnrollment({
-      enroll_token: 't',
+      token: 't',
       method: 'pin',
-      device_id: 'd',
+      credential: { pin: '0000' },
       consents: [],
     });
     expect(result.session.identity.identity_id).toBe('sam');
@@ -145,9 +145,9 @@ describe('flows/enroll-flow — branch coverage', () => {
       })
     );
     const result = await activateEnrollment({
-      enroll_token: 't',
+      token: 't',
       method: 'pin',
-      device_id: 'd',
+      credential: { pin: '0000' },
       consents: [],
     });
     expect(result.session.identity.employee_id).toBeNull();
@@ -166,9 +166,9 @@ describe('flows/enroll-flow — branch coverage', () => {
       })
     );
     const result = await activateEnrollment({
-      enroll_token: 't',
+      token: 't',
       method: 'pin',
-      device_id: 'd',
+      credential: { pin: '0000' },
       consents: [],
     });
     expect(result.session.personas).toBeUndefined();
@@ -195,9 +195,9 @@ describe('flows/enroll-flow — branch coverage', () => {
       })
     );
     const result = await activateEnrollment({
-      enroll_token: 't',
+      token: 't',
       method: 'pin',
-      device_id: 'd',
+      credential: { pin: '0000' },
       consents: [],
     });
     expect(result.session.agent?.agent_id).toBe('buddy');

@@ -290,13 +290,14 @@ export async function clearRefreshToken(): Promise<void> {
 export async function clearAllSessionState(): Promise<void> {
   const db = await getDb();
   const tx = db.transaction(
-    [STORE_REFRESH_TOKENS, STORE_OFFLINE_QUEUE, STORE_EVENT_QUEUE],
+    [STORE_REFRESH_TOKENS, STORE_OFFLINE_QUEUE, STORE_EVENT_QUEUE, STORE_DEAD_LETTER_QUEUE],
     'readwrite'
   );
   await Promise.all([
     tx.objectStore(STORE_REFRESH_TOKENS).clear(),
     tx.objectStore(STORE_OFFLINE_QUEUE).clear(),
     tx.objectStore(STORE_EVENT_QUEUE).clear(),
+    tx.objectStore(STORE_DEAD_LETTER_QUEUE).clear(),
   ]);
   await tx.done;
 }

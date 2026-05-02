@@ -152,7 +152,7 @@ export async function authenticatePasskey(
   });
 
   void emit('passkey.used', {
-    credential_id_hash: assertion.id.slice(0, 8),  // partial hash for privacy
+    credential_id_prefix: assertion.id.slice(0, 8),  // first 8 chars for correlation, not a hash
   });
 
   void emit('login.success', {

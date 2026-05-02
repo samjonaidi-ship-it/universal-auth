@@ -177,7 +177,7 @@ async function flushWrite(): Promise<void> {
       state.pendingPatch = null;
       notify();
       void emit('settings.changed', {
-        changed_keys: Object.keys(state.settings),
+        changed_keys: Object.keys(patchInFlight),
         new_version: data.version,
       });
     } catch (err) {

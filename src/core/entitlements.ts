@@ -81,6 +81,12 @@ function loadFromDisk(): CacheShape | null {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw === null) return null;
     const parsed = JSON.parse(raw) as CacheShape;
+    // Guard against corrupt/migrated data — both arrays must actually be arrays
+    // before we call .includes() on them in hasFeature / hasAppAccess.
+    if (!Array.isArray(parsed.features) || !Array.isArray(parsed.app_access)) {
+      localStorage.removeItem(STORAGE_KEY);
+      return null;
+    }
     memory = parsed;
     return parsed;
   } catch {

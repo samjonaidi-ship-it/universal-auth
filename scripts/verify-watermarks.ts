@@ -12,9 +12,12 @@
 // 30-file scope hole the original v1.0.1 sweep left open.
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { extname, join, relative, resolve } from 'node:path';
+import { dirname, extname, join, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const ROOT = resolve(import.meta.dirname ?? '.', '..');
+// import.meta.dirname is only available Node >=21.2; use fileURLToPath for Node 20 compat.
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const ROOT = resolve(__dirname, '..');
 
 // Canonical watermark — first line must match exactly. Note the explicit
 // scoped-package form `@bainbridgebuilders/universal-auth` (NOT `@bb/...`).

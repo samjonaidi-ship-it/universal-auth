@@ -6,6 +6,49 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
 
 > **Note on rc.3 / rc.4 entries below:** these were **internal-only milestones** between rc.2 (2026-04-28) and 1.0.0 (2026-04-30). Neither was tagged or published to the registry — public consumer path is rc.2 → 1.0.0. The rc.3 / rc.4 entries document work that landed on `main` but never shipped under those version numbers; "Recommended upgrade" wording in those sections is historical and does not apply to actual consumers.
 
+## [1.0.2] — 2026-05-02 — Rcodex security hardening pass
+
+**Maintenance release.** Full Rcodex v13.14 automated review pass (5 waves, 15 agents). 31 bugs fixed. TypeScript: 0 errors. Tests: 80 files / 535 tests / 0 failures (3-zero consecutive).
+
+### Fixed — Core
+
+- **`token-manager.ts`:** Added `invalidateAccessToken()` export — sets `accessExpiresAt=0` to force real refresh rather than allowing stale token reuse across retry cycles.
+- **`client.ts`:** `tryRefresh()` now calls `invalidateAccessToken()` before retry; removed dead `hasLiveAccessToken` import.
+- **`settings-sync.ts:180`:** `changed_keys` was sending all current keys on conflict — now correctly sends only the keys from `patchInFlight`.
+- **`storage.ts:291`:** `clearAllSessionState()` now includes `STORE_DEAD_LETTER_QUEUE` in the 4-store IDB clear (was left behind on sign-out).
+- **`session-watcher.ts:130`:** Emits `session.revoked` event on `AuthSdkError` revocation path (was silently dropped).
+- **`entitlements.ts:83`:** Added `Array.isArray` guards on `features`/`app_access` in `loadFromDisk()` with cache eviction on corrupt data.
+- **`crypto-worker.ts`:** `default` case in message handler now type-asserts via `unknown` to avoid TS2339 on narrowed-to-`never` type; posts error back so crypto-client.ts can reject the pending Promise.
+- **`passkey-flow.ts:155`:** Renamed `credential_id_hash` → `credential_id_prefix` (value is `.slice(0,8)`, not a hash).
+- **`recovery.ts`:** Added `catch {}` around outer server call in `signOutEverywhere()` matching `signOut()` pattern.
+- **`sdk-metrics.ts:15`:** Comment corrected from "ring buffer" to "sliding window".
+
+### Fixed — Build scripts
+
+- **`scripts/build.ts`, `scripts/verify-bundle.ts`, `scripts/verify-watermarks.ts`:** Replaced `import.meta.dirname ?? '.'` (Node 21.2+) with `fileURLToPath(import.meta.url)` pattern compatible with declared `engines: node >=20.0.0`.
+
+### Fixed — React UI / Accessibility
+
+- **`styles.css`:** Added `:focus-visible` outlines for button and input/select; added `--bb-color-focus: #005fcc` token; fixed `.bb-auth-permission-pill-revoked` background from `#999` to `#6b6b6b` (contrast 2.85:1 → 4.63:1, meets WCAG AA).
+- **`ConsentVersionWatcher.tsx`:** Added focus trap (Tab/Shift+Tab), `tabIndex={-1}` ref, and `useEffect` auto-focus on dialog open (WCAG 2.1 SC 2.1.2).
+- **`ContactInfoForm.tsx`:** Added `required?: boolean` prop + `aria-required` attribute to required fields (WCAG 1.3.1).
+- **`VehicleSection.tsx`:** Submit-time validation for Make/Model with `aria-invalid`, `aria-describedby`, `role="alert"` on error messages; fixed `SimpleFieldProps.error` type to `string | undefined` for `exactOptionalPropertyTypes` compatibility.
+- **`CompletenessBar.tsx:97`:** Renamed inner `const label` → `const stepLabel` (variable shadow).
+
+### Fixed — Tests
+
+- **`test/unit/core/client.test.ts:210`:** Added `expect.fail('should have thrown')` to CONSENT_REQUIRED test (was silently passing on no-throw).
+- **`test/unit/flows/enroll-flow-branches.test.ts`:** All 5 `activateEnrollment()` calls corrected — `enroll_token`→`token`, removed `device_id`, added `credential`, fixed `consents` shape.
+- **`test/integration/06-settings-conflict.test.ts:77`:** Assertion corrected to `toMatchObject({ from_sdk: true })` — on 409 conflict the SDK preserves the user's local pending edit (not overwritten by server state).
+- **`test/unit/offline/sw-bridge-branches.test.ts:50`:** Added `vi.spyOn(globalThis, 'fetch')` mock in rejection path test to prevent DNS timeout when `runForegroundFlush()` attempts real network call.
+- **`test/unit/config-init.test.ts`:** Added `vi.mock` stubs for `client.js`, `event-reporter.js`, `settings-sync.js`, `offline/queue.js` — eliminates DNS timeout ordering flakiness in full parallel suite run.
+
+### Fixed — Playwright config
+
+- **`playwright.config.ts:74`:** `tablet-chrome` project now sets `browserName: 'chromium'` (was defaulting to webkit, duplicating `tablet-safari`).
+
+---
+
 ## [1.0.1] — 2026-05-01 — v1.0.1 hardening
 
 **Hardening release.** Addresses every critical/high finding from the 4-agent v1.0.1 audit (specs + core code + React/CI + industry benchmark, 2026-04-30) and propagates **D20** (domain consolidation) + **D21** (SDK supply-chain attestation) from `BB_CANONICAL_DECISIONS.md` v1.2.1 into the SDK.

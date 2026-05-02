@@ -230,18 +230,20 @@ function PropertyCard({
         label={`Photos for ${property.name ?? 'property'}`}
       />
 
-      <PropertyAssetsList propertyId={property.id} readonly={readonly} />
+      <PropertyAssetsList propertyId={property.id} propertyName={property.name ?? address.line1 ?? 'property'} readonly={readonly} />
     </article>
   );
 }
 
 interface PropertyAssetsListProps {
   propertyId: string;
+  propertyName: string;
   readonly: boolean;
 }
 
 function PropertyAssetsList({
   propertyId,
+  propertyName,
   readonly,
 }: PropertyAssetsListProps): ReactNode {
   const {
@@ -276,7 +278,7 @@ function PropertyAssetsList({
   }
 
   return (
-    <section className="bb-auth-property-assets" aria-label="Property assets">
+    <section className="bb-auth-property-assets" aria-label={`Assets for ${propertyName}`}>
       <header className="bb-auth-resource-section-header">
         <h5>Property assets</h5>
         {!readonly ? (

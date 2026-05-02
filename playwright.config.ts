@@ -71,7 +71,7 @@ export default defineConfig({
       use: { ...devices['Pixel 7'], channel: 'msedge' },
     },
     // ── Tablet (4 configs) ──
-    { name: 'tablet-chrome', use: { ...devices['iPad Pro 11'] } },
+    { name: 'tablet-chrome', use: { ...devices['iPad Pro 11'], browserName: 'chromium' } },
     {
       name: 'tablet-firefox',
       use: { ...devices['iPad Pro 11'], browserName: 'firefox' },
