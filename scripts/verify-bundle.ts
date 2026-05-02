@@ -61,21 +61,33 @@ function checkNoInlineScripts(): void {
 }
 
 // ── Check 3: no barrel re-export with side effects ─────────────────────────
-// Heuristic: index.ts is named-export only (verified by build not failing);
-// sideEffects:false + splitting:true should guarantee no side effects survive.
-// This is a lightweight assertion — deeper check happens via actual tree-shake
-// test in a consumer app (measured at integration time).
+// Strips function bodies before scanning so declared (but not called) functions
+// don't trigger false positives. Only top-level statements (outside any function
+// body) are considered "immediately executing on import".
 function checkNoBarrelSideEffects(): void {
   const indexSrc = readFileSync(resolve(ROOT, 'src/index.ts'), 'utf8');
-  // Forbid top-level statements that execute on import
+
+  // Strip block bodies: remove everything between balanced { } pairs that follow
+  // a function/export function declaration so indented function body code is ignored.
+  // Simple approach: remove content of all top-level { } blocks.
+  let stripped = indexSrc;
+  let changed = true;
+  while (changed) {
+    changed = false;
+    stripped = stripped.replace(/\{[^{}]*\}/g, '{}');
+    if (stripped !== indexSrc) changed = true;
+  }
+
+  // After stripping, only top-level statements remain.
   const FORBIDDEN_TOP_LEVEL = [
-    { pattern: /^\s*[a-zA-Z_$][\w$]*\s*\(/m, label: 'top-level function call' },
-    { pattern: /^\s*console\.(log|warn|error)/m, label: 'top-level console logging' },
-    { pattern: /^\s*globalThis\./m, label: 'top-level globalThis assignment' },
-    { pattern: /^\s*window\./m, label: 'top-level window access' },
+    // A bare identifier followed by ( at the start of a line = executed call
+    { pattern: /^[a-zA-Z_$][\w$]*\s*\(/m, label: 'top-level function call' },
+    { pattern: /^console\.(log|warn|error)/m, label: 'top-level console logging' },
+    { pattern: /^globalThis\./m, label: 'top-level globalThis assignment' },
+    { pattern: /^window\./m, label: 'top-level window access' },
   ];
   for (const { pattern, label } of FORBIDDEN_TOP_LEVEL) {
-    if (pattern.test(indexSrc)) {
+    if (pattern.test(stripped)) {
       throw new Error(
         `[verify-bundle] ${label} found in src/index.ts. Barrel must be declarative-only (§8.2).`
       );
