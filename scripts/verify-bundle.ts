@@ -67,16 +67,15 @@ function checkNoInlineScripts(): void {
 function checkNoBarrelSideEffects(): void {
   const indexSrc = readFileSync(resolve(ROOT, 'src/index.ts'), 'utf8');
 
-  // Strip block bodies: remove everything between balanced { } pairs that follow
-  // a function/export function declaration so indented function body code is ignored.
-  // Simple approach: remove content of all top-level { } blocks.
+  // Strip block bodies iteratively until no more inner {} remain.
+  // Each pass collapses innermost { non-brace content } to {}; repeating
+  // handles nested blocks. Terminates when a pass makes no change.
   let stripped = indexSrc;
-  let changed = true;
-  while (changed) {
-    changed = false;
+  let prev: string;
+  do {
+    prev = stripped;
     stripped = stripped.replace(/\{[^{}]*\}/g, '{}');
-    if (stripped !== indexSrc) changed = true;
-  }
+  } while (stripped !== prev);
 
   // After stripping, only top-level statements remain.
   const FORBIDDEN_TOP_LEVEL = [
