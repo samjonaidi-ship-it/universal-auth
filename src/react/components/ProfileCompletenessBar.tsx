@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/react/components/ProfileCompletenessBar.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/ProfileCompletenessBar.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
 // Visual progress bar with a11y-friendly progressbar role + missing-required hint.
 // Per §5.4.3.
 

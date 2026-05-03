@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/react/components/VehicleSection.tsx | v1.0.0-rc.4 | 2026-04-30 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/VehicleSection.tsx | v1.0.0-rc.4 | 2026-04-30 | BB
 // Crew persona vehicle list — name/make/model/year/plate + per-vehicle media.
 // Implements PERSONA_PCP_DESIGN.md §3.3 + §6 (crew persona resources) +
 // SDK_SPEC §5.4.7 (resource_type='vehicle' lives in profile_resources, NOT

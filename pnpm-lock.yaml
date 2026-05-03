@@ -114,7 +114,7 @@ importers:
 
   demo:
     dependencies:
-      '@bainbridgebuilders/universal-auth':
+      '@samjonaidi-ship-it/universal-auth':
         specifier: workspace:*
         version: link:..
       react:

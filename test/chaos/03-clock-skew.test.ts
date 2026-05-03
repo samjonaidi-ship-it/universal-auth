@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/chaos/03-clock-skew.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @samjonaidi-ship-it/universal-auth | test/chaos/03-clock-skew.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Spec §11.6 scenario 3 — clock skew ±1h.
 //
 // This scenario does NOT require Toxiproxy (clock skew is purely client-side).

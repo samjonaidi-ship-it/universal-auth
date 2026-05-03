@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/extendability/risk-signal.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | src/extendability/risk-signal.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 // Per §8.5.1 — risk-signal adapter for adaptive step-up.
 // v1.0 ships device + rate-limit signals server-side. Future v1.2+ may
 // register geo, time-of-day, velocity, etc. Interface reserved here so the

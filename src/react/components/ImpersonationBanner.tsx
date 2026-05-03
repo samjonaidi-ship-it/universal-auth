@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/react/components/ImpersonationBanner.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/ImpersonationBanner.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
 // Banner shown when an admin is acting as another user (§D2.2 + §11.10).
 // Persists across in-app navigations because it's rendered ONCE in the layout
 // shell, NOT per route. Reads `actingAs` from useImpersonation() — populated

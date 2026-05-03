@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/react/ConsentVersionWatcher.tsx | v1.0.0-rc.4 | 2026-04-30 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/ConsentVersionWatcher.tsx | v1.0.0-rc.4 | 2026-04-30 | BB
 // Policy version-bump re-prompt logic — per BB_UNIVERSAL_AUTH_SDK_SPEC.md §3.4
 // "Versioning + re-prompt flow" + PERSONA_PCP_DESIGN.md §4.5.
 //

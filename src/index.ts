@@ -1,11 +1,11 @@
-// @bainbridgebuilders/universal-auth | src/index.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/index.ts | v1.0.1 | 2026-05-01 | BB
 // Public barrel — named exports only (tree-shakeable per §8.2).
 //
 // v1.0.1 (Phase C6): `setSession` relocated to `/internal` subpath. The
 // main-barrel export below is a deprecation shim that warns once on first
 // call and delegates to the internal implementation. Slated for removal in
 // v1.1 — consumers should migrate to:
-//   import { setSession } from '@bainbridgebuilders/universal-auth/internal';
+//   import { setSession } from '@samjonaidi-ship-it/universal-auth/internal';
 //
 // rc.3 additions: direct imperative token-manager surface (`getAccessToken`,
 // `getCurrentSessionId`, `hasLiveAccessToken`) so non-React consumers (e.g.
@@ -31,14 +31,14 @@ export {
 } from './core/token-manager.js';
 
 // v1.0.1 (Phase C6): `setSession` deprecation shim. The canonical home is
-// now `@bainbridgebuilders/universal-auth/internal`. This shim warns once
+// now `@samjonaidi-ship-it/universal-auth/internal`. This shim warns once
 // on first call, then delegates. Removed in v1.1.
 import { setSession as _setSessionInternal, type SessionTokens as _SessionTokens } from './core/token-manager.js';
 
 let __setSessionDeprecationWarned = false;
 
 /**
- * @deprecated Since v1.0.1 — import from `@bainbridgebuilders/universal-auth/internal` instead.
+ * @deprecated Since v1.0.1 — import from `@samjonaidi-ship-it/universal-auth/internal` instead.
  * This main-barrel re-export will be removed in v1.1. `setSession` bypasses the
  * canonical sign-in flows (code / passkey / enroll) and is intended only for
  * non-SDK token sources (e.g., legacy PIN-based sign-in).
@@ -48,7 +48,7 @@ export function setSession(tokens: _SessionTokens): void {
     __setSessionDeprecationWarned = true;
     console.warn(
       '[universal-auth] setSession is deprecated from the main barrel as of v1.0.1. ' +
-        'Import it from "@bainbridgebuilders/universal-auth/internal" instead. ' +
+        'Import it from "@samjonaidi-ship-it/universal-auth/internal" instead. ' +
         'This shim will be removed in v1.1.'
     );
   }

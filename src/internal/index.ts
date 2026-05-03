@@ -1,6 +1,6 @@
-// @bainbridgebuilders/universal-auth | src/internal/index.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/internal/index.ts | v1.0.1 | 2026-05-01 | BB
 // Internal subpath — exposes low-level surfaces that are NOT part of the
-// stable public API. Anything imported from `@bainbridgebuilders/universal-auth/internal`
+// stable public API. Anything imported from `@samjonaidi-ship-it/universal-auth/internal`
 // is subject to change between minor versions. Use at your own risk.
 //
 // Phase C6 (v1.0.1 hardening): `setSession` was relocated here from the main

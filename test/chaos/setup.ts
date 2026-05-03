@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/chaos/setup.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @samjonaidi-ship-it/universal-auth | test/chaos/setup.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Chaos test setup — verifies Toxiproxy + CT BFF stack are reachable.
 // Tests reset toxics in beforeEach so each scenario starts clean.
 

@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/react/components/PropertySection.tsx | v1.0.0-rc.4 | 2026-04-30 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/PropertySection.tsx | v1.0.0-rc.4 | 2026-04-30 | BB
 // Homeowner persona property list — address + type/year/sqft + photos +
 // nested property_assets (HVAC, roof, etc., per property) with their own photos.
 // Implements PERSONA_PCP_DESIGN.md §3.3 (multi-property) +

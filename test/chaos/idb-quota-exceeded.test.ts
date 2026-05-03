@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/chaos/idb-quota-exceeded.test.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | test/chaos/idb-quota-exceeded.test.ts | v1.0.1 | 2026-05-01 | BB
 // Spec §11.6 — IDB quota exhaustion (added in Phase E8 v1.0.1 hardening).
 //
 // Scenario: user storage is full (browser refuses IDB writes with

@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/react/components/GearSection.tsx | v1.0.0-rc.4 | 2026-04-30 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/GearSection.tsx | v1.0.0-rc.4 | 2026-04-30 | BB
 // Crew persona personal-gear list — name + per-item photos.
 // Implements PERSONA_PCP_DESIGN.md §3.3 (resource_type='gear' is PERSONAL,
 // owned by identity, NOT BB-owned tools which stay in Bridge cal_assets) +

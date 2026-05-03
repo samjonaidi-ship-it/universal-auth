@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/flows/permission-grants.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/flows/permission-grants.ts | v1.0.1 | 2026-05-01 | BB
 // Browser/device permission-grant recording.
 //
 // Per spec:

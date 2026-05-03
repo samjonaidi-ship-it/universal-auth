@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/core/sdk-metrics.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/sdk-metrics.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Coverage push for src/core/sdk-metrics.ts (was 0%).
 
 import { describe, it, expect, beforeEach } from 'vitest';

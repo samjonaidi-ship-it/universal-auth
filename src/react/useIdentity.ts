@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/react/useIdentity.ts | v1.0.0-rc.4 | 2026-04-30 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/useIdentity.ts | v1.0.0-rc.4 | 2026-04-30 | BB
 // Convenience facade over the v1.5.0 PCP contract.
 // Implements PERSONA_PCP_DESIGN.md §7 (single hook, three layers) + SDK_SPEC §5.4.2.
 //

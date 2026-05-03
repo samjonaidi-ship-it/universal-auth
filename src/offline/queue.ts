@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/offline/queue.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/offline/queue.ts | v1.0.1 | 2026-05-01 | BB
 // IDB-backed FIFO queue for offline mutations.
 //
 // Per spec §9.4:

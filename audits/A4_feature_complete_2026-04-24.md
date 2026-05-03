@@ -1,4 +1,4 @@
-# Audit Report A4 — Feature Complete — `@bainbridgebuilders/universal-auth`
+# Audit Report A4 — Feature Complete — `@samjonaidi-ship-it/universal-auth`
 
 ## Audit metadata
 
@@ -44,7 +44,7 @@
   - `AuthFlowAdapter` — for OIDC / SAML / future federation flows. Reserved.
   - `RiskSignalAdapter` — for geo / velocity / time-of-day step-up. Reserved.
 - **Client now handles FormData / Blob / Uint8Array bodies** correctly (no JSON.stringify on binary payloads). Browser sets multipart boundary on FormData when Content-Type is omitted.
-- **CSS distribution wired** — `styles.css` copied to `dist/` during build; exported via `./react/styles.css` subpath in package.json so consumer apps can `import '@bainbridgebuilders/universal-auth/react/styles.css'`.
+- **CSS distribution wired** — `styles.css` copied to `dist/` during build; exported via `./react/styles.css` subpath in package.json so consumer apps can `import '@samjonaidi-ship-it/universal-auth/react/styles.css'`.
 - **Demo scaffold** — minimal Vite + React project at `demo/` with package.json, vite.config.ts, tsconfig.json, index.html, src/main.tsx, src/App.tsx. Wires `<AuthProvider>`, `<SignInForm>`, `<ProfileSetupScreen>`, all banner/chooser components. Block 7 expands the kitchen-sink coverage.
 
 ### Issues found ✗

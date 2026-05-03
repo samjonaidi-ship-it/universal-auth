@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/core/crypto-client.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/crypto-client.ts | v1.0.1 | 2026-05-01 | BB
 // Main-thread proxy to crypto-worker.ts. Per §8.2, AES-GCM must run off the
 // main thread. This module:
 //

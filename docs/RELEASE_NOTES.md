@@ -1,4 +1,4 @@
-# Release Notes — `@bainbridgebuilders/universal-auth`
+# Release Notes — `@samjonaidi-ship-it/universal-auth`
 
 ## v1.0.0 — 2026-04-30 — General Availability
 
@@ -39,8 +39,8 @@ Rationale for shipping with 4 gates deferred: gates 2/3/4/11 verify the SDK beha
 ### Migration
 
 ```diff
-- "@bainbridgebuilders/universal-auth": "1.0.0-rc.2"
-+ "@bainbridgebuilders/universal-auth": "1.0.0"
+- "@samjonaidi-ship-it/universal-auth": "1.0.0-rc.2"
++ "@samjonaidi-ship-it/universal-auth": "1.0.0"
 ```
 
 No code changes required. CalExp5 cutover Phase D consumes `1.0.0` instead of `rc.2`.
@@ -93,8 +93,8 @@ Per spec Appendix D, Security and Legal/Privacy reviews are scheduled but not ye
 No code changes required for consumers — drop-in upgrade. Bump the version pin in your `package.json`:
 
 ```diff
-- "@bainbridgebuilders/universal-auth": "1.0.0-rc.1"
-+ "@bainbridgebuilders/universal-auth": "1.0.0-rc.2"
+- "@samjonaidi-ship-it/universal-auth": "1.0.0-rc.1"
++ "@samjonaidi-ship-it/universal-auth": "1.0.0-rc.2"
 ```
 
 If you were on rc.1 with a Vite-based consumer, you may have been seeing build failures on `crypto-worker.js`. rc.2 resolves these.

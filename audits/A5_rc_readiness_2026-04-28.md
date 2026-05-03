@@ -1,4 +1,4 @@
-# Audit Report A5 — RC Readiness — `@bainbridgebuilders/universal-auth`
+# Audit Report A5 — RC Readiness — `@samjonaidi-ship-it/universal-auth`
 
 ## Audit metadata
 
@@ -26,7 +26,7 @@
 | 6 | Security audit clean | ✓ | **`pnpm audit --prod --audit-level=high`:** 0 vulnerabilities. **`scripts/verify-no-jose.ts`:** prod dep tree clean (no jose/lodash/axios/zustand/moment/date-fns per spec Appendix B). **6 security test files / 18 tests** in `test/security/` cover: fast-check fuzzing, timing-attack regression, token storage hygiene, IDB tamper, CSRF headers, token replay. All pass in ~2.5s. **Manual review** by Sam: pending. |
 | 7 | Demo deployed + working end-to-end at `auth-sdk-demo.bainbridgebuilders.com` | ⏳ Block 7 | Demo source ships in `demo/` (Vite + React kitchen sink). Railway deploy workflow at `.github/workflows/demo-deploy.yml`. **Deploy is Sam's task** — slated for Block 7 Day 23 alongside RC publish. Browser-matrix and Lighthouse gates depend on this. |
 | 8 | Manual QA runbook complete (14 explicit + 40 expanded scenarios) | ⏳ partial | Per plan: 14 explicit scenarios are the canonical floor; 40-scenario expansion documented. **Status:** explicit scenarios mapped to integration + browser test files (gates 2 + 3). `docs/QA_RUNBOOK.md` not yet authored — pending Sam writeup before A5 sign-off OR can be back-filled in Block 7 alongside demo deploy. |
-| 9 | Published to GitHub Packages as `@bainbridgebuilders/universal-auth@1.0.0-rc.1` (`npm publish --provenance` per §15.1) | ⏳ Day 23 | This is the gate downstream of A5 sign-off. `package.json` has `"version": "1.0.0-rc.1"` + `publishConfig.registry: https://npm.pkg.github.com` + `access: restricted`. `scripts/release.ts` invokes `npm publish --provenance`. Day 23 fires after A5 ✓. |
+| 9 | Published to GitHub Packages as `@samjonaidi-ship-it/universal-auth@1.0.0-rc.1` (`npm publish --provenance` per §15.1) | ⏳ Day 23 | This is the gate downstream of A5 sign-off. `package.json` has `"version": "1.0.0-rc.1"` + `publishConfig.registry: https://npm.pkg.github.com` + `access: restricted`. `scripts/release.ts` invokes `npm publish --provenance`. Day 23 fires after A5 ✓. |
 | 10 | Threat model doc `docs/THREAT_MODEL.md` — every §15.3 threat mapped to SDK defense + test citation | ⏳ pending | Plan addition (not §11.11). **Status:** doc not yet authored. STRIDE matrix exists in spec §15.3. Recommended scope: 1-2 page doc cross-referencing each threat to (a) the SDK code path that defends, (b) the security test that regresses. Can be authored in 1-2 hours by reading §15.3 + scripts/verify-bundle.ts + test/security/. |
 | 11 | Contract tests green — SDK Pact files verified by CT BFF CI | ⚠️ partial | `test/contract/setup.ts` + `test/contract/auth-endpoints.contract.test.ts` produce `pacts/` JSON for 2 interactions (`POST /auth/v1/code/request` + `POST /auth/v1/code/verify`). **Plan implies more interactions** (full §3.1-3.5 surface) — currently 2/N where N depends on coverage interpretation. **Verifier-side gate** requires CT BFF CI job to consume `pacts/` artifact and run `pact-broker verify` — that lands in `BainbridgeBuilders/control-tower` repo, separate from this SDK. Per Risk R13: extrapolated dependency, coordination needed. |
 | 12 | CalExp5 migration runbook drafted in `docs/INTEGRATION_GUIDE.md` | ⏳ pending | Plan addition. **Status:** doc not yet authored. Plan §13.3 / §13.5.2 in spec spell out the 5-day cutover. Recommended scope: 8-section guide per plan (npm install + scope auth, app_id registration, preconnect, CSP, cookie domain override, feature flag, rollback playbook, observability hookup). Can be authored in 2-3 hours. |
@@ -107,7 +107,7 @@ If those three conditions are accepted, **`1.0.0-rc.1` ready to publish.**
 - [ ] Sam Jonaidi — confirms F6 live-run captured
 
 Once Sam signs above, Day 23 fires:
-1. `pnpm release` → `npm publish @bainbridgebuilders/universal-auth@1.0.0-rc.1 --provenance`
+1. `pnpm release` → `npm publish @samjonaidi-ship-it/universal-auth@1.0.0-rc.1 --provenance`
 2. Manual QA runbook execution against deployed demo
 3. Tag `v1.0.0-rc.1` on `main`, GitHub release with auto-generated notes
 

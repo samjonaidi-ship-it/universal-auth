@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/config.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/config.ts | v1.0.1 | 2026-05-01 | BB
 // SDK initialization config + mode-safety assertion (§10.6).
 // Day 3-4: wires core modules (client, token-manager) via configureClient().
 // v1.0.1: assertModeSafety now consumes config.cookieDomain (no hardcoded domain).
@@ -92,7 +92,7 @@ export function assertModeSafety(
     hostname === productionDomain || hostname.endsWith(`.${productionDomain}`);
   if (isProductionDomain) {
     throw new Error(
-      `[@bainbridgebuilders/universal-auth] Non-production mode '${mode}' forbidden on production domain '${hostname}'. ` +
+      `[@samjonaidi-ship-it/universal-auth] Non-production mode '${mode}' forbidden on production domain '${hostname}'. ` +
         `See SDK spec §10.6.`
     );
   }

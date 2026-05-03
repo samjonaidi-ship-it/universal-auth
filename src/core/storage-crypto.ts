@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/core/storage-crypto.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/storage-crypto.ts | v1.0.1 | 2026-05-01 | BB
 // Pure crypto primitives (AES-256-GCM) used by both:
 //   * crypto-worker.ts — primary path, off-main-thread per §8.2
 //   * crypto-client.ts — main-thread fallback for test/SSR environments

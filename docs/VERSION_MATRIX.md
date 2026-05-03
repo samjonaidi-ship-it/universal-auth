@@ -41,7 +41,7 @@
 - `ConsentVersionWatcher.tsx`: WCAG 2.1 SC 2.1.2 focus trap
 - 5 test body correctness fixes (enroll-flow, client, settings-conflict, sw-bridge, config-init)
 
-**Package:** `@bainbridgebuilders/universal-auth` v1.0.2
+**Package:** `@samjonaidi-ship-it/universal-auth` v1.0.2
 **Tested:** 80/80 files, 535/535 tests, 0 failures (3 consecutive passes)
 
 </details>
@@ -56,7 +56,7 @@
 **Files Reviewed:**
 - All 81 src files (see .rcodex/AGENT_HANDOFF.md)
 
-**Package:** `@bainbridgebuilders/universal-auth` v1.0.1
+**Package:** `@samjonaidi-ship-it/universal-auth` v1.0.1
 **Tested:** See TEST_LOG.md
 
 </details>

@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/flows/recovery.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/flows/recovery.ts | v1.0.1 | 2026-05-01 | BB
 // Session/credential recovery flows — logout-all, passkey removal, device revoke.
 // Full identity-recovery (IDV) is Phase 2+ per §Out-of-scope.
 //

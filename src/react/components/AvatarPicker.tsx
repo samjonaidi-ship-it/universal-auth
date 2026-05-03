@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/react/components/AvatarPicker.tsx | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/AvatarPicker.tsx | v1.0.1 | 2026-05-01 | BB
 // 3-tier avatar picker: upload, preset grid, or fall back to initials.
 // Per §5.4.4. Composable with <ProfileSetupScreen> or rendered standalone
 // (e.g. on a /me/profile page).

@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/offline/sw-bridge.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/offline/sw-bridge.ts | v1.0.1 | 2026-05-01 | BB
 // Main-thread ↔ Service-Worker bridge for offline flush.
 //
 // Per spec §9.4: SW's `sync` event (tag `bb-universal-auth-flush`) triggers

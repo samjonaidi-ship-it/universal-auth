@@ -46,3 +46,10 @@ test-results.xml
 .session/
 .claude/
 .rcodex/
+
+# Build/release artifacts (regenerated on each build/release)
+*.tgz
+*.cdx.json
+
+# Runtime state
+data/

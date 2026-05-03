@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/flows/consent.ts | v1.0.0-rc.4 | 2026-04-30 | BB
+// @samjonaidi-ship-it/universal-auth | src/flows/consent.ts | v1.0.0-rc.4 | 2026-04-30 | BB
 // Consent endpoint client (§3.4 + §D2.6).
 //
 // Wired by <ConsentScreen> at enrollment time + the Wizard's audit-replay UI.

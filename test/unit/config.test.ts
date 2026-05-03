@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/config.test.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/config.test.ts | v1.0.1 | 2026-05-01 | BB
 // A1 gate #6 — mode-safety assertion per §10.6 L1041
 // v1.0.1: assertModeSafety now consumes config.cookieDomain rather than a literal.
 

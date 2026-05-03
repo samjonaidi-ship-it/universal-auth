@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/react/components/AddressInput.test.tsx | v1.0.0-rc.4 | 2026-04-30 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/react/components/AddressInput.test.tsx | v1.0.0-rc.4 | 2026-04-30 | BB
 
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';

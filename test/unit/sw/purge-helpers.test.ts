@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/sw/purge-helpers.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/sw/purge-helpers.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Coverage for sw/purge-helpers.ts (look-back fix L6) — pure-algorithm bits
 // extracted from sw/index.ts so they can be unit-tested without an SW
 // global scope.

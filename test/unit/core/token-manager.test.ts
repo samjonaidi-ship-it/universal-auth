@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/core/token-manager.test.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/token-manager.test.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 // A1 gate #4 (mutex-coalesced refresh) + #10 (coverage) for src/core/token-manager.ts
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';

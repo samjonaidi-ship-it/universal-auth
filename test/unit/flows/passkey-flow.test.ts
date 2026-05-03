@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/flows/passkey-flow.test.ts | v1.0.0-rc.1 | 2026-04-25 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/flows/passkey-flow.test.ts | v1.0.0-rc.1 | 2026-04-25 | BB
 // Mock @simplewebauthn/browser to test the flow's orchestration without real WebAuthn.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';

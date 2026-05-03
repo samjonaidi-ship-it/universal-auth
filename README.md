@@ -11,10 +11,10 @@
 ## Install
 
 ```bash
-npm install @bainbridgebuilders/universal-auth
+npm install @samjonaidi-ship-it/universal-auth
 ```
 
-> Note: the package is published as `@bainbridgebuilders/universal-auth` on GitHub Packages (the npm scope must match the GitHub org that owns the registry). Internal code + watermarks still refer to the short form `@bb/universal-auth` as a brand identifier — both refer to the same thing.
+> Note: the package is published as `@samjonaidi-ship-it/universal-auth` on GitHub Packages (the npm scope must match the GitHub org that owns the registry). Internal code + watermarks still refer to the short form `@bb/universal-auth` as a brand identifier — both refer to the same thing.
 
 Requires `.npmrc` configured for GitHub Packages — see `docs/INTEGRATION_GUIDE.md`.
 

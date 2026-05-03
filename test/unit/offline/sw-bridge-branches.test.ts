@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/offline/sw-bridge-branches.test.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/offline/sw-bridge-branches.test.ts | v1.0.1 | 2026-05-01 | BB
 // Branch coverage for src/offline/sw-bridge.ts (was 60.86% lines).
 // Targets §9.4 SW sync registration + main-thread bridge.
 //

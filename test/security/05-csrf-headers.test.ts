@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/security/05-csrf-headers.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @samjonaidi-ship-it/universal-auth | test/security/05-csrf-headers.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Spec §15 — CSRF defense.
 //
 // SDK contract:

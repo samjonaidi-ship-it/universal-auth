@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/browser/03-multi-tab-sync.spec.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @samjonaidi-ship-it/universal-auth | test/browser/03-multi-tab-sync.spec.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // E2E: multi-tab session sync via BroadcastChannel.
 // Per spec §11.10 — "multi-tab login pickup" + "multi-tab forced-revoke".
 

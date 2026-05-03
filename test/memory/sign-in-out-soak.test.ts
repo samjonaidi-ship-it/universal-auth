@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/memory/sign-in-out-soak.test.ts | v1.0.2 | 2026-05-02 | BB
+// @samjonaidi-ship-it/universal-auth | test/memory/sign-in-out-soak.test.ts | v1.0.2 | 2026-05-02 | BB
 // Memory-leak soak per spec §11.7 L1139 — repeated sign-in/sign-out cycles.
 //
 // Default duration: 5 min (CI gate). Override via BB_SOAK_DURATION_MS:

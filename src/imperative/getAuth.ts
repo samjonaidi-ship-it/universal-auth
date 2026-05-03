@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/imperative/getAuth.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/imperative/getAuth.ts | v1.0.1 | 2026-05-01 | BB
 // Non-React imperative entry per spec §5.3. Returns a small client wrapping
 // the token-manager + flow surfaces so consumers (e.g. CalExp5's api-base.js
 // wrapper) can read the current access token, observe session changes, and

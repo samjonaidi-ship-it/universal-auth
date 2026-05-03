@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/react/components/PermissionCenter.test.tsx | v1.0.0-rc.4 | 2026-04-30 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/react/components/PermissionCenter.test.tsx | v1.0.0-rc.4 | 2026-04-30 | BB
 // Covers: render (loading + loaded), revoke-flow, re-request, dedupe, filter, error.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';

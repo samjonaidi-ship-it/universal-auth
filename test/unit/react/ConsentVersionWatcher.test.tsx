@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/react/ConsentVersionWatcher.test.tsx | v1.0.0-rc.4 | 2026-04-30 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/react/ConsentVersionWatcher.test.tsx | v1.0.0-rc.4 | 2026-04-30 | BB
 // Covers: computeStale unit logic, render gating, accept-flow, fail-open behavior.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';

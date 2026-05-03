@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | scripts/build.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | scripts/build.ts | v1.0.1 | 2026-05-01 | BB
 // esbuild build pipeline — 3-chunk split per §12.1: core / passkey / sw.
 //
 // Outputs:

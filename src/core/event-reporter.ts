@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/core/event-reporter.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/event-reporter.ts | v1.0.1 | 2026-05-01 | BB
 // Event batching + ingestion — POST /events/v1/ingest (§3.2 / §6).
 //
 // v1.0.1 (D5): the device id is cached at module level after first resolution.

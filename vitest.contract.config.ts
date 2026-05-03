@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | vitest.contract.config.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @samjonaidi-ship-it/universal-auth | vitest.contract.config.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Vitest config for Pact contract tests (Block 6 Day 18-19 / A5 gate #11).
 //
 // Consumer-side: SDK declares the shape of every request it sends to CT BFF

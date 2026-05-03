@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | vitest.config.ts | v1.0.2 | 2026-05-02 | BB
+// @samjonaidi-ship-it/universal-auth | vitest.config.ts | v1.0.2 | 2026-05-02 | BB
 // Vitest unit-test config. Coverage gates per §11 thresholds.
 
 import { defineConfig } from 'vitest/config';

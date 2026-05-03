@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/react/useAuth.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/useAuth.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 // Public useAuth hook — subscribes to IdentityContext + StatusContext only.
 // Per §D2.4: personas / activePersona / hasPersona / switchActivePersona / allFeatures / agent.
 // allFeatures() reads entitlements module directly (so useAuth doesn't subscribe
@@ -43,7 +43,7 @@ export function useAuth(): UseAuthReturn {
   const st = useContext(StatusContext);
   if (id === null || st === null) {
     throw new Error(
-      '[@bainbridgebuilders/universal-auth] useAuth() called outside <AuthProvider>. ' +
+      '[@samjonaidi-ship-it/universal-auth] useAuth() called outside <AuthProvider>. ' +
         'Wrap your app: <AuthProvider><App /></AuthProvider>.'
     );
   }

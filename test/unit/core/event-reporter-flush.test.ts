@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/core/event-reporter-flush.test.ts | v1.0.0-rc.4 | 2026-04-30 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/event-reporter-flush.test.ts | v1.0.0-rc.4 | 2026-04-30 | BB
 // Branch coverage for src/core/event-reporter.ts doFlush() paths (§3.2, §6.3, §8.1):
 //   - Permanent failure: UNKNOWN_EVENT_TYPE / APP_NOT_REGISTERED / VERSION_INCOMPATIBLE
 //     → rows dropped, no retry (lines 215-217)

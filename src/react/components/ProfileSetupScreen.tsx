@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/react/components/ProfileSetupScreen.tsx | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/ProfileSetupScreen.tsx | v1.0.1 | 2026-05-01 | BB
 // Drop-in profile setup per §5.5.1 — three render modes (automatic / guided /
 // deferred). Composes <AvatarPicker>, <ContactInfoForm>, <PersonaFieldsForm>,
 // <ProfileCompletenessBar>.

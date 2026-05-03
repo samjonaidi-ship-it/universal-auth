@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/react/components/AvatarPicker-handlers.test.tsx | v1.0.0-rc.1 | 2026-04-28 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/react/components/AvatarPicker-handlers.test.tsx | v1.0.0-rc.1 | 2026-04-28 | BB
 // Coverage push for AvatarPicker.tsx click handlers (preset / clear) and
 // useProfile.ts save / selectPreset / clearAvatar / uploadAvatar paths.
 

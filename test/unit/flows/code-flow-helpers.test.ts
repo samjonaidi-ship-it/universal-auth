@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/flows/code-flow-helpers.test.ts | v1.0.0-rc.4 | 2026-04-30 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/flows/code-flow-helpers.test.ts | v1.0.0-rc.4 | 2026-04-30 | BB
 // Coverage push: maskDestination + inferChannel branches in src/flows/code-flow.ts
 // (lines 119-122 — uncovered before this file).
 // Cites SDK spec §3.1 (code-first flow).

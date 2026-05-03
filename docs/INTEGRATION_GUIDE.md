@@ -1,4 +1,4 @@
-# Integration Guide | `@bainbridgebuilders/universal-auth` | v1.0.1 | 2026-05-01 | BB
+# Integration Guide | `@samjonaidi-ship-it/universal-auth` | v1.0.1 | 2026-05-01 | BB
 
 > **Read first**: [`CREW_UX_PRINCIPLES.md`](./CREW_UX_PRINCIPLES.md). BB
 > Express users wear gloves and have dirty hands. Every UX decision in
@@ -6,11 +6,11 @@
 > requires the user to type, scroll precisely, or hit a small target
 > repeatedly, you're doing it wrong.
 
-How to add `@bainbridgebuilders/universal-auth` to a Bainbridge Builders consumer app (CalExp5/BB_Express, ControlTower SPA, future Customer Portal, future Buddy Console). Spec citations point to `BB_UNIVERSAL_AUTH_SDK_SPEC.md v1.6.0`.
+How to add `@samjonaidi-ship-it/universal-auth` to a Bainbridge Builders consumer app (CalExp5/BB_Express, ControlTower SPA, future Customer Portal, future Buddy Console). Spec citations point to `BB_UNIVERSAL_AUTH_SDK_SPEC.md v1.6.0`.
 
 **v1.0.1 changes affecting consumers:**
 - Domain consolidation per D20: `cookieDomain` defaults to `.buildwithbainbridge.com`; `apiBaseUrl` defaults to `https://api.buildwithbainbridge.com` (cutover 2026-05-03).
-- `setSession` moved to `@bainbridgebuilders/universal-auth/internal` subpath. Existing imports from the main barrel emit a one-time `console.warn` deprecation; v1.1 retires them.
+- `setSession` moved to `@samjonaidi-ship-it/universal-auth/internal` subpath. Existing imports from the main barrel emit a one-time `console.warn` deprecation; v1.1 retires them.
 - At-rest refresh-token encryption now uses a non-extractable random AES-256-GCM CryptoKey (handle persisted in IDB). Legacy ciphertext from v1.0.0 is wiped on first v1.0.1 boot — users see one re-sign-in. No code change required by consumers.
 - Cross-tab refresh coalescing via `navigator.locks` (replaces former SharedWorker plan). No API change.
 - `Retry-After` header honored on offline queue 429 responses. No API change.
@@ -47,23 +47,23 @@ The package is published private on GitHub Packages registry. Consumer `.npmrc`:
 Then:
 
 ```bash
-pnpm add @bainbridgebuilders/universal-auth
+pnpm add @samjonaidi-ship-it/universal-auth
 # or:
-npm install @bainbridgebuilders/universal-auth
+npm install @samjonaidi-ship-it/universal-auth
 ```
 
 Optional CSS:
 
 ```ts
-import '@bainbridgebuilders/universal-auth/react/styles.css';
+import '@samjonaidi-ship-it/universal-auth/react/styles.css';
 ```
 
 Subpath imports (tree-shaking-friendly):
 
 ```ts
-import { initUniversalAuth, getAuth } from '@bainbridgebuilders/universal-auth';
-import { AuthProvider, useAuth } from '@bainbridgebuilders/universal-auth/react';
-import { uploadAvatar } from '@bainbridgebuilders/universal-auth/profile';
+import { initUniversalAuth, getAuth } from '@samjonaidi-ship-it/universal-auth';
+import { AuthProvider, useAuth } from '@samjonaidi-ship-it/universal-auth/react';
+import { uploadAvatar } from '@samjonaidi-ship-it/universal-auth/profile';
 ```
 
 ---
@@ -246,7 +246,7 @@ When you bump a `consent_documents` row's `policy_version` server-side (say, you
 import {
   AuthProvider,
   ConsentVersionWatcher,
-} from '@bainbridgebuilders/universal-auth/react';
+} from '@samjonaidi-ship-it/universal-auth/react';
 
 export function App() {
   return (
@@ -289,7 +289,7 @@ export const USE_UNIVERSAL_AUTH =
 
 ```tsx
 // src/App.tsx
-import { AuthProvider } from '@bainbridgebuilders/universal-auth/react';
+import { AuthProvider } from '@samjonaidi-ship-it/universal-auth/react';
 import { LegacyAuthProvider } from './legacy/auth/LegacyAuthProvider';
 import { USE_UNIVERSAL_AUTH } from './config';
 
@@ -350,7 +350,7 @@ await initUniversalAuth({
 ### Dev panel — `getSDKMetrics()` (per spec §12.2)
 
 ```tsx
-import { getSDKMetrics } from '@bainbridgebuilders/universal-auth';
+import { getSDKMetrics } from '@samjonaidi-ship-it/universal-auth';
 
 function DevPanel() {
   const [metrics, setMetrics] = useState(null);
@@ -378,7 +378,7 @@ Per spec §13.3 and the implementation plan:
 
 | Day | Step | Spec §       |
 |-----|------|--------------|
-| 24  | Pre-work: fix CalExp5 port collision (`server.js` PORT vs CT_BFF_URL); delete `device_credentials` IDB store; delete `RegisterFlow.jsx`; consolidate WebAuthn to single `@simplewebauthn/browser`; add missing watermarks. Then `npm install @bainbridgebuilders/universal-auth`. Wrap `App` in `<AuthProvider>`. Replace `LoginScreen.jsx` with `<SignInForm>` behind `USE_UNIVERSAL_AUTH=false`. | §13.3 + alignment audit |
+| 24  | Pre-work: fix CalExp5 port collision (`server.js` PORT vs CT_BFF_URL); delete `device_credentials` IDB store; delete `RegisterFlow.jsx`; consolidate WebAuthn to single `@simplewebauthn/browser`; add missing watermarks. Then `npm install @samjonaidi-ship-it/universal-auth`. Wrap `App` in `<AuthProvider>`. Replace `LoginScreen.jsx` with `<SignInForm>` behind `USE_UNIVERSAL_AUTH=false`. | §13.3 + alignment audit |
 | 25  | SDK takes over refresh-token IDB + offline queue. Deprecate `api-base.js`. Refactor `settingsSlice.js` → thin wrapper over `useSettingsSync()`. Register `bb_express` in `ct_bff.apps` (§2 above). Flip flag to `true`. Delete legacy auth (api-base.js, auth.js, indexed-db.js, authStore.js, LoginScreen.jsx, EnrollmentFlow.jsx, BiometricButton.jsx, RegisterFlow.jsx). | §13.3 + §6.3 |
 | 26  | Profile module migration: `<ProfileSetupScreen>` post-enrollment when `needsSetup`; replace `/profile/me` route with `<ProfileSetupScreen mode="edit" />`; wire FirstLaunchScreen permissions to `usePermissionGrants()`; cleanup. Run one-shot data backfill: for every identity with `primary_employee_id`, seed `ct_bff.identity_profile` from Bridge `cal_assets.metadata`. Idempotent — re-runnable. | §13.5.2 + §13.5.3 |
 | 27  | E2E smoke in staging → production cutover → 24h monitoring window. | §13.4 |

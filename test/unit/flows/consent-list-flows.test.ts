@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/flows/consent-list-flows.test.ts | v1.0.0-rc.4 | 2026-04-30 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/flows/consent-list-flows.test.ts | v1.0.0-rc.4 | 2026-04-30 | BB
 // Coverage push: listConsents + listAllConsents + revokeConsent flows
 // (lines 60-104 uncovered before this file).
 // Cites SDK spec §3.4 + §3.4.1 (consent endpoints, FHIR-grade extensions).

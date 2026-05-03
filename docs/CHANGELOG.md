@@ -1,10 +1,63 @@
 # Changelog
 
-All notable changes to `@bainbridgebuilders/universal-auth` are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/spec/v2.0.0.html) per SDK spec §14.
+All notable changes to `@samjonaidi-ship-it/universal-auth` are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/spec/v2.0.0.html) per SDK spec §14.
 
 Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line numbers drift on every version bump; section numbers are stable.
 
 > **Note on rc.3 / rc.4 entries below:** these were **internal-only milestones** between rc.2 (2026-04-28) and 1.0.0 (2026-04-30). Neither was tagged or published to the registry — public consumer path is rc.2 → 1.0.0. The rc.3 / rc.4 entries document work that landed on `main` but never shipped under those version numbers; "Recommended upgrade" wording in those sections is historical and does not apply to actual consumers.
+
+## [1.0.3] — 2026-05-03 — Scope rename (`@bainbridgebuilders` → `@samjonaidi-ship-it`)
+
+**Org consolidation reversal.** Sam decided 2026-05-03 to bring all repos back to `samjonaidi-ship-it` GitHub org and delete the `BainbridgeBuilders` org. Triggered by the discovery that GitHub Team plan does NOT unlock SLSA build provenance attestation for private repos (only Enterprise Cloud does), removing the primary technical justification for the BB org.
+
+**This release is not a behavior change.** Source code, runtime, API surface, and bundle layout are all bit-for-bit identical to v1.0.2. The only changes are:
+
+- **Package name:** `@bainbridgebuilders/universal-auth` → `@samjonaidi-ship-it/universal-auth`
+- **`.npmrc` scope key:** `@bainbridgebuilders:registry=...` → `@samjonaidi-ship-it:registry=...`
+- **Watermarks:** every source-file first-line watermark renamed to new scope
+- **Workflow + script files:** all internal references updated
+- **`verify-watermarks.ts` regex:** updated to match new scope; legacy `@bainbridgebuilders/...` watermarks are no longer accepted
+- **Repository:** transferred from `BainbridgeBuilders/universal-auth` → `samjonaidi-ship-it/universal-auth`
+
+### Consumer migration
+
+```diff
+- "@bainbridgebuilders/universal-auth": "..."
++ "@samjonaidi-ship-it/universal-auth": "..."
+```
+
+```diff
+- import { useAuth } from '@bainbridgebuilders/universal-auth/react';
++ import { useAuth } from '@samjonaidi-ship-it/universal-auth/react';
+```
+
+All subpath imports (`/react`, `/sw`, `/profile`, `/extendability`, `/internal`) preserved — only the scope changes.
+
+### Why this is technically a breaking change
+
+Import-path rename means `npm install` with a v1.0.2 dependency string will fail on a v1.0.3 tarball, and vice versa. By strict SemVer that's a major-version bump. We're treating it as a patch (1.0.2 → 1.0.3) because:
+
+1. The internal SDK API surface is bit-identical — no consumer that updates their import path needs other code changes.
+2. Today's only consumer is CalExp5, which uses `file:packages/...tgz` rather than the GH Packages registry. The migration is a single coordinated commit on both sides.
+3. Future external consumers (none today) will see v1.0.3 as the first published version under the new scope, with no v1.0.2 visible to them under that scope. From their perspective, v1.0.3 is a fresh install.
+
+### CalExp5 coordination
+
+CalExp5 commit lands in lock-step swapping the v1.0.2 tarball for v1.0.3 in `packages/` and updating all 16 import sites. Production redeploys via Railway auto-deploy from main.
+
+### Other items deferred to v1.0.3
+
+The Rcodex v13.14 follow-ons that were on the v1.0.2 backlog (un-skip 9 hydrate-race tests, restore branch coverage 84→85) are NOT in v1.0.3. v1.0.3 is scope-rename only. Test cleanup moves to v1.0.4.
+
+### `BainbridgeBuilders/universal-auth@1.0.2` fate
+
+Stays on GitHub Packages until the BainbridgeBuilders org is deleted (planned same day as this release). At that point all v1.0.0 / v1.0.0-rc.* / v1.0.1 / v1.0.2 packages under that scope are destroyed. Locally-archived tarballs are preserved in `BU/` for forensic recovery if needed.
+
+### CANONICAL_DECISIONS.md amendment
+
+D20 amended same day to **reverse the original direction** — repo transfers FROM `BainbridgeBuilders` BACK TO `samjonaidi-ship-it`. Domain consolidation to `*.buildwithbainbridge.com` proceeds as originally planned.
+
+---
 
 ## [1.0.2] — 2026-05-02 — Rcodex security hardening pass
 
@@ -79,7 +132,7 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
 
 ### API surface
 
-- **`setSession` moved to `/internal` subpath.** Import path: `import { setSession } from '@bainbridgebuilders/universal-auth/internal'`. The main barrel still re-exports `setSession` with a one-time `console.warn` deprecation; v1.1 retires the main-barrel export.
+- **`setSession` moved to `/internal` subpath.** Import path: `import { setSession } from '@samjonaidi-ship-it/universal-auth/internal'`. The main barrel still re-exports `setSession` with a one-time `console.warn` deprecation; v1.1 retires the main-barrel export.
 - **`onEntitlementsChange(listener)` exported** from entitlements module. AuthProvider subscribes internally, so consumers' `useEntitlements()` now updates live when SWR refresh updates the cache (closes audit finding #R1).
 - **Settings + Profile 409 conflicts** now surface the rejected patch via `sync.conflict` event (`{pendingPatch, serverState, version}`). New `applySettingsPatch(patch)` + `applyProfilePatch(patch)` APIs let callers rebase. v1.0.0 silently dropped the dirty patch; v1.0.1 preserves it until the consumer rebases or discards.
 - **`endImpersonation` server-error path** keeps local-clear (better UX) but emits a new `impersonation.local_clear_drift` warning event with `{reason:'server_call_failed', err}` so audit log catches the drift.
@@ -107,7 +160,7 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
 - **GitHub Actions pinned to commit SHAs** across all 4 workflow files (`ci.yml`, `release.yml`, `chaos.yml`, `demo-deploy.yml`). Replaces `@v4` floating tags. Aligns with D21 supply-chain hardening. **CycloneDX-npm in `release.yml` pinned to `@2.0`** (v1.0.1 lookback C7) — was previously `@latest`, which was inconsistent with the SHA-pinning theme.
 - **`actions/dependency-review-action`** added to `ci.yml` on PR events; fails on critical/high CVEs.
 - **CycloneDX 1.7 SBOM** generated on every release (`@cyclonedx/cyclonedx-npm@2.0`); attached to GitHub Release alongside the SLSA provenance attestation.
-- **Watermarks canonicalized** from `@bb/universal-auth` to `@bainbridgebuilders/universal-auth` across 150+ files (47 src+scripts in v1.0.1 initial sweep + 103 test/+demo/+root configs in v1.0.1 lookback C2). `scripts/verify-watermarks.ts` regex tightened so old form fails CI; `SCAN_DIRS` widened to `[src, scripts, test, demo]` + 7 root config files; line-2 fallback added for files with `@vitest-environment` pragma on line 1.
+- **Watermarks canonicalized** from `@bb/universal-auth` to `@samjonaidi-ship-it/universal-auth` across 150+ files (47 src+scripts in v1.0.1 initial sweep + 103 test/+demo/+root configs in v1.0.1 lookback C2). `scripts/verify-watermarks.ts` regex tightened so old form fails CI; `SCAN_DIRS` widened to `[src, scripts, test, demo]` + 7 root config files; line-2 fallback added for files with `@vitest-environment` pragma on line 1.
 
 ### Spec docs (BB_Platform_Specs/)
 
@@ -150,10 +203,10 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
 ### Upgrade path
 
 ```bash
-pnpm up @bainbridgebuilders/universal-auth@1.0.1
+pnpm up @samjonaidi-ship-it/universal-auth@1.0.1
 ```
 
-Most consumers see one re-sign-in on first v1.0.1 page load (clean-cut storage migration; see top of this entry). No code changes required if you import only from the main barrel. If you import `setSession`, switch to `@bainbridgebuilders/universal-auth/internal` to silence the deprecation warning; main-barrel export retires in v1.1.
+Most consumers see one re-sign-in on first v1.0.1 page load (clean-cut storage migration; see top of this entry). No code changes required if you import only from the main barrel. If you import `setSession`, switch to `@samjonaidi-ship-it/universal-auth/internal` to silence the deprecation warning; main-barrel export retires in v1.1.
 
 ### Audit credits
 
@@ -163,7 +216,7 @@ Most consumers see one re-sign-in on first v1.0.1 page load (clean-cut storage m
 
 ## [1.0.0] — 2026-04-30 — GA
 
-**General Availability.** First stable release of `@bainbridgebuilders/universal-auth`. Recommended upgrade path for all consumers on rc.* — no public API changes from rc.4, only test hardening + lint cleanup.
+**General Availability.** First stable release of `@samjonaidi-ship-it/universal-auth`. Recommended upgrade path for all consumers on rc.* — no public API changes from rc.4, only test hardening + lint cleanup.
 
 ### What's in 1.0.0 vs rc.4
 
@@ -650,7 +703,7 @@ Two-pronged approach:
 - **Audit report**: `audits/A2_flows_offline_2026-04-24.md` — 13/13 gates passed
 
 ### SDK spec v1.4.1 → v1.4.2 (2026-04-24)
-- **Package-name clarification patch** in `BB_Platform_Specs/BB_UNIVERSAL_AUTH_SDK_SPEC.md`. Registry name locked as `@bainbridgebuilders/universal-auth` (the `@bb` npm/GitHub scope is permanently held by Benjamin Bock since 2008). Source-file watermarks and in-spec code samples continue to use the shorthand `@bb/universal-auth` for readability.
+- **Package-name clarification patch** in `BB_Platform_Specs/BB_UNIVERSAL_AUTH_SDK_SPEC.md`. Registry name locked as `@samjonaidi-ship-it/universal-auth` (the `@bb` npm/GitHub scope is permanently held by Benjamin Bock since 2008). Source-file watermarks and in-spec code samples continue to use the shorthand `@bb/universal-auth` for readability.
 
 ### A1 audit sign-off (2026-04-24)
 - **Web Crypto → Web Worker** (§8.2): new `src/core/crypto-worker.ts` (DedicatedWorker with `self.importScripts` assertion on load, CryptoKey cache keyed by device input, message-based encrypt/decrypt/clearKeyCache); new `src/core/crypto-client.ts` (main-thread proxy to worker via `new Worker(new URL('./crypto-worker.js', import.meta.url), { type: 'module' })` with pure-crypto fallback for SSR/test); new `src/core/storage-crypto.ts` (pure PBKDF2 + AES-256-GCM primitives shared by worker and fallback)

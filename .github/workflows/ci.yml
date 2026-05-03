@@ -1,4 +1,4 @@
-# @bainbridgebuilders/universal-auth | .github/workflows/ci.yml | v1.0.1 | 2026-05-01 | BB
+# @samjonaidi-ship-it/universal-auth | .github/workflows/ci.yml | v1.0.1 | 2026-05-01 | BB
 # Per-PR CI gate. Block 6 Day 22 expansion: + perf cold-start, + memory soak
 # (5 min CI cap), + security suite. Heavy suites (24h soak, full chaos,
 # Playwright matrix) live in chaos.yml nightly.

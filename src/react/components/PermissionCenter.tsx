@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/react/components/PermissionCenter.tsx | v1.0.0-rc.4 | 2026-04-30 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/PermissionCenter.tsx | v1.0.0-rc.4 | 2026-04-30 | BB
 // Persistent UI for browser/device permissions — per PERSONA_PCP_DESIGN.md §5.1
 // (L3a) and §10 (UX/UI implications).
 //

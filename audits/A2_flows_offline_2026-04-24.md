@@ -1,4 +1,4 @@
-# Audit Report A2 — Flows + Offline — `@bainbridgebuilders/universal-auth`
+# Audit Report A2 — Flows + Offline — `@samjonaidi-ship-it/universal-auth`
 
 ## Audit metadata
 
@@ -43,7 +43,7 @@
 - **Shared IDB handle refactor.** During A2 test-hardening, discovered that `event-reporter.ts`, `offline/queue.ts`, and `core/sdk-metrics.ts` each opened their own `openDB('bb-universal-auth', 1)` without the `upgrade` callback. When any of them opened the DB before `storage.ts` did, stores were undefined. Fixed by adding `storage.getSharedDb()` and routing all three modules through it. This hardens the tab-init order and prevents a class of race-condition bugs.
 - **DB test-isolation hardening.** `__resetDbForTests` now calls `deleteDB(DB_NAME)` after closing the connection. Without this, fake-indexeddb retained row data between tests, producing flaky count assertions (`expected 11 to be 1`). Fix guarantees fresh DB per test.
 - **Public barrel now exposes 40+ Block 3 surfaces.** `src/index.ts` exports flows, entitlement readers, settings-sync, SDK metrics, session-watcher, event emitter, and `onSessionChange`. Tree-shaking preserved: consumers pay only for what they import.
-- **Package-name alignment patch.** `BB_UNIVERSAL_AUTH_SDK_SPEC.md` bumped to v1.4.2 clarifying `@bainbridgebuilders/universal-auth` (registry) vs. `@bb/universal-auth` (shorthand in-spec and in source watermarks). See `docs/CHANGELOG.md`.
+- **Package-name alignment patch.** `BB_UNIVERSAL_AUTH_SDK_SPEC.md` bumped to v1.4.2 clarifying `@samjonaidi-ship-it/universal-auth` (registry) vs. `@bb/universal-auth` (shorthand in-spec and in source watermarks). See `docs/CHANGELOG.md`.
 
 ### Issues found ✗
 

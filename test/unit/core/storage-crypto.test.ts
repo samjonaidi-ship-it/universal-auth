@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/core/storage-crypto.test.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/storage-crypto.test.ts | v1.0.1 | 2026-05-01 | BB
 // A1 gate #10 coverage for src/core/storage-crypto.ts
 // v1.0.1 (B2): PBKDF2 deriveKey path retired. Tests now use generateMasterKey().
 

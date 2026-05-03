@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/react/components/CodeEntry.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/CodeEntry.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
 // 6-digit code entry. Single text input (avoids the per-digit anti-pattern
 // that breaks paste, screen readers, and autofill).
 

@@ -1,5 +1,5 @@
-// @bainbridgebuilders/universal-auth | src/profile/index.ts | v1.0.1 | 2026-05-01 | BB
-// `@bainbridgebuilders/universal-auth/profile` subpath — keeps libphonenumber-js
+// @samjonaidi-ship-it/universal-auth | src/profile/index.ts | v1.0.1 | 2026-05-01 | BB
+// `@samjonaidi-ship-it/universal-auth/profile` subpath — keeps libphonenumber-js
 // out of the core 40 KB budget. Components in `/react` import from here lazily.
 
 export type {

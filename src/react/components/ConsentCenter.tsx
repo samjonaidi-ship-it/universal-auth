@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/react/components/ConsentCenter.tsx | v1.0.0-rc.4 | 2026-04-30 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/ConsentCenter.tsx | v1.0.0-rc.4 | 2026-04-30 | BB
 // Persistent settings UI for the user's consents — per PERSONA_PCP_DESIGN.md §10
 // (UX/UI implications) and BB_UNIVERSAL_AUTH_SDK_SPEC.md §3.4.
 //

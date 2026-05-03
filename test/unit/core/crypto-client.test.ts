@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/core/crypto-client.test.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/crypto-client.test.ts | v1.0.1 | 2026-05-01 | BB
 // Coverage for crypto-client.ts. happy-dom doesn't ship a real Worker; we
 // exercise the fallback path AND simulate worker-mode by stubbing globalThis.Worker.
 //

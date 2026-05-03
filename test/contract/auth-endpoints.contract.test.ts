@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/contract/auth-endpoints.contract.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @samjonaidi-ship-it/universal-auth | test/contract/auth-endpoints.contract.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Pact consumer contract for §3.1 auth endpoints.
 //
 // What this asserts: the EXACT shapes the SDK sends + expects on each

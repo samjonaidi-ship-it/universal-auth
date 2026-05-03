@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/errors.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/errors.ts | v1.0.1 | 2026-05-01 | BB
 // Typed error classes for every canonical error code per §3.7.
 // Full enumeration: 15 from §3.7 + `VALIDATION_PHONE_UNREACHABLE` (§5.4.5)
 // + `CONSENT_REQUIRED` (v1.4.0 §3.4) = 17 total.

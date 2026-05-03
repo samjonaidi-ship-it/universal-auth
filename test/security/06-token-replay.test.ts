@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/security/06-token-replay.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @samjonaidi-ship-it/universal-auth | test/security/06-token-replay.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Spec §11.8 L1141 — token replay regression.
 //
 // Threat: an attacker captures a refresh token (e.g., via a browser extension

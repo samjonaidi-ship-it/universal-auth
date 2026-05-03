@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/react/components/ContactInfoForm.tsx | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/ContactInfoForm.tsx | v1.0.1 | 2026-05-01 | BB
 // Contact-info form: display_name, email, phone (E.164 normalized), emergency_contact.
 // Persona-aware: shows emergency_contact only for personas where it's required
 // per §5.4.3.

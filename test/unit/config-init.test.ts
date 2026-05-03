@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/config-init.test.ts | v1.0.1 | 2026-05-02 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/config-init.test.ts | v1.0.1 | 2026-05-02 | BB
 // Coverage push for src/config.ts initUniversalAuth flow (lines 97-134).
 // v1.0.1: vi.mock stubs for dynamically-imported modules prevent DNS hangs
 // when the full suite runs in parallel and client singleton is already armed.

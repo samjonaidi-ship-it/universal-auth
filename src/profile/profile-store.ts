@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/profile/profile-store.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/profile/profile-store.ts | v1.0.1 | 2026-05-01 | BB
 // Profile state + sync. Per §5.4.2.
 //
 // Endpoints:
@@ -131,7 +131,7 @@ export async function saveProfile(
 ): Promise<UniversalProfile> {
   if (state.profile === null) {
     throw new Error(
-      '[@bainbridgebuilders/universal-auth] saveProfile called before hydrateProfile completed.'
+      '[@samjonaidi-ship-it/universal-auth] saveProfile called before hydrateProfile completed.'
     );
   }
 

@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/react/components/OfflineIndicator.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/OfflineIndicator.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
 // Subtle banner shown while the SDK is in 'offline' status (§9.3 state machine).
 
 import type { ReactNode } from 'react';

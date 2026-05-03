@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/imperative/getAuth.test.ts | v1.0.0-rc.3 | 2026-04-29 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/imperative/getAuth.test.ts | v1.0.0-rc.3 | 2026-04-29 | BB
 // rc.3: imperative AuthClient is no longer a stub. These tests validate
 // the real surface — getSession returns a snapshot (not null), onSessionChange
 // receives snapshot updates, signIn delegates to requestCode, signOut delegates

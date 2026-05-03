@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/flows/enroll-flow.test.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/flows/enroll-flow.test.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 // A2 gate #10 — enrollment flow integration (verify → activate).
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';

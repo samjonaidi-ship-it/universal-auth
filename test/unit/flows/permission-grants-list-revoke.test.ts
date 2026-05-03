@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/flows/permission-grants-list-revoke.test.ts | v1.0.0-rc.4 | 2026-04-30 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/flows/permission-grants-list-revoke.test.ts | v1.0.0-rc.4 | 2026-04-30 | BB
 // Coverage push: list + revoke flow paths in src/flows/permission-grants.ts
 // (lines 106-131 — uncovered before this file).
 // Cites SDK spec §5.6 (Permissions framework) + §3.3 (permission-grants endpoints).

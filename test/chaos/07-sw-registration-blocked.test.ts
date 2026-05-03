@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/chaos/07-sw-registration-blocked.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @samjonaidi-ship-it/universal-auth | test/chaos/07-sw-registration-blocked.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Spec §11.6 scenario 7 — Service Worker registration blocked.
 //
 // In some environments (incognito tabs, strict CSP, file:// URLs, certain

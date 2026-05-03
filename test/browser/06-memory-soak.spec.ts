@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/browser/06-memory-soak.spec.ts | v1.0.2 | 2026-05-02 | BB
+// @samjonaidi-ship-it/universal-auth | test/browser/06-memory-soak.spec.ts | v1.0.2 | 2026-05-02 | BB
 // Real-browser memory soak per spec §11.7 L1139.
 //
 // Why: the vitest harness uses fake-indexeddb which retains ~3 KB per IDB

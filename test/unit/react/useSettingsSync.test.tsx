@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/react/useSettingsSync.test.tsx | v1.0.0-rc.1 | 2026-04-25 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/react/useSettingsSync.test.tsx | v1.0.0-rc.1 | 2026-04-25 | BB
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, waitFor, act } from '@testing-library/react';

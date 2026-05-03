@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/core/entitlements.test.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/entitlements.test.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 // A2 gate #9 — 7-day offline grace + stale-while-revalidate.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';

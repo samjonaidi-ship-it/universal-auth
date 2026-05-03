@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | demo/vite.config.ts | v1.0.0-rc.1 | 2026-04-25 | BB
+// @samjonaidi-ship-it/universal-auth | demo/vite.config.ts | v1.0.0-rc.1 | 2026-04-25 | BB
 
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';

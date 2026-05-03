@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/core/event-reporter.test.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/event-reporter.test.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 // A2 gate #7 — envelope auto-population + batch ingest.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';

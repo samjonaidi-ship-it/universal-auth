@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/security/04-idb-tamper.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @samjonaidi-ship-it/universal-auth | test/security/04-idb-tamper.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Spec §11.8 L1141 — IDB tamper test.
 //
 // Threat: a hostile script with same-origin DOM access modifies the

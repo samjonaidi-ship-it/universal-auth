@@ -1,4 +1,4 @@
-# @bainbridgebuilders/universal-auth | .github/workflows/demo-deploy.yml | v1.0.1 | 2026-05-01 | BB
+# @samjonaidi-ship-it/universal-auth | .github/workflows/demo-deploy.yml | v1.0.1 | 2026-05-01 | BB
 # Railway deploy of demo/ to auth-sdk-demo.bainbridgebuilders.com.
 # Triggers: pushes to main that touch demo/ OR src/ (new SDK code → demo refresh).
 #

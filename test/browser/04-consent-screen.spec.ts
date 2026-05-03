@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/browser/04-consent-screen.spec.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @samjonaidi-ship-it/universal-auth | test/browser/04-consent-screen.spec.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // E2E: <ConsentScreen> 9-consent crew hard-gate per spec §3.4 v1.4.0 + Wizard §20.
 // Per spec §11.10 — "happy path enroll/code/consent/passkey/land".
 

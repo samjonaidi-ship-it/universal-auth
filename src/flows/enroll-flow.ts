@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/flows/enroll-flow.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/flows/enroll-flow.ts | v1.0.1 | 2026-05-01 | BB
 // Magic-link enrollment flow (v1.4.0 §3.1bis).
 //
 // Endpoints:

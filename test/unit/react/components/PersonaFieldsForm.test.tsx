@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/react/components/PersonaFieldsForm.test.tsx | v1.0.2 | 2026-05-02 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/react/components/PersonaFieldsForm.test.tsx | v1.0.2 | 2026-05-02 | BB
 // Coverage push — PersonaFieldsForm.tsx (was 29% lines).
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';

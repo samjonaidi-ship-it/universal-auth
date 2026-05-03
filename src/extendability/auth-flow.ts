@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/extendability/auth-flow.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | src/extendability/auth-flow.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 // Per §8.5.3 — pluggable auth-flow adapter (OIDC federation, SAML, magic-link
 // alternatives, etc.). v1 ships code-flow + passkey-flow as built-ins.
 // Future enterprise SSO flows register via this interface.

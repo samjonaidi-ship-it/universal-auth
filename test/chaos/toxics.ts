@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/chaos/toxics.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @samjonaidi-ship-it/universal-auth | test/chaos/toxics.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Toxic helpers — typed wrappers around Toxiproxy's REST API.
 // One-shot per test: addToxic + later test code asserts SDK behavior.
 

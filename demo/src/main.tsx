@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | demo/src/main.tsx | v1.0.0-rc.1 | 2026-04-25 | BB
+// @samjonaidi-ship-it/universal-auth | demo/src/main.tsx | v1.0.0-rc.1 | 2026-04-25 | BB
 // Block 5 minimal scaffold (placeholder).
 //
 // Block 7 wires up the full kitchen-sink: AuthProvider, SignInForm,

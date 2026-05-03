@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/core/settings-sync.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/settings-sync.ts | v1.0.1 | 2026-05-01 | BB
 // Settings sync with debounced PUT + If-Match optimistic locking.
 //
 // Invariants per spec:

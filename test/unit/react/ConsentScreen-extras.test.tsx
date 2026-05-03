@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/react/ConsentScreen-extras.test.tsx | v1.0.0-rc.1 | 2026-04-28 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/react/ConsentScreen-extras.test.tsx | v1.0.0-rc.1 | 2026-04-28 | BB
 // Branch coverage — optional checkbox toggling, onCancel, error rendering,
 // onAccept failure path.
 

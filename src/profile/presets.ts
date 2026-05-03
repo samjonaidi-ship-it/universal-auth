@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/profile/presets.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | src/profile/presets.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 // 20 preset avatars — geometric SVGs grouped by persona vibe (§5.4.4).
 //
 // Per spec §5.4.4 + §5.5.3 a fresh identity is auto-assigned a preset via

@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/react/components/ConsentScreen.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/ConsentScreen.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
 // Per §D2.5 / §3.4 / Wizard §20 — consent collection screen.
 //
 // HARD-GATE behavior (§3.4):

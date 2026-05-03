@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/integration/helpers.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @samjonaidi-ship-it/universal-auth | test/integration/helpers.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Shared helpers for integration tests — typed fetch wrappers, seeded user
 // shortcuts, mock-server inspection.
 

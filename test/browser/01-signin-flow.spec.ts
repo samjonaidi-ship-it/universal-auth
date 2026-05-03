@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/browser/01-signin-flow.spec.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @samjonaidi-ship-it/universal-auth | test/browser/01-signin-flow.spec.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // E2E: code-first sign-in flow per §11.10 manual QA scenario #1.
 // Runs across all 12 Playwright projects — desktop/mobile/tablet × 4 browsers.
 

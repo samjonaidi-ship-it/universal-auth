@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/flows/impersonation.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/flows/impersonation.ts | v1.0.1 | 2026-05-01 | BB
 // Admin impersonation — "act as" another identity for support/debugging.
 //
 // Invariants per spec:

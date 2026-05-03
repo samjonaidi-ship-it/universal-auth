@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/core/crypto-worker.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/crypto-worker.ts | v1.0.1 | 2026-05-01 | BB
 // Dedicated Web Worker for AES-256-GCM cryptography per §8.2.
 // Lives in its own module because:
 //   * Main-thread CPU should not block on Web Crypto operations
@@ -21,7 +21,7 @@
 
 if (typeof (self as unknown as { importScripts?: unknown }).importScripts !== 'function') {
   throw new Error(
-    '[@bainbridgebuilders/universal-auth] crypto-worker.ts must be loaded as a Worker, not on the main thread.'
+    '[@samjonaidi-ship-it/universal-auth] crypto-worker.ts must be loaded as a Worker, not on the main thread.'
   );
 }
 

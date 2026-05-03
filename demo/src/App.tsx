@@ -1,9 +1,9 @@
-// @bainbridgebuilders/universal-auth | demo/src/App.tsx | v1.0.0-rc.1 | 2026-04-28 | BB
+// @samjonaidi-ship-it/universal-auth | demo/src/App.tsx | v1.0.0-rc.1 | 2026-04-28 | BB
 // Block 7 demo expansion — actually exercises the SDK end-to-end against the
 // production CT BFF.
 //
 // What this proves:
-//   1. Tarball install: `@bainbridgebuilders/universal-auth` resolves correctly
+//   1. Tarball install: `@samjonaidi-ship-it/universal-auth` resolves correctly
 //   2. Bundle works: AuthProvider + SignInForm + useAuth all import + render
 //   3. Network path: requestCode hits ct-bff.bainbridgebuilders.com (CORS + CSP)
 //   4. Cookie domain: session cookie is shared across .bainbridgebuilders.com
@@ -17,7 +17,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import {
   initUniversalAuth,
   SDK_VERSION,
-} from '@bainbridgebuilders/universal-auth';
+} from '@samjonaidi-ship-it/universal-auth';
 import {
   AuthProvider,
   useAuth,
@@ -26,8 +26,8 @@ import {
   OfflineIndicator,
   ImpersonationBanner,
   AgentStatusBanner,
-} from '@bainbridgebuilders/universal-auth/react';
-import '@bainbridgebuilders/universal-auth/react/styles.css';
+} from '@samjonaidi-ship-it/universal-auth/react';
+import '@samjonaidi-ship-it/universal-auth/react/styles.css';
 
 // ── SDK init (once at module load) ───────────────────────────────────────
 
@@ -200,7 +200,7 @@ function Shell({ children }: { children: ReactNode }): ReactNode {
         BB Universal Auth — Demo
       </h1>
       <p style={{ color: '#666', marginTop: 0 }}>
-        <code>@bainbridgebuilders/universal-auth@{SDK_VERSION}</code> · live
+        <code>@samjonaidi-ship-it/universal-auth@{SDK_VERSION}</code> · live
         against{' '}
         <code>ct-bff.bainbridgebuilders.com</code>
       </p>

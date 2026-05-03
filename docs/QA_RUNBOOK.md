@@ -1,4 +1,4 @@
-# Manual QA Runbook | `@bainbridgebuilders/universal-auth` | v1.0.0-rc.4 | 2026-04-30 | BB
+# Manual QA Runbook | `@samjonaidi-ship-it/universal-auth` | v1.0.0-rc.4 | 2026-04-30 | BB
 
 A5 audit gate #8 — 40 scenarios per spec §11.10. Run before each `1.0.0-rc.N` → `1.0.0` GA promotion.
 

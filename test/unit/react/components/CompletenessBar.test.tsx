@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/react/components/CompletenessBar.test.tsx | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/react/components/CompletenessBar.test.tsx | v1.0.1 | 2026-05-01 | BB
 // v1.0.1 TODO (deferred to v1.0.2): every test in this file relies on
 // useProfile auto-hydrate via mocked fetch. The C2/C4/D1 + dirty-patch
 // changes shifted hook timing such that the hydrate generation guard now

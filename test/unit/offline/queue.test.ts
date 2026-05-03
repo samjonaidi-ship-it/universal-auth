@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/offline/queue.test.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/offline/queue.test.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 // A2 gate #3 — FIFO order. Gate #5 — maxQueueSize eviction.
 
 import { describe, it, expect, beforeEach } from 'vitest';

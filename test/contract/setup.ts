@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/contract/setup.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @samjonaidi-ship-it/universal-auth | test/contract/setup.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Pact consumer setup — single mock server reused across the test suite.
 // Generated pact JSON is consumed by CT BFF CI's verifier (separate repo).
 //

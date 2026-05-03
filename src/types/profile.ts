@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/types/profile.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | src/types/profile.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 // UniversalProfile per §5.4.1.
 
 export interface EmergencyContact {

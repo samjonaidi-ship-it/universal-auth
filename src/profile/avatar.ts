@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/profile/avatar.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/profile/avatar.ts | v1.0.1 | 2026-05-01 | BB
 // Avatar primitives — JPEG compression, initials generation, deterministic
 // color palette, 3-tier resolution. Per §5.4.4.
 //

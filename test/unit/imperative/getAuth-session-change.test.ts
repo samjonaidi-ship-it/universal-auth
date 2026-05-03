@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/imperative/getAuth-session-change.test.ts | v1.0.0-rc.4 | 2026-04-30 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/imperative/getAuth-session-change.test.ts | v1.0.0-rc.4 | 2026-04-30 | BB
 // Branch coverage for src/imperative/getAuth.ts onSessionChange adapter (lines 135-142).
 // Validates §5.3 imperative API spec: subscriber receives a snapshot, throwing
 // listeners do not crash the token-manager dispatch loop.

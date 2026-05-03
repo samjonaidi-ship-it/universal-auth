@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/react/components/PersonaChooser.test.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/react/components/PersonaChooser.test.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
 // Smoke — renders one card per persona, calls onSelect with full persona object.
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';

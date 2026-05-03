@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/core/sdk-metrics.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/sdk-metrics.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 // Runtime SDK observability — `getSDKMetrics()` per §12.2.
 // Intended for consumer-app dev panels + optional Sentry shim per §12.3.
 //

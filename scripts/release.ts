@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | scripts/release.ts | v1.0.2 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | scripts/release.ts | v1.0.2 | 2026-05-01 | BB
 // Release script — pre-flight checks, then bumps version, tags, pushes, and
 // lets `release.yml` workflow handle the actual publish + provenance + SBOM.
 //

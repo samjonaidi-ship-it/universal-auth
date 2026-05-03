@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/react/components/OfflineIndicator.test.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/react/components/OfflineIndicator.test.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
 // Smoke — renders only in offline status.
 
 import { describe, it, expect, beforeEach } from 'vitest';

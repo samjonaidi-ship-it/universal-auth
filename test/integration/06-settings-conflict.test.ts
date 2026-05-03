@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/integration/06-settings-conflict.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @samjonaidi-ship-it/universal-auth | test/integration/06-settings-conflict.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Integration test #6 per spec §11.3 — settings 409 conflict + rehydrate.
 //
 // Scenario: two clients (or same identity, two tabs) edit settings concurrently.

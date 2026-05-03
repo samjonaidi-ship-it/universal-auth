@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/core/device-id.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/device-id.ts | v1.0.1 | 2026-05-01 | BB
 // Device identifier derived from User-Agent per §15.2 — TELEMETRY ONLY.
 //
 // Current: SHA-256(navigator.userAgent).hex.slice(0, 32)

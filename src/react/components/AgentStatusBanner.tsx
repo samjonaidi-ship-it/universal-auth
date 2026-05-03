@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/react/components/AgentStatusBanner.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/AgentStatusBanner.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
 // Per §D2.5 / D13 — disclosure banner shown in Tier-3 conversational surfaces
 // (Buddy chat). Required by §6 of BB_AGENT_IDENTITY_SPEC consent model.
 

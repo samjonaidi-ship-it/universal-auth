@@ -1,5 +1,5 @@
-// @bainbridgebuilders/universal-auth | src/react/index.ts | v1.0.0-rc.4 | 2026-04-30 | BB
-// React subpath barrel — `@bainbridgebuilders/universal-auth/react`.
+// @samjonaidi-ship-it/universal-auth | src/react/index.ts | v1.0.0-rc.4 | 2026-04-30 | BB
+// React subpath barrel — `@samjonaidi-ship-it/universal-auth/react`.
 // Tree-shakeable named exports only (sideEffects: false).
 //
 // v1.0.0-rc.4: + ConsentCenter, PermissionCenter, ConsentVersionWatcher.

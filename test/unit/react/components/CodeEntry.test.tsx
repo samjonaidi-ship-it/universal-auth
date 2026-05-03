@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/react/components/CodeEntry.test.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/react/components/CodeEntry.test.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
 // Smoke — autocomplete=one-time-code, 6-digit validation, single input pattern.
 
 import { describe, it, expect, vi } from 'vitest';

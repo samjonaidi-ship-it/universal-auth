@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/react/components/AddressInput.tsx | v1.0.0-rc.4 | 2026-04-30 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/AddressInput.tsx | v1.0.0-rc.4 | 2026-04-30 | BB
 // Structured address input — schema.org PostalAddress fields.
 // Implements PERSONA_PCP_DESIGN.md §3.2 + SDK_SPEC §5.4.1 (Address).
 //

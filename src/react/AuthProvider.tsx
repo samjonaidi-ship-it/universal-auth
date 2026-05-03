@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/react/AuthProvider.tsx | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/AuthProvider.tsx | v1.0.1 | 2026-05-01 | BB
 // React provider with 3-context split per §8.4.
 //
 // Why split:

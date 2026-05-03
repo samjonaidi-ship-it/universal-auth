@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/core/storage.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/storage.ts | v1.0.1 | 2026-05-01 | BB
 // Encrypted IndexedDB storage — refresh token + event queue + offline queue backing store.
 //
 // Per spec:

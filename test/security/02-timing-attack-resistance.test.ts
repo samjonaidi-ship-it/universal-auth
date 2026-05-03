@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/security/02-timing-attack-resistance.test.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | test/security/02-timing-attack-resistance.test.ts | v1.0.1 | 2026-05-01 | BB
 // Spec §11.8 L1141 — timing-attack regression.
 //
 // v1.0.1 (Phase E7): replaced the previous source-grep tautology (which tested

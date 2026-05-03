@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/react/usePermissionGrants.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/usePermissionGrants.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 // Hook around flows/permission-grants — wires CalExp5 FirstLaunchScreen pattern
 // per §13.5.2.
 

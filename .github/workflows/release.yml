@@ -1,4 +1,4 @@
-# @bainbridgebuilders/universal-auth | .github/workflows/release.yml | v1.0.2 | 2026-05-01 | BB
+# @samjonaidi-ship-it/universal-auth | .github/workflows/release.yml | v1.0.2 | 2026-05-01 | BB
 # Publishes to GitHub Packages on tag.
 #
 # Supply-chain attestation strategy (per spec §15.1 + D21 canonical decision):

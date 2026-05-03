@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/core/session-watcher-branches.test.ts | v1.0.0-rc.4 | 2026-04-30 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/session-watcher-branches.test.ts | v1.0.0-rc.4 | 2026-04-30 | BB
 // Branch-coverage push for src/core/session-watcher.ts.
 // Existing session-watcher.test.ts covers happy path; this file targets:
 //   - Visibility-gated polling: hidden → no poll (§8.2)

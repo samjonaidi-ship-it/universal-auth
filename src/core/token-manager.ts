@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/core/token-manager.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.0.1 | 2026-05-01 | BB
 // Access + refresh token lifecycle. Enforces spec invariants:
 //
 //   §15.1  Access token in memory only, never disk
@@ -311,7 +311,7 @@ async function performRefresh(): Promise<string | null> {
         if (!warnedMissingRefreshExpiresAt) {
           warnedMissingRefreshExpiresAt = true;
           console.warn(
-            '[@bainbridgebuilders/universal-auth] Refresh response is missing `refresh_expires_at`; falling back to 90-day default. Update CT BFF to v1.0.1+.'
+            '[@samjonaidi-ship-it/universal-auth] Refresh response is missing `refresh_expires_at`; falling back to 90-day default. Update CT BFF to v1.0.1+.'
           );
         }
         refreshExpiresAt = Date.now() + DEFAULT_REFRESH_TTL_MS;
@@ -373,7 +373,7 @@ async function runUnderRefreshLock<T>(work: () => Promise<T>): Promise<T> {
       warnedNoNavigatorLocks = true;
        
       console.warn(
-        '[@bainbridgebuilders/universal-auth] navigator.locks is unavailable; falling back to in-tab refresh mutex only. Cross-tab refreshes may run in parallel.'
+        '[@samjonaidi-ship-it/universal-auth] navigator.locks is unavailable; falling back to in-tab refresh mutex only. Cross-tab refreshes may run in parallel.'
       );
     }
     return work();

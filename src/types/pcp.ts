@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/types/pcp.ts | v1.0.0-rc.4 | 2026-04-30 | BB
+// @samjonaidi-ship-it/universal-auth | src/types/pcp.ts | v1.0.0-rc.4 | 2026-04-30 | BB
 // PCP (Profile · Consent · Permissions) v1.5.0 supporting types.
 // Implements PERSONA_PCP_DESIGN.md §3 + SDK_SPEC §5.4.1 (Address, ProfileResource,
 // ProfileMedia, PropertyAsset). Kept in a separate module from

@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/react/components/ComplianceDocsSection.tsx | v1.0.0-rc.4 | 2026-04-30 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/ComplianceDocsSection.tsx | v1.0.0-rc.4 | 2026-04-30 | BB
 // Compliance documents (compliance_doc | license | insurance) — for crew,
 // subcontractor, architect personas.
 // Implements PERSONA_PCP_DESIGN.md §3.3 (resource_type compliance_doc/license/

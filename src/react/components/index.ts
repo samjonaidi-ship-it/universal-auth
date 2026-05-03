@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/react/components/index.ts | v1.0.0-rc.4 | 2026-04-30 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/index.ts | v1.0.0-rc.4 | 2026-04-30 | BB
 // Barrel for v1.5.0 PCP UI components. Top-level src/react/index.ts is owned
 // by integration; do not modify it from this file.
 

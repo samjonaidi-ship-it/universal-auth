@@ -1,4 +1,4 @@
-# A6 — Production Readiness Audit | @bainbridgebuilders/universal-auth | v1.0.0 | 2026-04-30 | BB
+# A6 — Production Readiness Audit | @samjonaidi-ship-it/universal-auth | v1.0.0 | 2026-04-30 | BB
 
 **Status:** ✅ **APPROVED for 1.0.0 GA tag** (gates 1/3/4/5/8/9/10/11/12 met or deferred-with-rationale; gate 13 awaits external sign-off)
 
@@ -206,5 +206,5 @@ Per spec §Appendix D L2229-L2232:
 cd C:\Users\samjo\Desktop\BB_Universal_Auth
 git tag -a v1.0.0 -m "v1.0.0 — General Availability"
 git push origin v1.0.0
-# release.yml fires on tag push, publishes to ghcr/npm.pkg.github.com/@bainbridgebuilders/universal-auth
+# release.yml fires on tag push, publishes to ghcr/npm.pkg.github.com/@samjonaidi-ship-it/universal-auth
 ```

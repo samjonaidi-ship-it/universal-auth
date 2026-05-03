@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/browser/02-passkey-conditional-ui.spec.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @samjonaidi-ship-it/universal-auth | test/browser/02-passkey-conditional-ui.spec.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // E2E: passkey ceremony with virtual authenticator (CDP-only — Chrome/Edge).
 // Per spec §11.10 manual QA scenarios for "returning user Conditional UI".
 //

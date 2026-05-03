@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/perf/cold-start.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @samjonaidi-ship-it/universal-auth | test/perf/cold-start.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Cold-start measurement per spec §7.1 L732 — target ≤ 50 ms on mid-range
 // mobile (Moto G Power CPU class, ~3× slowdown vs desktop).
 //

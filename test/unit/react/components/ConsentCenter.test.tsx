@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/react/components/ConsentCenter.test.tsx | v1.0.0-rc.4 | 2026-04-30 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/react/components/ConsentCenter.test.tsx | v1.0.0-rc.4 | 2026-04-30 | BB
 // Covers: render (loading + loaded), accept-flow, withdraw-flow, history, error state.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';

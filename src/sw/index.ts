@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/sw/index.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/sw/index.ts | v1.0.1 | 2026-05-01 | BB
 // Service worker for offline queue flush + logout cache purge.
 //
 // Per spec:

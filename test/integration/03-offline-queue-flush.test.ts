@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/integration/03-offline-queue-flush.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @samjonaidi-ship-it/universal-auth | test/integration/03-offline-queue-flush.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Integration test #3 per spec §11.3 — offline mutation queue flush on reconnect.
 //
 // Asserts:

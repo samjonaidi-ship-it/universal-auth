@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/profile/avatar.test.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/profile/avatar.test.ts | v1.0.0-rc.1 | 2026-04-24 | BB
 
 import { describe, it, expect } from 'vitest';
 import {

@@ -34,7 +34,7 @@
 | `9c4ad78` | agent/cutover-day23-calexp5-prework | B | Dead device_credentials IDB store removed (-45 LOC), RegisterFlow.jsx deleted (-100 LOC), preconnect added to index.html, watermark backfill on CrewEntryAuthBackdrop + login-warmup |
 | **(unmerged)** | agent/cutover-day27-calexp5-sdk-wire | D-partial | SDK rc.3 wired behind flag, api-base.js dual-mode token source, 11 leak-sites swept |
 
-### SDK (`@bainbridgebuilders/universal-auth`) — 1 merge to main
+### SDK (`@samjonaidi-ship-it/universal-auth`) — 1 merge to main
 
 | SHA | Branch | What |
 |---|---|---|
@@ -56,9 +56,9 @@ npm publish --tag rc
 
 Once published, swap CalExp5's `package.json` from the local-tarball reference to the registry version:
 ```
-"@bainbridgebuilders/universal-auth": "file:../BB_Universal_Auth/dist-pack/..."
+"@samjonaidi-ship-it/universal-auth": "file:../BB_Universal_Auth/dist-pack/..."
                             ↓
-"@bainbridgebuilders/universal-auth": "^1.0.0-rc.3"
+"@samjonaidi-ship-it/universal-auth": "^1.0.0-rc.3"
 ```
 Then `npm install` from CalExp5 to refresh `package-lock.json`.
 
@@ -91,7 +91,7 @@ The plan's D-phase had 14 steps. I did D2/D3/D4/B4/D5. Remaining 9 steps (~3-4 h
 | D8 | Wire `usePermissionGrants()` in `<FirstLaunchScreen>` after each `navigator.permissions.query` resolve | Touches a flow you've recently iterated on — better with you in the loop |
 | D9 | Wire `<MyProfile>` to `useProfile()` + `useSettingsSync()`; replace avatar UI with `<AvatarPicker>`; this also fixes `receipt-queue.js:79` (employee.id read) by sourcing identity from SDK | Big UX change; defer to your review |
 | D10 | Adapt 4 hooks (useDeviceSync, useMigration, useNeonSync, useFeatures) to read SDK auth state | Each is small; bundling them safely needs your domain knowledge of when each fires |
-| D11 | Delete `src/hooks/useAuth.js` (95 lines), update all imports to `@bainbridgebuilders/universal-auth/react`. Signature different — `isAuthenticated → status === 'authenticated'`, `employee → identity`, `logout → signOut` | Mechanical but breaks every caller; needs grep + careful sweep + retest |
+| D11 | Delete `src/hooks/useAuth.js` (95 lines), update all imports to `@samjonaidi-ship-it/universal-auth/react`. Signature different — `isAuthenticated → status === 'authenticated'`, `employee → identity`, `logout → signOut` | Mechanical but breaks every caller; needs grep + careful sweep + retest |
 | D12 | Subscribe `useStore` slices to SDK session-change so logout clears both stores | Small; ~20 min |
 | D13 | Hard-delete legacy auth stack (~1,907 LOC: api-base.js stays as wrapper, but auth.js/indexed-db.js/authStore.js/LoginScreen.jsx/EnrollmentFlow.jsx/BiometricButton.jsx/PinPad.jsx all go) — **MUST be the LAST commit** for single-revert rollback | Don't delete until you've confirmed the SDK-on path works end-to-end in staging |
 | D14 | Remove `app.all('/api/auth/*', ...)` proxy block in CalExp5's server.js (lines 643-707) | Same — only after SDK-on confirmed |

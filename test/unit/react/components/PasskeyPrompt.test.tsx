@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/react/components/PasskeyPrompt.test.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/react/components/PasskeyPrompt.test.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
 // Smoke — invokes onAuthenticate, shows error on failure.
 
 import { describe, it, expect, vi } from 'vitest';

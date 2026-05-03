@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/core/entitlements.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/entitlements.ts | v1.0.1 | 2026-05-01 | BB
 // Entitlement (feature + app_access) cache with stale-while-revalidate.
 //
 // Invariants per spec:

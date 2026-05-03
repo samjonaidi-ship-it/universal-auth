@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/core/event-reporter-resilience.test.ts | v1.0.0-rc.2 | 2026-04-28 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/event-reporter-resilience.test.ts | v1.0.0-rc.2 | 2026-04-28 | BB
 // L12 hardening — emit() must swallow transient IDB errors (InvalidStateError,
 // TransactionInactiveError, "transaction is not active") rather than crash
 // the calling fire-and-forget chain. Multi-tab DB upgrades, page-unload

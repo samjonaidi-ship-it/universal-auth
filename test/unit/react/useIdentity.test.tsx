@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | test/unit/react/useIdentity.test.tsx | v1.0.0-rc.4 | 2026-04-30 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/react/useIdentity.test.tsx | v1.0.0-rc.4 | 2026-04-30 | BB
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { ReactNode } from 'react';

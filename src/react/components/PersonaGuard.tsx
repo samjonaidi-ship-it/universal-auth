@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/react/components/PersonaGuard.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/PersonaGuard.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
 // Client-side persona gate per §D2.7. UX-only — server is source of truth.
 //
 // Usage:

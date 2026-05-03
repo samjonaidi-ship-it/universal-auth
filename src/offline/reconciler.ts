@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/offline/reconciler.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/offline/reconciler.ts | v1.0.1 | 2026-05-01 | BB
 // Queue flush + reconciliation per §9.4 status-code matrix.
 //
 // Matrix:

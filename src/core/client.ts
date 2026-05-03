@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | src/core/client.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/client.ts | v1.0.1 | 2026-05-01 | BB
 // HTTP client for CT BFF. Owns:
 //
 //   §3   Every endpoint at `https://ct-bff.bainbridgebuilders.com/auth/v1/*`
@@ -65,7 +65,7 @@ export function configureClient(cfg: ClientConfig): void {
 function requireConfig(): ClientConfig {
   if (clientConfig === null) {
     throw new Error(
-      '[@bainbridgebuilders/universal-auth] HTTP client called before configureClient(). Did you skip initUniversalAuth()?'
+      '[@samjonaidi-ship-it/universal-auth] HTTP client called before configureClient(). Did you skip initUniversalAuth()?'
     );
   }
   return clientConfig;

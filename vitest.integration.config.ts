@@ -1,4 +1,4 @@
-// @bainbridgebuilders/universal-auth | vitest.integration.config.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @samjonaidi-ship-it/universal-auth | vitest.integration.config.ts | v1.0.0-rc.1 | 2026-04-28 | BB
 // Vitest config for integration tests (Block 6 Day 18-19 / A5 gate #2).
 //
 // Runs against a docker-compose stack (test/integration/docker-compose.test.yml)

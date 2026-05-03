@@ -1,7 +1,7 @@
-// @bainbridgebuilders/universal-auth | scripts/verify-watermarks.ts | v1.0.2 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | scripts/verify-watermarks.ts | v1.0.2 | 2026-05-01 | BB
 // Enforces BB watermark on every .ts/.tsx source file per global CLAUDE.md §10.
 // Canonical format (v1.0.1+):
-//   // @bainbridgebuilders/universal-auth | <path> | v<ver> | <YYYY-MM-DD> | BB
+//   // @samjonaidi-ship-it/universal-auth | <path> | v<ver> | <YYYY-MM-DD> | BB
 // CI fails if any source file is missing a watermark on line 1 (or line 2
 // when line 1 is a Vitest pragma like `@vitest-environment happy-dom`), OR
 // if any file still carries the legacy `@bb/universal-auth` form (Phase E2
@@ -20,8 +20,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
 
 // Canonical watermark — first line must match exactly. Note the explicit
-// scoped-package form `@bainbridgebuilders/universal-auth` (NOT `@bb/...`).
-const WATERMARK_RX = /^\/\/ @bainbridgebuilders\/universal-auth \| .+ \| v\d+\.\d+\.\d+(-rc\.\d+)? \| \d{4}-\d{2}-\d{2} \| BB\s*$/;
+// scoped-package form `@samjonaidi-ship-it/universal-auth` (NOT `@bb/...`).
+const WATERMARK_RX = /^\/\/ @samjonaidi-ship-it\/universal-auth \| .+ \| v\d+\.\d+\.\d+(-rc\.\d+)? \| \d{4}-\d{2}-\d{2} \| BB\s*$/;
 
 // Forbidden legacy form — ensures the old `@bb/universal-auth` watermark
 // can never sneak back in via copy-paste.
@@ -106,7 +106,7 @@ if (legacy.length) {
   for (const v of legacy) console.error('  ✗ ' + v);
   console.error(
     '\nReplace with the canonical form:\n' +
-      '  // @bainbridgebuilders/universal-auth | <path> | v<ver> | <YYYY-MM-DD> | BB\n'
+      '  // @samjonaidi-ship-it/universal-auth | <path> | v<ver> | <YYYY-MM-DD> | BB\n'
   );
 }
 
@@ -116,7 +116,7 @@ if (missing.length) {
   for (const v of missing) console.error('  ✗ ' + v);
   console.error(
     '\nExpected format:\n' +
-      '  // @bainbridgebuilders/universal-auth | <path> | v<ver> | <YYYY-MM-DD> | BB\n'
+      '  // @samjonaidi-ship-it/universal-auth | <path> | v<ver> | <YYYY-MM-DD> | BB\n'
   );
 }
 
