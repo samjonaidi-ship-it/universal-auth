@@ -110,12 +110,20 @@ jobs:
       # registry access mode. Verifiable via `gh attestation verify <tarball>
       # --owner BainbridgeBuilders`.
       #
-      # Plan requirement: `actions/attest-build-provenance` on private repos
-      # needs GitHub Team plan or higher. BainbridgeBuilders org is on Team
-      # plan as of 2026-05-01 (verified via gh api orgs/BainbridgeBuilders).
-      # If this step fails in the future, FIRST check the org plan hasn't
-      # been downgraded.
+      # Entitlement reality (CORRECTED 2026-05-03 from v1.0.2 release attempt):
+      #   `actions/attest-build-provenance` for PRIVATE repos requires
+      #   GitHub Enterprise Cloud — Team plan only covers PUBLIC repos.
+      #   BainbridgeBuilders org is on Team plan; this step's API call
+      #   returns 403 "Feature not available" until either (a) the org
+      #   moves to Enterprise Cloud, OR (b) the repo is made public.
+      #   Tracked in SDK_COMPLETION_BACKLOG.md as a v1.1+ deferral.
+      #
+      # Step is `continue-on-error` until the entitlement is resolved so
+      # that v1.0.x releases still complete (publish + SBOM + GitHub Release
+      # all succeed). Re-enable strict-fail by deleting `continue-on-error`
+      # once Enterprise Cloud lands or repo goes public.
       - name: Generate SLSA provenance attestation
+        continue-on-error: true
         uses: actions/attest-build-provenance@ef244123eb79f2f7a7e75d99086184180e6d0018 # v1.4.4
         with:
           subject-path: ${{ steps.publish.outputs.tarball-path }}
