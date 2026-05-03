@@ -79,9 +79,13 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Memory soak (5 min, --expose-gc, gates heap budget)
+      - name: Memory soak (5 min, --expose-gc, deadlock + cycle-progress gate)
+        # NOTE 2026-05-02: heap-budget assertion is skipped because vitest
+        # uses fake-indexeddb which retains ~3 KB per IDB op (bisect-traced).
+        # Real heap gate lives in test/browser/06-memory-soak.spec.ts (chaos.yml).
         env:
           BB_SOAK_DURATION_MS: '300000' # 5 min
+          BB_SOAK_SKIP_BUDGET: '1'
           NODE_OPTIONS: '--expose-gc'
         run: pnpm test:memory
 

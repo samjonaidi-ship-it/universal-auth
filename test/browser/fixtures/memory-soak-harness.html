@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>BB Universal Auth — Memory Soak Harness</title>
+  </head>
+  <body>
+    <pre id="status">waiting…</pre>
+    <script type="module">
+      // Stub fetch BEFORE importing the SDK so any boot-time call goes
+      // to our 200 OK, never hits the network. The soak only exercises
+      // setSession/getAccessToken/signOut paths which are what we want
+      // to leak-test.
+      window.fetch = async () =>
+        new Response(JSON.stringify({}), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+
+      // Path is absolute so it works under Playwright webServer (http://...)
+      // serving the repo root.
+      const sdk = await import('/dist/esm/index.js');
+      const { initUniversalAuth, setSession, getAuth, onSessionChange } = sdk;
+
+      await initUniversalAuth({
+        apiBaseUrl: 'https://soak.local',
+        appId: 'soak_harness',
+        mode: 'development',
+        cookieDomain: '.soak.local',
+      });
+
+      const auth = getAuth();
+
+      const status = document.getElementById('status');
+
+      function fakeTokens() {
+        return {
+          accessToken: 'fake-access-' + Math.random().toString(36).slice(2),
+          refreshToken: 'fake-refresh-' + Math.random().toString(36).slice(2),
+          sessionId: 'fake-session-' + Math.random().toString(36).slice(2),
+          expiresAt: Date.now() + 60_000,
+          refreshExpiresAt: Date.now() + 90 * 24 * 60 * 60 * 1000,
+        };
+      }
+
+      function readHeap() {
+        if ('memory' in performance) {
+          return performance.memory.usedJSHeapSize;
+        }
+        return -1;
+      }
+
+      // Expose the soak runner for Playwright to invoke.
+      window.__bbSoak = {
+        run: async (cycles) => {
+          const unsub = onSessionChange(() => undefined);
+
+          // Warmup
+          setSession(fakeTokens());
+          await auth.signOut();
+
+          const baseline = readHeap();
+          let count = 0;
+          while (count < cycles) {
+            setSession(fakeTokens());
+            const token = await auth.getAccessToken();
+            if (token !== null && typeof token !== 'string') {
+              throw new Error('unexpected token shape');
+            }
+            await auth.signOut();
+            count++;
+            if (count % 100 === 0) {
+              status.textContent = `cycles ${count}/${cycles}`;
+              await new Promise((r) => setTimeout(r, 0));
+            }
+          }
+
+          unsub();
+          const final = readHeap();
+          return { cycles: count, baseline, final, delta: final - baseline };
+        },
+      };
+
+      status.textContent = 'ready';
+    </script>
+  </body>
+</html>
