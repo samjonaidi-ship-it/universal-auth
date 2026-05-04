@@ -185,50 +185,51 @@ describe('event-reporter — flush branch coverage', () => {
 
   // ── Post-flush re-flush when remaining > 0 (lines 228-232) ──────────────
 
-  // Coverage-mode timing flake — instrumentation overhead makes the fixed
-  // 5ms / 30ms setTimeout waits unreliable. Behavior is also verified by
-  // "concurrent flushNow calls coalesce to a single in-flight flush" below.
-  // v1.0.1 lookback (2026-05-01): the original `NODE_V8_COVERAGE` env-var
-  // skip-condition didn't fire in vitest's v8 coverage provider (which sets
-  // a different internal flag). Skip unconditionally and track the
-  // event-driven-wait rewrite in v1.0.2 backlog §12.x. Behavior is fully
-  // covered by the coalescing test below.
-  it.skip('reschedules flush when more events arrived during POST', { timeout: 30_000 }, async () => {
-    let resolvePost: ((v: Response) => void) | null = null;
-    fetchSpy.mockImplementation(
-      (url) =>
-        new Promise<Response>((resolve) => {
-          if (String(url).includes('/events/v1/ingest')) {
-            // Hold the first POST so we can enqueue more events while it's pending.
-            if (resolvePost === null) {
-              resolvePost = resolve;
-              return;
-            }
-          }
-          resolve(jsonResp(200, { ok: true }));
-        })
-    );
+  // v1.0.4 (Lane 2a): rewritten to use a `firstPostInFlight` deferred
+  // promise that resolves the moment the mock fetch sees the first POST.
+  // No setTimeout racing — we await the actual call event.
+  it('reschedules flush when more events arrived during POST', async () => {
+    let firstPostSeen = false;
+    let resolveFirstPostSeen: () => void = () => {};
+    const firstPostSeenPromise = new Promise<void>((resolve) => {
+      resolveFirstPostSeen = resolve;
+    });
+    let releaseFirstPost: ((v: Response) => void) = () => {};
+    const firstPostHeld = new Promise<Response>((resolve) => {
+      releaseFirstPost = resolve;
+    });
 
-    // Configure tiny batch size so the first emit alone hits the cap.
+    fetchSpy.mockImplementation((url) => {
+      if (String(url).includes('/events/v1/ingest') && !firstPostSeen) {
+        firstPostSeen = true;
+        resolveFirstPostSeen();
+        return firstPostHeld;
+      }
+      return Promise.resolve(jsonResp(200, { ok: true }));
+    });
+
     __resetEventReporterForTests();
     configureEventReporter({ batchSize: 1, batchInterval: 60_000 });
 
+    // First emit triggers `void flushNow()` because batchSize=1.
     void emit('a.b', {});
-    // Wait one microtask cycle so the flush kicks off
-    await new Promise((r) => setTimeout(r, 5));
+    // Wait for the held POST to actually be in-flight (deterministic — the
+    // mock signals when fetch is invoked, no time-based polling).
+    await firstPostSeenPromise;
 
-    // While POST is pending, enqueue more events
-    void emit('a.b', {});
-    void emit('a.b', {});
-    await new Promise((r) => setTimeout(r, 5));
+    // While the first POST is held, enqueue two more events. These persist
+    // to IDB; their `void flushNow()` calls coalesce with the in-flight one.
+    await emit('a.b', {});
+    await emit('a.b', {});
 
-    // Resolve the held POST
-    if (resolvePost !== null) {
-      (resolvePost as (v: Response) => void)(jsonResp(200, { ok: true }));
-    }
-
-    // Allow re-flush to run
-    await new Promise((r) => setTimeout(r, 30));
+    // Release the held POST → doFlush sees `remaining > 0` and calls
+    // scheduleFlush() (60s timer). We trigger an immediate flush ourselves
+    // so we don't have to wait for the timer. The first awaited flushNow()
+    // returns the in-flight flush (which is finishing the held POST and
+    // setting up the 60s reschedule); the SECOND awaited flushNow() spins
+    // up a fresh doFlush() that drains the remaining 2 events.
+    releaseFirstPost(jsonResp(200, { ok: true }));
+    await flushNow();
     await flushNow();
 
     const ingestCalls = fetchSpy.mock.calls.filter(([url]) =>

@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | test/security/02-timing-attack-resistance.test.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | test/security/02-timing-attack-resistance.test.ts | v1.0.4 | 2026-05-04 | BB
 // Spec §11.8 L1141 — timing-attack regression.
 //
 // v1.0.1 (Phase E7): replaced the previous source-grep tautology (which tested
@@ -56,9 +56,13 @@ const BASE = 'https://ct-bff.test.example.com';
 const KNOWN_BAD_EMAIL = 'known-bad@example.com';
 const UNKNOWN_EMAIL = 'never-seen-12345@example.com';
 
-// Total samples per cohort. 1000 each side gives a tight enough confidence
-// interval without making CI runs noticeably slower (~3-5 s on modern hw).
-const SAMPLES_PER_COHORT = 1000;
+// Total samples per cohort. v1.0.2 plan bumped 1000 → 5000 per cohort once
+// stability was confirmed across three back-to-back runs. Tighter confidence
+// interval; CI runs ~10-15 s on modern hardware. Tolerances are unchanged
+// (pass-if-either: 0.5 ms absolute OR 25% relative) since lifting the sample
+// floor only narrows the noise distribution — the timing-oracle gate is still
+// what we want.
+const SAMPLES_PER_COHORT = 5000;
 const TRIM_FRACTION = 0.05; // drop top + bottom 5% to control for GC / deopt
 
 function jsonResp(status: number, body: unknown): Response {

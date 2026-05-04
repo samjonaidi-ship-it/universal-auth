@@ -1,14 +1,18 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/react/components/AvatarPicker.test.tsx | v1.0.0-rc.1 | 2026-04-25 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/react/components/AvatarPicker.test.tsx | v1.0.4 | 2026-05-04 | BB
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { AuthProvider } from '../../../../src/react/AuthProvider.js';
 import { AvatarPicker } from '../../../../src/react/components/AvatarPicker.js';
 import type { Session } from '../../../../src/types/api.js';
+import type { UniversalProfile } from '../../../../src/types/profile.js';
 import { configureClient, __resetClientForTests } from '../../../../src/core/client.js';
 import { __resetTokenManagerForTests } from '../../../../src/core/token-manager.js';
 import { __resetDbForTests } from '../../../../src/core/storage.js';
-import { __resetProfileStoreForTests } from '../../../../src/profile/profile-store.js';
+import {
+  __resetProfileStoreForTests,
+  __seedProfileForTests,
+} from '../../../../src/profile/profile-store.js';
 import {
   configureEventReporter,
   __resetEventReporterForTests,
@@ -37,7 +41,7 @@ const SESSION: Session = {
   },
 };
 
-const PROFILE = {
+const PROFILE: UniversalProfile = {
   identity_id: 'sam',
   display_name: 'Sam',
   email: 'sam@x.com',
@@ -90,34 +94,30 @@ describe('AvatarPicker', () => {
     expect(screen.queryByRole('region', { name: /avatar/i })).toBeNull();
   });
 
-  // v1.0.1 TODO (deferred to v1.0.2): the C2/C4/D1 changes shifted hook
-  // timing; this test races with the hydrate generation guard under the new
-  // useProfile + AuthProvider wiring. Manual smoke confirms the component
-  // works end-to-end; rewriting the test fixture is v1.0.2 backlog.
-  it.skip('renders Avatar heading + 20 preset buttons after hydrate', async () => {
+  // v1.0.4 (Lane 2a): pre-seed the profile store via __seedProfileForTests
+  // so the component sees data on first render — no fetch-mock race.
+  it('renders Avatar heading + 20 preset buttons after hydrate', () => {
+    __seedProfileForTests(PROFILE);
     render(
       <AuthProvider initialSession={SESSION}>
         <AvatarPicker />
       </AuthProvider>
     );
-    await waitFor(() => {
-      expect(screen.getByRole('region', { name: /avatar/i })).toBeTruthy();
-    });
+    expect(screen.getByRole('region', { name: /avatar/i })).toBeTruthy();
     // 20 preset cards rendered via buttons with aria-label "Preset ..."
     const presetButtons = screen.getAllByRole('button', { name: /^Preset / });
     expect(presetButtons).toHaveLength(20);
   });
 
-  // v1.0.1 TODO (deferred to v1.0.2): hydrate-race with v1.0.1 hook timing.
-  it.skip('shows the upload button + size hint', async () => {
+  // v1.0.4 (Lane 2a): pre-seed; deterministic synchronous assertion.
+  it('shows the upload button + size hint', () => {
+    __seedProfileForTests(PROFILE);
     render(
       <AuthProvider initialSession={SESSION}>
         <AvatarPicker />
       </AuthProvider>
     );
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /upload photo/i })).toBeTruthy();
-    });
+    expect(screen.getByRole('button', { name: /upload photo/i })).toBeTruthy();
     expect(screen.getByText(/jpeg up to 5 mb/i)).toBeTruthy();
   });
 });

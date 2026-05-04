@@ -288,3 +288,20 @@ export function __resetProfileStoreForTests(): void {
   state.generation += 1;  // invalidate any in-flight hydrate from a prior test
   listeners.clear();
 }
+
+/**
+ * Test-only seed: pre-populate the store with a ready profile so a component
+ * under test sees data on first render WITHOUT racing against the
+ * useProfile auto-hydrate fetch path. v1.0.4 (Lane 2a): replaces the
+ * `fetchSpy.mockResolvedValue + waitFor` pattern that races with the v1.0.1
+ * generation-guard timing in jsdom/happy-dom. Bumps generation so any
+ * in-flight hydrate from a prior test is invalidated.
+ */
+export function __seedProfileForTests(profile: UniversalProfile): void {
+  state.profile = profile;
+  state.state = 'ready';
+  state.errorMessage = null;
+  state.dirtyPatch = null;
+  state.generation += 1;
+  notify();
+}

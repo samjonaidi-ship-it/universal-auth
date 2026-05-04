@@ -148,6 +148,16 @@ export function __resetIdentityStoreForTests(): void {
   listeners.clear();
 }
 
+/**
+ * Test-only seed: pre-populate the identity store with a ready envelope so a
+ * component under test sees data on first render WITHOUT racing against the
+ * useIdentity auto-refresh fetch path. v1.0.4 (Lane 2a): mirrors the
+ * profile-store __seedProfileForTests helper for the PCP store.
+ */
+export function __seedIdentityStoreForTests(env: ProfileEnvelope): void {
+  applyEnvelope(env);
+}
+
 export interface UseIdentityReturn {
   // Layer 1 — Profile core
   profile: UniversalProfile | null;

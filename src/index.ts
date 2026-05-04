@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/index.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/index.ts | v1.0.4 | 2026-05-04 | BB
 // Public barrel — named exports only (tree-shakeable per §8.2).
 //
 // v1.0.1 (Phase C6): `setSession` relocated to `/internal` subpath. The
@@ -91,7 +91,9 @@ export {
   startImpersonation,
   endImpersonation,
   recordImpersonationAction,
+  onLocalClearDrift,
   type StartImpersonationInput,
+  type ImpersonationDriftEvent,
 } from './flows/impersonation.js';
 export {
   getPersonaRegistry,

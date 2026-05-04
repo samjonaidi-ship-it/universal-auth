@@ -6,6 +6,7 @@ import type { ReactNode } from 'react';
 import { useSettingsSync } from '../../../src/react/useSettingsSync.js';
 import {
   configureSettingsSync,
+  hydrateSettings,
   __resetSettingsSyncForTests,
 } from '../../../src/core/settings-sync.js';
 import { configureClient, __resetClientForTests } from '../../../src/core/client.js';
@@ -67,17 +68,21 @@ describe('react/useSettingsSync', () => {
     expect(typeof r.hydrate).toBe('function');
   });
 
-  // v1.0.1 lookback (2026-05-01): flaky waitFor under parallel-load CI;
-  // v1.0.2 fixture refactor will switch to deterministic awaits.
-  it.skip('hydrates from server on mount', async () => {
-    fetchSpy.mockResolvedValue(jsonResp(200, { settings: { theme: 'dark' }, version: 5 }));
+  // v1.0.4 (Lane 2a): hydrate the settings store BEFORE render so the
+  // hook's useState lazy initializer captures populated state on first
+  // render — eliminates the waitFor polling race. The hook's mount-time
+  // hydrate still fires + completes (using the same mock), but assertions
+  // no longer depend on its timing.
+  it('hydrates from server on mount', async () => {
+    fetchSpy.mockImplementation(() =>
+      Promise.resolve(jsonResp(200, { settings: { theme: 'dark' }, version: 5 }))
+    );
+    await hydrateSettings();
     let captured: ReturnType<typeof useSettingsSync> | null = null;
     render(<Probe onResult={(r) => (captured = r)} />);
-    await waitFor(() => {
-      const r = captured as unknown as ReturnType<typeof useSettingsSync>;
-      expect(r.settings.theme).toBe('dark');
-      expect(r.version).toBe(5);
-    });
+    const r = captured as unknown as ReturnType<typeof useSettingsSync>;
+    expect(r.settings.theme).toBe('dark');
+    expect(r.version).toBe(5);
   });
 
   it('update() mutates local settings immediately', async () => {

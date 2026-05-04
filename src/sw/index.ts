@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/sw/index.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/sw/index.ts | v1.0.4 | 2026-05-04 | BB
 // Service worker for offline queue flush + logout cache purge.
 //
 // Per spec:
@@ -16,6 +16,7 @@
 import {
   DEFAULT_PURGE_PATTERNS,
   selectCachesToPurge,
+  isTrustedClient,
 } from './purge-helpers.js';
 
 const SW_VERSION = '1.0.1';
@@ -66,20 +67,9 @@ sw.addEventListener('sync', (event: Event) => {
 
 // ── Message handling ──────────────────────────────────────────────────────
 
-/**
- * Same-scope client check. Only messages whose `event.source` is a `Client`
- * (window/worker) AND whose URL falls under our SW's registration scope are
- * trusted. This blocks cross-origin frames or other tabs from issuing purge
- * commands at us.
- */
-function isTrustedClient(source: ExtendableMessageEvent['source']): boolean {
-  if (source === null) return false;
-  // MessagePort and ServiceWorker types don't carry a URL — we only trust
-  // window/worker clients, which expose `.url` on the Client interface.
-  const maybeClient = source as unknown as { url?: unknown };
-  if (typeof maybeClient.url !== 'string') return false;
-  return maybeClient.url.startsWith(sw.registration.scope);
-}
+// Same-scope client predicate moved to ./purge-helpers (v1.0.4 Lane 2)
+// so it can be unit-tested without an SW global scope. Scope is passed in
+// from `sw.registration.scope` at the call site.
 
 sw.addEventListener('message', (event: ExtendableMessageEvent) => {
   const data = event.data as { type?: string; patterns?: string[] };
@@ -89,7 +79,7 @@ sw.addEventListener('message', (event: ExtendableMessageEvent) => {
   // come from a same-scope Client. Without this a malicious page that
   // somehow obtains a postMessage handle to our SW could trigger cache
   // purges or alter purge patterns.
-  if (!isTrustedClient(event.source)) return;
+  if (!isTrustedClient(event.source as { url?: unknown } | null, sw.registration.scope)) return;
 
   switch (data.type) {
     case 'purge_caches': {

@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/sw/purge-helpers.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @samjonaidi-ship-it/universal-auth | src/sw/purge-helpers.ts | v1.0.4 | 2026-05-04 | BB
 // Pure algorithm bits extracted from sw/index.ts so they can be unit-tested
 // without an SW global scope. The SW entry imports these and wires them
 // to the actual `caches` API.
@@ -6,6 +6,11 @@
 // Look-back fix L6 — sw/index.ts was excluded from coverage because it runs
 // in SW global scope (not happy-dom); extracting pure functions lets us
 // unit-test the algorithm even when we can't unit-test the entry point.
+//
+// v1.0.4 (Lane 2 finalize, 2026-05-04): isTrustedClient extracted from
+// sw/index.ts so test/unit/sw/trust-check.test.ts can lock down the real
+// implementation instead of an inline mirror. Scope is passed as a parameter
+// (the original read it from `sw.registration.scope` at the call site).
 
 /** Default cache-name patterns purged on logout — mirrors CalExp5 today. */
 export const DEFAULT_PURGE_PATTERNS: readonly RegExp[] = Object.freeze([
@@ -46,4 +51,26 @@ export function selectCachesToPurge(
   return allCacheNames.filter((name) =>
     patterns.some((pat) => pat.test(name))
   );
+}
+
+/**
+ * Same-scope client check. Only messages whose `event.source` is a `Client`
+ * (window/worker) AND whose URL falls under our SW's registration scope are
+ * trusted. This blocks cross-origin frames or other tabs from issuing purge
+ * commands at us.
+ *
+ * Extracted from sw/index.ts in v1.0.4 (Lane 2). The original read the scope
+ * directly from `sw.registration.scope`; the SW entry now passes it in so this
+ * function stays pure + unit-testable.
+ */
+export function isTrustedClient(
+  source: { url?: unknown } | null,
+  scope: string
+): boolean {
+  if (source === null) return false;
+  // MessagePort and ServiceWorker types don't carry a URL — we only trust
+  // window/worker clients, which expose `.url` on the Client interface.
+  const maybeClient = source as { url?: unknown };
+  if (typeof maybeClient.url !== 'string') return false;
+  return maybeClient.url.startsWith(scope);
 }

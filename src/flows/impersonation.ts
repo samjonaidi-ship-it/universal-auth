@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/flows/impersonation.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/flows/impersonation.ts | v1.0.4 | 2026-05-04 | BB
 // Admin impersonation — "act as" another identity for support/debugging.
 //
 // Invariants per spec:
@@ -14,6 +14,11 @@
 // local state (better UX — UI returns to admin view immediately) but emit
 // `impersonation.local_clear_drift` so the audit log captures the
 // inconsistency. Sam approved this trade-off in the 2026-05-01 audit triage.
+//
+// v1.0.4 (L2.18): expose `onLocalClearDrift` so the React layer
+// (useImpersonation) can surface "audit drift" to admins via UI banner. The
+// drift event still flows to the audit log as before — this is purely an
+// additional in-process pub-sub channel for UI consumers.
 
 import { post } from '../core/client.js';
 import { setSession } from '../core/token-manager.js';
@@ -76,6 +81,51 @@ function setActingAs(next: ActingAs | null): void {
   }
 }
 
+// ── Drift event pub-sub (v1.0.4 L2.18) ───────────────────────────────────
+//
+// Mirrors the audit-log event `impersonation.local_clear_drift` onto an
+// in-process channel so React consumers can render a "audit drift" banner.
+// The audit-log emit still happens — this is additive.
+
+/**
+ * Drift event fired when `endImpersonation` clears local state but the
+ * server-side end call did not succeed. Audit log already captures this
+ * (see `impersonation.local_clear_drift` event); this in-process channel
+ * lets UI surface it to admins.
+ */
+export interface ImpersonationDriftEvent {
+  reason: 'server_call_failed';
+  error_message: string;
+  error_name: string;
+  /** epoch ms — when the drift happened in this tab */
+  timestamp: number;
+}
+
+const driftListeners = new Set<(event: ImpersonationDriftEvent) => void>();
+
+/**
+ * Subscribe to local-clear-drift events. Returns an unsubscribe function.
+ * Used by `useImpersonation` to drive a `lastDriftEvent` state slice.
+ */
+export function onLocalClearDrift(
+  listener: (event: ImpersonationDriftEvent) => void
+): () => void {
+  driftListeners.add(listener);
+  return () => {
+    driftListeners.delete(listener);
+  };
+}
+
+function fireDrift(event: ImpersonationDriftEvent): void {
+  for (const l of driftListeners) {
+    try {
+      l(event);
+    } catch {
+      // listener bugs must not crash the flow
+    }
+  }
+}
+
 // ── Public flow API ──────────────────────────────────────────────────────
 
 export async function startImpersonation(input: StartImpersonationInput): Promise<StartResponse> {
@@ -117,12 +167,21 @@ export async function endImpersonation(): Promise<void> {
       // Local-clear-drift signal: client cleared acting_as without the server
       // confirming the end. Audit log + ops dashboards should treat this as a
       // soft-anomaly (not a security incident, but worth a follow-up reconciliation).
-      void emit('impersonation.local_clear_drift', {
+      const driftEvent: ImpersonationDriftEvent = {
         reason: 'server_call_failed',
         error_message:
           serverError instanceof Error ? serverError.message : String(serverError),
         error_name: serverError instanceof Error ? serverError.name : 'Unknown',
+        timestamp: Date.now(),
+      };
+      void emit('impersonation.local_clear_drift', {
+        reason: driftEvent.reason,
+        error_message: driftEvent.error_message,
+        error_name: driftEvent.error_name,
       });
+      // v1.0.4 (L2.18): notify in-process subscribers (useImpersonation hook)
+      // so UIs can render a drift banner.
+      fireDrift(driftEvent);
     }
     // Regardless of server response, the canonical "ended" event always fires
     // so audit trail records the local termination point.
@@ -143,4 +202,5 @@ export function recordImpersonationAction(action: string, targetId: string): voi
 export function __resetImpersonationForTests(): void {
   currentActingAs = null;
   listeners.clear();
+  driftListeners.clear();
 }

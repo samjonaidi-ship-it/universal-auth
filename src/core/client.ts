@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/core/client.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/client.ts | v1.0.4 | 2026-05-04 | BB
 // HTTP client for CT BFF. Owns:
 //
 //   §3   Every endpoint at `https://ct-bff.bainbridgebuilders.com/auth/v1/*`
@@ -24,6 +24,15 @@
 //   B4 — Every fetch() uses `redirect: 'manual'` + `referrerPolicy:
 //        'strict-origin-when-cross-origin'`. The CT BFF never legitimately
 //        redirects an SDK call, so any 0/3xx is treated as an error.
+//
+// v1.0.4 (L2.16):
+//   * `X-Device-Id` header attached to every authenticated request, mirroring
+//     the existing `device_id` field on event envelopes (§B3.13 carry-forward).
+//     Server-side correlators can stamp logs without parsing JSON bodies.
+//     Anonymous requests (config probes, code/request, etc.) do NOT carry the
+//     header — they are pre-identity by definition. Header value is sourced
+//     from getOrCreateDeviceId() which is memoized; the per-request await is
+//     a no-op after the first resolution.
 
 import { nanoid } from 'nanoid';
 import {
@@ -38,6 +47,7 @@ import {
   setSession,
   invalidateAccessToken,
 } from './token-manager.js';
+import { getOrCreateDeviceId } from './device-id.js';
 
 // ── Configuration ────────────────────────────────────────────────────────
 
@@ -148,6 +158,11 @@ async function requestInternal<T>(
     if (token !== null) {
       headers.Authorization = `Bearer ${token}`;
     }
+    // v1.0.4 (L2.16): mirror the body-level `device_id` (event-reporter) onto
+    // an HTTP header so server-side correlators can stamp logs without parsing
+    // JSON bodies. Anon endpoints are skipped — they are pre-identity by
+    // definition and the header would be noise.
+    headers['X-Device-Id'] = await getOrCreateDeviceId();
   }
 
   const init: RequestInit = {

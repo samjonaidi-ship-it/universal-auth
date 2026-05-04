@@ -6,6 +6,94 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
 
 > **Note on rc.3 / rc.4 entries below:** these were **internal-only milestones** between rc.2 (2026-04-28) and 1.0.0 (2026-04-30). Neither was tagged or published to the registry — public consumer path is rc.2 → 1.0.0. The rc.3 / rc.4 entries document work that landed on `main` but never shipped under those version numbers; "Recommended upgrade" wording in those sections is historical and does not apply to actual consumers.
 
+## [1.0.4] — 2026-05-04 — Lane 2 ships: test cleanup + new coverage + small SDK extensions
+
+**Maintenance release.** Closes the v1.0.2 backlog (Lanes 2a + 2b + 2c-light) that was originally planned but deferred through 1.0.2 → 1.0.3. Source changes are minor (additive); the bulk is test infrastructure cleanup.
+
+### Test gates (all green)
+
+| | v1.0.3 | v1.0.4 |
+|---|---|---|
+| Test files | 80 | **93** |
+| Tests passed | 536 | **614** |
+| Tests skipped | 9 | **0** |
+| Branch coverage | 83.68% | **85.32%** |
+| Branch threshold | 83 | **85** (DoD restored) |
+| Line coverage | 91.5% | **92.67%** |
+
+### Lane 2a — test cleanup (closes v1.0.1 hydrate-race deferrals)
+
+**9 hydrate-race tests un-skipped + refactored to deterministic awaits.** Original tests used `fetchSpy.mockResolvedValue + waitFor()` which raced against v1.0.1 lookback hook timing. Replaced with pre-seeded store helpers (`__seedProfileForTests`, `__seedIdentityStoreForTests`) that bypass the fetch path and let assertions run synchronously. Files affected:
+
+- `test/unit/react/components/AvatarPicker.test.tsx` (2 tests)
+- `test/unit/react/components/CompletenessBar.test.tsx` (3 tests)
+- `test/unit/react/components/VehicleSection.test.tsx` (2 tests)
+- `test/unit/react/useSettingsSync.test.tsx` (1 test)
+- `test/unit/core/event-reporter-flush.test.ts` (1 test — rewritten with deferred-promise pattern; no `setTimeout` racing)
+
+Branch coverage threshold restored 83 → **85** in `vitest.config.ts`.
+
+### Lane 2b — new test coverage for v1.0.1 lookback fixes
+
+**+29 new test cases across 7 new test files** covering exports added by the v1.0.1 lookback (commit `b8a6914`):
+
+- `test/unit/core/entitlements-listeners.test.ts` — `onEntitlementsChange()` subscribe/unsubscribe + notify on save+clear
+- `test/unit/flows/impersonation-drift.test.ts` — `impersonation.local_clear_drift` event emission on server failure
+- `test/unit/core/settings-sync-apply-patch.test.ts` — `applySettingsPatch` / `applyProfilePatch` + `getPending*Patch` 409-conflict cases
+- `test/unit/core/token-manager-ttl-extension.test.ts` — `refresh_expires_at` honored without `refresh_token` rotation (v1.0.1 C5)
+- `test/unit/core/token-manager-idempotency.test.ts` — `Idempotency-Key: SHA-256(refresh_token).slice(0,16)` collision-safety (v1.0.1 B3)
+- `test/unit/offline/sw-bridge-foreground.test.ts` — `requestBackgroundFlush()` foreground fallback when SW unavailable
+- `test/unit/sw/trust-check.test.ts` — SW message handler rejects cross-scope clients
+- `test/unit/profile/profile-store-seed.test.ts` — branches in profile-store the un-skipped tests don't cover
+
+**Statistical timing test** (`test/security/02-timing-attack-resistance.test.ts`) bumped from 1000 → 5000 samples per cohort. Stable across 3 consecutive runs.
+
+### Lane 2c-light — small SDK code additions
+
+**L2.16 — `X-Device-Id` header transport.** Authenticated requests now carry `X-Device-Id: <32-char hex>` in addition to the existing body-level `device_id` in event-reporter payloads. Header is sourced from `getOrCreateDeviceId()` (memoized; no per-request crypto). Anonymous endpoints (e.g. `/auth/v1/code/request` with `anonymous: true`) skip the header. Additive — no contract change for existing consumers.
+
+```ts
+// Authenticated request to api.buildwithbainbridge.com/auth/v1/me
+fetch(url, { headers: { 'Authorization': 'Bearer ...', 'X-Device-Id': '<32-char hex>' } });
+```
+
+**L2.18 — `endImpersonation` drift warning UI hook.** New field `lastDriftEvent: ImpersonationDriftEvent | null` on `useImpersonation()` return value. Subscribes to `impersonation.local_clear_drift` events emitted from `flows/impersonation.ts:120`. New imperative export `onLocalClearDrift(listener)` for non-React consumers.
+
+```ts
+// React
+const { lastDriftEvent } = useImpersonation();
+if (lastDriftEvent) {
+  // show banner: "Audit drift detected — server didn't acknowledge end-impersonation"
+}
+
+// Imperative
+import { onLocalClearDrift } from '@samjonaidi-ship-it/universal-auth';
+const unsub = onLocalClearDrift((event) => { /* ... */ });
+```
+
+Drift state clears when a new impersonation session starts so old drifts don't haunt new sessions.
+
+### Lane 2c — internal hardening
+
+**`isTrustedClient` extracted from `src/sw/index.ts` → `src/sw/purge-helpers.ts`.** Now a 2-arg function `(source, scope)` that's unit-testable. Original behavior preserved at call site: `sw/index.ts` passes `sw.registration.scope`. Coverage of `purge-helpers.ts` stays at 100%.
+
+### What's NOT in v1.0.4 (deferred to follow-up commits)
+
+| Lane 2c heavy item | Status | Note |
+|---|---|---|
+| L2.12 — Browser test matrix Playwright 12-config | deferred | CI infra; lands as separate commit, no version bump needed |
+| L2.13 — Pact contract test scope expansion | deferred | Same |
+| L2.14 — Integration tests via Neon test branch | deferred | Same; closes Neon-HTTP-vs-local-pg blocker |
+| L2.15 — Trusted Types report-only on CalExp5 | deferred | Doc + CSP work in INTEGRATION_GUIDE |
+
+### Migration notes
+
+**No behavior change for existing consumers.** Header-level `X-Device-Id` is additive. New `lastDriftEvent` field on `useImpersonation()` is opt-in (existing destructures ignoring it keep working). Test helpers (`__seed*ForTests`) are `__`-prefixed and never imported in production builds.
+
+CalExp5 swap: bump `file:packages/samjonaidi-ship-it-universal-auth-1.0.3.tgz` → `...1.0.4.tgz` in `package.json`. No source changes required.
+
+---
+
 ## [1.0.3] — 2026-05-03 — Scope rename (`@bainbridgebuilders` → `@samjonaidi-ship-it`)
 
 **Org consolidation reversal.** Sam decided 2026-05-03 to bring all repos back to `samjonaidi-ship-it` GitHub org and delete the `BainbridgeBuilders` org. Triggered by the discovery that GitHub Team plan does NOT unlock SLSA build provenance attestation for private repos (only Enterprise Cloud does), removing the primary technical justification for the BB org.

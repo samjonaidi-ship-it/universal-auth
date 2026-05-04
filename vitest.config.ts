@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | vitest.config.ts | v1.0.2 | 2026-05-02 | BB
+// @samjonaidi-ship-it/universal-auth | vitest.config.ts | v1.0.4 | 2026-05-04 | BB
 // Vitest unit-test config. Coverage gates per §11 thresholds.
 
 import { defineConfig } from 'vitest/config';
@@ -14,18 +14,16 @@ export default defineConfig({
       reporter: ['text', 'lcov', 'html'],
       // Spec §11 thresholds — activated 2026-04-28 (Block 6 coverage push).
       // CI enforces; PRs that drop coverage below these fail the unit job.
-      // v1.0.1: branches relaxed 85 → 84 because 5 hydrate-race tests skipped
-      // for v1.0.2 follow-up (test fixture rewrite, not real coverage gap).
-      // Restore to 85 once those tests land + brand new D2/D3/D4/D8 paths
-      // get their dedicated coverage tests.
+      // v1.0.4 (Lane 2a, 2026-05-04): branches restored 83 → 84 after the
+      // 9 hydrate-race tests were refactored to deterministic pre-seed
+      // (no waitFor on fetch-mock).
+      // v1.0.4 (Lane 2 finalize, 2026-05-04): branches raised 84 → 85 after
+      // recovery.ts (→100%), reconciler.ts (→86.27%), code-flow.ts (→94.44%)
+      // and passkey-flow.ts (→95.23%) gained focused branch tests in
+      // *-branches.test.ts files. Measured global branches: ~85.2%. Spec target met.
       thresholds: {
-        // v1.0.1 baseline: lines/functions/statements at the spec's 90% gate.
-        // v1.0.1 lookback (post-A/B/C/D fix forward, 2026-05-01): branches
-        // tuned 84 → 83 to accommodate v1.0.2-deferred test refactors. Five
-        // hydrate-race component tests are skipped (test fixture issue, not
-        // real bugs); restoration to 85% tracked in v1.0.2 backlog §12.2.
         lines: 90,
-        branches: 83,
+        branches: 85,
         functions: 90,
         statements: 90,
       },

@@ -1,5 +1,6 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/core/client.test.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/client.test.ts | v1.0.4 | 2026-05-04 | BB
 // A1 gate #10 coverage for src/core/client.ts
+// v1.0.4 (L2.16) — adds X-Device-Id header coverage
 
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import {
@@ -16,6 +17,10 @@ import {
   __resetTokenManagerForTests,
 } from '../../../src/core/token-manager.js';
 import { __resetDbForTests } from '../../../src/core/storage.js';
+import {
+  getOrCreateDeviceId,
+  clearDeviceIdCache,
+} from '../../../src/core/device-id.js';
 import {
   AuthCodeExpired,
   AuthSdkError,
@@ -40,6 +45,7 @@ describe('core/client', () => {
     __resetClientForTests();
     __resetTokenManagerForTests();
     void __resetDbForTests();
+    clearDeviceIdCache();
     configureClient({
       apiBaseUrl: BASE,
       appId: 'bb_express',
@@ -126,6 +132,68 @@ describe('core/client', () => {
         string
       >;
       expect(headers.Authorization).toBeUndefined();
+    });
+
+    // ── v1.0.4 L2.16 — X-Device-Id transport ─────────────────────────────
+    describe('X-Device-Id (L2.16)', () => {
+      it('attaches X-Device-Id (32-char hex) on authenticated requests', async () => {
+        await setSession({
+          accessToken: 'at-1',
+          refreshToken: 'rt-1',
+          expiresAt: Date.now() + 15 * 60_000,
+          sessionId: 's1',
+        });
+        fetchSpy.mockResolvedValueOnce(jsonResp(200, { ok: true }));
+        await get('/auth/v1/me');
+        const headers = (fetchSpy.mock.calls[0]![1] as RequestInit).headers as Record<
+          string,
+          string
+        >;
+        expect(headers['X-Device-Id']).toBeDefined();
+        expect(headers['X-Device-Id']).toMatch(/^[0-9a-f]{32}$/);
+      });
+
+      it('header value matches getOrCreateDeviceId()', async () => {
+        await setSession({
+          accessToken: 'at-1',
+          refreshToken: 'rt-1',
+          expiresAt: Date.now() + 15 * 60_000,
+          sessionId: 's1',
+        });
+        const expected = await getOrCreateDeviceId();
+        fetchSpy.mockResolvedValueOnce(jsonResp(200, { ok: true }));
+        await get('/auth/v1/me');
+        const headers = (fetchSpy.mock.calls[0]![1] as RequestInit).headers as Record<
+          string,
+          string
+        >;
+        expect(headers['X-Device-Id']).toBe(expected);
+      });
+
+      it('attaches X-Device-Id even when no access token present (authenticated path, pre-token)', async () => {
+        // No setSession() — no token. But anonymous:false (default), so the
+        // header is still attached for any future server-side correlation.
+        fetchSpy.mockResolvedValueOnce(jsonResp(200, { ok: true }));
+        await get('/auth/v1/me');
+        const headers = (fetchSpy.mock.calls[0]![1] as RequestInit).headers as Record<
+          string,
+          string
+        >;
+        expect(headers['X-Device-Id']).toBeDefined();
+        expect(headers['X-Device-Id']).toMatch(/^[0-9a-f]{32}$/);
+        // No Authorization header in this case
+        expect(headers.Authorization).toBeUndefined();
+      });
+
+      it('omits X-Device-Id on anonymous requests (e.g. /auth/v1/code/request)', async () => {
+        fetchSpy.mockResolvedValueOnce(jsonResp(200, { ok: true }));
+        await post('/auth/v1/code/request', { email: 'sam@example.com' }, { anonymous: true });
+        const headers = (fetchSpy.mock.calls[0]![1] as RequestInit).headers as Record<
+          string,
+          string
+        >;
+        expect(headers['X-Device-Id']).toBeUndefined();
+      });
     });
   });
 

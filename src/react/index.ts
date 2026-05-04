@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/react/index.ts | v1.0.0-rc.4 | 2026-04-30 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/index.ts | v1.0.4 | 2026-05-04 | BB
 // React subpath barrel — `@samjonaidi-ship-it/universal-auth/react`.
 // Tree-shakeable named exports only (sideEffects: false).
 //
@@ -22,6 +22,8 @@ export { useAuth, type UseAuthReturn } from './useAuth.js';
 export { useEntitlements, type UseEntitlementsReturn } from './useEntitlements.js';
 export { useProfile, type UseProfileReturn, type ProfileState } from './useProfile.js';
 export { useImpersonation, type UseImpersonationReturn } from './useImpersonation.js';
+// v1.0.4 (L2.18) — drift event type re-exported so consumers can type their banners
+export type { ImpersonationDriftEvent } from '../flows/impersonation.js';
 export { useSettingsSync, type UseSettingsSyncReturn } from './useSettingsSync.js';
 export { usePermissionGrants, type UsePermissionGrantsReturn } from './usePermissionGrants.js';
 

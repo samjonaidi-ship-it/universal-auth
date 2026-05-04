@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// @samjonaidi-ship-it/universal-auth | test/unit/react/components/VehicleSection.test.tsx | v1.0.0-rc.4 | 2026-04-30 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/react/components/VehicleSection.test.tsx | v1.0.4 | 2026-05-04 | BB
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
@@ -13,7 +13,10 @@ import {
 import { __resetTokenManagerForTests } from '../../../../src/core/token-manager.js';
 import { __resetDbForTests } from '../../../../src/core/storage.js';
 import { __resetProfileStoreForTests } from '../../../../src/profile/profile-store.js';
-import { __resetIdentityStoreForTests } from '../../../../src/react/useIdentity.js';
+import {
+  __resetIdentityStoreForTests,
+  __seedIdentityStoreForTests,
+} from '../../../../src/react/useIdentity.js';
 import {
   configureEventReporter,
   __resetEventReporterForTests,
@@ -155,31 +158,40 @@ describe('VehicleSection', () => {
     });
   });
 
-  // v1.0.1 lookback (2026-05-01): flaky on parallel-load CI. Hydrate-race
-  // with useProfile() like the other 5 deferred tests; v1.0.2 fixture refactor.
-  it.skip('hides add/archive buttons when readonly', async () => {
+  // v1.0.4 (Lane 2a): pre-seed via __seedIdentityStoreForTests so the
+  // component sees the envelope on first render — no fetch-mock race.
+  it('hides add/archive buttons when readonly', () => {
     fetchSpy.mockResolvedValue(jsonResp(200, ENVELOPE));
+    __seedIdentityStoreForTests(ENVELOPE);
     render(
       <AuthProvider initialSession={SESSION}>
         <VehicleSection readonly />
       </AuthProvider>
     );
-    await waitFor(() => expect(screen.getByText('Work truck')).toBeTruthy());
+    expect(screen.getByText('Work truck')).toBeTruthy();
     expect(screen.queryByText('Add vehicle')).toBeNull();
     expect(screen.queryByLabelText(/Archive Work truck/i)).toBeNull();
   });
 
-  // v1.0.1 lookback (2026-05-01): same hydrate-race; v1.0.2 fixture refactor.
-  it.skip('renders error state when add fails', async () => {
-    fetchSpy
-      .mockResolvedValueOnce(jsonResp(200, { ...ENVELOPE, resources: [] }))
-      .mockRejectedValueOnce(new Error('server boom'));
+  // v1.0.4 (Lane 2a): pre-seed empty resources, then mock the addResource
+  // POST to reject. Synchronous initial render — no waitFor on hydrate.
+  it('renders error state when add fails', async () => {
+    const emptyEnvelope = { ...ENVELOPE, resources: [] };
+    __seedIdentityStoreForTests(emptyEnvelope);
+    fetchSpy.mockImplementation((req, init) => {
+      const url = typeof req === 'string' ? req : (req as Request).url;
+      const method =
+        init?.method ?? (typeof req !== 'string' ? (req as Request).method : 'GET');
+      if (url.includes('/profile/resources') && method === 'POST') {
+        return Promise.reject(new Error('server boom'));
+      }
+      return Promise.resolve(jsonResp(200, emptyEnvelope));
+    });
     render(
       <AuthProvider initialSession={SESSION}>
         <VehicleSection />
       </AuthProvider>
     );
-    await waitFor(() => expect(screen.getByText('Add vehicle')).toBeTruthy());
     fireEvent.click(screen.getByText('Add vehicle'));
     fireEvent.change(screen.getByLabelText('Make'), { target: { value: 'X' } });
     fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'Y' } });

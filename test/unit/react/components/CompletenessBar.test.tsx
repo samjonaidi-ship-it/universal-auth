@@ -1,23 +1,25 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/react/components/CompletenessBar.test.tsx | v1.0.1 | 2026-05-01 | BB
-// v1.0.1 TODO (deferred to v1.0.2): every test in this file relies on
-// useProfile auto-hydrate via mocked fetch. The C2/C4/D1 + dirty-patch
-// changes shifted hook timing such that the hydrate generation guard now
-// races with React's render cycle in jsdom. Manual smoke confirms the
-// component renders correctly end-to-end. Rewriting the test fixture to
-// use a deterministic hydrate mock is v1.0.2 backlog.
+// @samjonaidi-ship-it/universal-auth | test/unit/react/components/CompletenessBar.test.tsx | v1.0.4 | 2026-05-04 | BB
+// v1.0.4 (Lane 2a): switched from fetch-mock + waitFor (which races against
+// the v1.0.1 hydrate generation guard in jsdom/happy-dom) to deterministic
+// pre-seed via __seedProfileForTests. Tests now assert synchronously on
+// first render.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { AuthProvider } from '../../../../src/react/AuthProvider.js';
 import { CompletenessBar } from '../../../../src/react/components/CompletenessBar.js';
 import type { Session } from '../../../../src/types/api.js';
+import type { UniversalProfile } from '../../../../src/types/profile.js';
 import {
   configureClient,
   __resetClientForTests,
 } from '../../../../src/core/client.js';
 import { __resetTokenManagerForTests } from '../../../../src/core/token-manager.js';
 import { __resetDbForTests } from '../../../../src/core/storage.js';
-import { __resetProfileStoreForTests } from '../../../../src/profile/profile-store.js';
+import {
+  __resetProfileStoreForTests,
+  __seedProfileForTests,
+} from '../../../../src/profile/profile-store.js';
 import {
   configureEventReporter,
   __resetEventReporterForTests,
@@ -46,7 +48,7 @@ const SESSION: Session = {
   },
 };
 
-function profile(score: number, missing: string[]): unknown {
+function profile(score: number, missing: string[]): UniversalProfile {
   return {
     identity_id: 'sam',
     display_name: 'Sam',
@@ -140,46 +142,40 @@ describe('CompletenessBar', () => {
     );
   });
 
-  // v1.0.1 TODO (deferred to v1.0.2): same useProfile hydrate-race as
-  // AvatarPicker.test.tsx. Track in v1.0.2 backlog.
-  it.skip('lists missing required fields with human labels', async () => {
-    fetchSpy.mockResolvedValue(
-      jsonResp(200, profile(40, ['phone_e164', 'emergency_contact']))
-    );
+  // v1.0.4 (Lane 2a): pre-seed; deterministic synchronous assertion.
+  it('lists missing required fields with human labels', () => {
+    __seedProfileForTests(profile(40, ['phone_e164', 'emergency_contact']));
     render(
       <AuthProvider initialSession={SESSION}>
         <CompletenessBar />
       </AuthProvider>
     );
-    await waitFor(() => {
-      expect(screen.getByText('Phone number')).toBeTruthy();
-      expect(screen.getByText('Emergency contact')).toBeTruthy();
-    });
+    expect(screen.getByText('Phone number')).toBeTruthy();
+    expect(screen.getByText('Emergency contact')).toBeTruthy();
   });
 
-  // v1.0.1 TODO (deferred to v1.0.2): hydrate-race with v1.0.1 hook timing.
-  it.skip('invokes onFieldClick when missing-field button clicked', async () => {
-    fetchSpy.mockResolvedValue(jsonResp(200, profile(40, ['phone_e164'])));
+  // v1.0.4 (Lane 2a): pre-seed; deterministic synchronous assertion.
+  it('invokes onFieldClick when missing-field button clicked', () => {
+    __seedProfileForTests(profile(40, ['phone_e164']));
     const onFieldClick = vi.fn();
     render(
       <AuthProvider initialSession={SESSION}>
         <CompletenessBar onFieldClick={onFieldClick} />
       </AuthProvider>
     );
-    await waitFor(() => screen.getByText('Phone number'));
     fireEvent.click(screen.getByText('Phone number'));
     expect(onFieldClick).toHaveBeenCalledWith('phone_e164');
   });
 
-  // v1.0.1 TODO (deferred to v1.0.2): hydrate-race with v1.0.1 hook timing.
-  it.skip('honors fieldLabels override', async () => {
-    fetchSpy.mockResolvedValue(jsonResp(200, profile(40, ['custom_key'])));
+  // v1.0.4 (Lane 2a): pre-seed; deterministic synchronous assertion.
+  it('honors fieldLabels override', () => {
+    __seedProfileForTests(profile(40, ['custom_key']));
     render(
       <AuthProvider initialSession={SESSION}>
         <CompletenessBar fieldLabels={{ custom_key: 'Custom thing' }} />
       </AuthProvider>
     );
-    await waitFor(() => expect(screen.getByText('Custom thing')).toBeTruthy());
+    expect(screen.getByText('Custom thing')).toBeTruthy();
   });
 
   it('hides missing list when hideMissing=true', async () => {
