@@ -80,7 +80,7 @@ services:
     # Port 8443 host → 8080 container; captures POST /2010-04-01/Accounts/.../Messages.json
     # Returns a fake Twilio response shape so the SDK's enroll-flow + code-flow
     # paths can verify they format the request correctly.
-    image: stoplight/prism:5
+    image: stoplight/prism:5.14.3  # pinned: 5.15.x has TypeError isPrimary regression (verified 2026-05-04 via run 25360813948)
     container_name: bb-integration-twilio-mock
     command: mock -h 0.0.0.0 -p 8080 /spec/twilio.json
     ports:
@@ -91,7 +91,7 @@ services:
       - ./mocks/twilio-spec.json:/spec/twilio.json:ro
 
   resend-mock:
-    image: stoplight/prism:5
+    image: stoplight/prism:5.14.3  # pinned: 5.15.x has TypeError isPrimary regression (verified 2026-05-04 via run 25360813948)
     container_name: bb-integration-resend-mock
     command: mock -h 0.0.0.0 -p 8080 /spec/resend.json
     ports:
