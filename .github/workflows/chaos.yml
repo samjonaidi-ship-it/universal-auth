@@ -103,12 +103,22 @@ jobs:
             --parent "$PARENT_BRANCH" \
             --output json > /tmp/branch.json
 
-          # Mask the URI in logs before exporting (defense in depth even though
-          # GitHub already redacts secrets — the URI is freshly minted and not
-          # yet in the secrets store).
-          DB_URL=$(jq -r '.connection_uris[0].connection_uri' /tmp/branch.json)
+          # Try `connection_uris[0].connection_uri` first (fast path when parent
+          # is unprotected). When parent is protected, Neon creates a new role
+          # password but does NOT include it in `branches create` output —
+          # `connection_uris` will be missing/null. In that case fall back to
+          # `neonctl connection-string` which fetches a usable URI for the new
+          # branch's freshly-minted role.
+          DB_URL=$(jq -r '.connection_uris[0].connection_uri // empty' /tmp/branch.json)
           if [ -z "$DB_URL" ] || [ "$DB_URL" = "null" ]; then
-            echo "::error::neonctl returned no connection_uri"
+            echo "branch create did not return connection_uris (parent likely protected); fetching via connection-string"
+            DB_URL=$(neonctl connection-string \
+              --project-id "$NEON_PROJECT_ID" \
+              --branch "$BRANCH_NAME" \
+              --pooled 2>/dev/null || true)
+          fi
+          if [ -z "$DB_URL" ] || [ "$DB_URL" = "null" ]; then
+            echo "::error::could not resolve Neon connection string for branch $BRANCH_NAME"
             cat /tmp/branch.json
             exit 1
           fi
