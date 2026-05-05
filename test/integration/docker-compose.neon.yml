@@ -50,8 +50,20 @@ services:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set to the Neon branch connection URI}
       TWILIO_BASE_URL: http://twilio-mock:8080
       RESEND_BASE_URL: http://resend-mock:8080
+      # CT BFF Dockerfile likely sets NODE_ENV=production; override to dev so
+      # bff/lib/env-check.js doesn't fail-fast on missing prod secrets. The
+      # integration suite tests SDK↔BFF contract, not BFF prod-readiness.
+      NODE_ENV: development
       BB_MODE: test
       PORT: "3300"
       TEST_MODE_KEY: test-key-do-not-use-in-prod
       ACCESS_TOKEN_TTL_SEC: "60"
       REFRESH_TOKEN_TTL_SEC: "300"
+      # Stub credentials so bff/lib/env-check.js sees them as present even in
+      # dev-warn mode (no Bridge call in this stack — Bridge URL points to a
+      # dead-letter sink so any accidental call returns ECONNREFUSED visibly).
+      BRIDGE_API_KEY: integration-test-bridge-key-do-not-use-in-prod
+      BRIDGE_URL: http://bridge-not-running.invalid
+      BFF_ACTOR_HMAC_SECRET: ${BFF_ACTOR_HMAC_SECRET:-integration-test-hmac-secret-32-bytes-of-padding}
+      COOKIE_SIGN_SECRET: ${COOKIE_SIGN_SECRET:-integration-test-cookie-secret-32-bytes-of-padding}
+      JWT_SECRET: ${JWT_SECRET:-integration-test-jwt-secret-32-bytes-of-padding}
