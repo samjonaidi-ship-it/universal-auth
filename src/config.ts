@@ -38,7 +38,7 @@ export interface ProfileConfig {
 }
 
 export interface UniversalAuthConfig {
-  /** CT BFF base URL, e.g. `https://ct-bff.bainbridgebuilders.com` */
+  /** CT BFF base URL, e.g. `https://api.buildwithbainbridge.com` */
   apiBaseUrl: string;
   /** App id registered in `ct_bff.apps` — e.g., `bb_express`, `controltower` (§D2.3) */
   appId: string;
@@ -46,7 +46,7 @@ export interface UniversalAuthConfig {
   mode?: SdkMode;
 
   // Cross-subdomain cookie per D10 + SDK §5.0 v1.4.0 locked
-  /** Cookie domain for shared session across subdomains. Default `.bainbridgebuilders.com`. */
+  /** Cookie domain for shared session across subdomains. Default `.buildwithbainbridge.com` (post-D20 cutover 2026-05-03). */
   cookieDomain?: string;
 
   // Per-app persona gating per D10
@@ -98,8 +98,11 @@ export function assertModeSafety(
   }
 }
 
-/** Current SDK version. Stamped on every event + every outbound HTTP request. */
-export const SDK_VERSION = '1.0.2';
+/** Current SDK version. Stamped on every event + every outbound HTTP request.
+ *  MUST be kept in sync with `package.json:version`. Audit-fix 2026-05-04: was
+ *  '1.0.2' on the v1.0.4 build, causing telemetry to misattribute traffic.
+ */
+export const SDK_VERSION = '1.0.4';
 
 /**
  * Initialize the SDK. Called once at app startup.

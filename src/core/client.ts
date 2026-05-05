@@ -1,7 +1,7 @@
 // @samjonaidi-ship-it/universal-auth | src/core/client.ts | v1.0.4 | 2026-05-04 | BB
 // HTTP client for CT BFF. Owns:
 //
-//   §3   Every endpoint at `https://ct-bff.bainbridgebuilders.com/auth/v1/*`
+//   §3   Every endpoint at `https://api.buildwithbainbridge.com/auth/v1/*`
 //   §3.6   Standard error envelope → typed errors via errorFromEnvelope
 //   §3.7   Canonical error codes (17 total; see errors.ts)
 //   §14.2  `X-Auth-Protocol-Version: v1` on every request
@@ -52,7 +52,7 @@ import { getOrCreateDeviceId } from './device-id.js';
 // ── Configuration ────────────────────────────────────────────────────────
 
 export interface ClientConfig {
-  /** CT BFF base URL, e.g. `https://ct-bff.bainbridgebuilders.com` */
+  /** CT BFF base URL, e.g. `https://api.buildwithbainbridge.com` */
   apiBaseUrl: string;
   /** App id registered in `ct_bff.apps` — e.g., `bb_express` */
   appId: string;
