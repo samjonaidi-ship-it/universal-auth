@@ -31,7 +31,7 @@
 //     Triggered by browser-matrix.yml (added in v1.0.5) at 03:00 UTC + on demand.
 //   - Local dev: `pnpm test:browser` runs all projects against any baseURL.
 //
-// Tests run against the deployed demo at auth-sdk-demo.bainbridgebuilders.com
+// Tests run against app.buildwithbainbridge.com (D20 cutover host)
 // OR against a local `pnpm dev` instance when PLAYWRIGHT_BASE_URL=http://localhost:5174.
 //
 // Real WebAuthn ceremonies use virtual authenticators (CDP-only — Chromium/Edge).
@@ -47,11 +47,13 @@
 
 import { defineConfig, devices } from '@playwright/test';
 
+// Audit-fix 2026-05-04: was auth-sdk-demo.bainbridgebuilders.com + ct-bff.bainbridgebuilders.com
+// (both DNS-dropped post-D20). New canonical: app.* + api.buildwithbainbridge.com.
 const BASE_URL =
-  process.env.PLAYWRIGHT_BASE_URL ?? 'https://auth-sdk-demo.bainbridgebuilders.com';
+  process.env.PLAYWRIGHT_BASE_URL ?? 'https://app.buildwithbainbridge.com';
 
 const CT_BFF_URL =
-  process.env.PLAYWRIGHT_CT_BFF_URL ?? 'https://ct-bff.bainbridgebuilders.com';
+  process.env.PLAYWRIGHT_CT_BFF_URL ?? 'https://api.buildwithbainbridge.com';
 
 // PR-time smoke subset — one project per browser, desktop only.
 // Imported by scripts/CI to keep the smoke subset in sync with the 12-config matrix.

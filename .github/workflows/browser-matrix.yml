@@ -82,13 +82,14 @@ jobs:
       - name: Run ${{ matrix.browser }} shard (3 form factors)
         run: pnpm test:browser:${{ matrix.browser }}
         env:
-          # Hit deployed demo unless caller overrides
-          PLAYWRIGHT_BASE_URL: ${{ vars.PLAYWRIGHT_BASE_URL || 'https://auth-sdk-demo.bainbridgebuilders.com' }}
+          # Hit deployed demo unless caller overrides. Audit-fix 2026-05-04: was
+          # auth-sdk-demo.bainbridgebuilders.com (DNS-dropped post-D20).
+          PLAYWRIGHT_BASE_URL: ${{ vars.PLAYWRIGHT_BASE_URL || 'https://app.buildwithbainbridge.com' }}
           TEST_MODE_KEY: ${{ secrets.TEST_MODE_KEY }}
 
       - name: Upload Playwright report on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
           name: playwright-report-${{ matrix.browser }}
           path: playwright-report/
@@ -96,7 +97,7 @@ jobs:
 
       - name: Upload trace artifacts on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
           name: playwright-traces-${{ matrix.browser }}
           path: test-results/

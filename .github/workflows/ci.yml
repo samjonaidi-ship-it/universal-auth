@@ -118,12 +118,13 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium firefox webkit msedge
       - name: Run browser smoke (4 desktop projects)
         env:
-          PLAYWRIGHT_BASE_URL: ${{ vars.PLAYWRIGHT_BASE_URL || 'https://auth-sdk-demo.bainbridgebuilders.com' }}
+          # Audit-fix 2026-05-04: was auth-sdk-demo.bainbridgebuilders.com (DNS-dropped post-D20).
+          PLAYWRIGHT_BASE_URL: ${{ vars.PLAYWRIGHT_BASE_URL || 'https://app.buildwithbainbridge.com' }}
           TEST_MODE_KEY: ${{ secrets.TEST_MODE_KEY }}
         run: pnpm test:browser:smoke
       - name: Upload Playwright report on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
           name: playwright-report-smoke
           path: playwright-report/

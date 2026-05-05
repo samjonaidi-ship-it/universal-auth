@@ -1,15 +1,15 @@
-// @samjonaidi-ship-it/universal-auth | demo/src/App.tsx | v1.0.0-rc.1 | 2026-04-28 | BB
+// @samjonaidi-ship-it/universal-auth | demo/src/App.tsx | v1.0.4 | 2026-05-04 | BB
 // Block 7 demo expansion — actually exercises the SDK end-to-end against the
 // production CT BFF.
 //
 // What this proves:
 //   1. Tarball install: `@samjonaidi-ship-it/universal-auth` resolves correctly
 //   2. Bundle works: AuthProvider + SignInForm + useAuth all import + render
-//   3. Network path: requestCode hits ct-bff.bainbridgebuilders.com (CORS + CSP)
-//   4. Cookie domain: session cookie is shared across .bainbridgebuilders.com
+//   3. Network path: requestCode hits api.buildwithbainbridge.com (CORS + CSP)
+//   4. Cookie domain: session cookie is shared across .buildwithbainbridge.com
 //   5. Real round-trip: sign-in → /me → identity display
 //
-// Mode: 'production' because the demo lives on .bainbridgebuilders.com and
+// Mode: 'production' because the demo lives on .buildwithbainbridge.com and
 // talks to the real BFF. Mode-safety assertion (§10.6) would throw on any
 // non-production mode at this hostname.
 
@@ -35,7 +35,7 @@ let initPromise: Promise<void> | null = null;
 function ensureInit(): Promise<void> {
   if (initPromise === null) {
     initPromise = initUniversalAuth({
-      apiBaseUrl: 'https://ct-bff.bainbridgebuilders.com',
+      apiBaseUrl: 'https://api.buildwithbainbridge.com',
       appId: 'bb_demo',
       mode: 'production',
     });
@@ -202,7 +202,7 @@ function Shell({ children }: { children: ReactNode }): ReactNode {
       <p style={{ color: '#666', marginTop: 0 }}>
         <code>@samjonaidi-ship-it/universal-auth@{SDK_VERSION}</code> · live
         against{' '}
-        <code>ct-bff.bainbridgebuilders.com</code>
+        <code>api.buildwithbainbridge.com</code>
       </p>
 
       <hr style={{ border: 0, borderTop: '1px solid #e0e0e0', margin: '24px 0' }} />

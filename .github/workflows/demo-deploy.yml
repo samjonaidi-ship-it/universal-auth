@@ -1,30 +1,27 @@
-# @samjonaidi-ship-it/universal-auth | .github/workflows/demo-deploy.yml | v1.0.1 | 2026-05-01 | BB
-# Railway deploy of demo/ to auth-sdk-demo.bainbridgebuilders.com.
-# Triggers: pushes to main that touch demo/ OR src/ (new SDK code → demo refresh).
+# @samjonaidi-ship-it/universal-auth | .github/workflows/demo-deploy.yml | v1.0.2 | 2026-05-04 | BB
+# Railway deploy of demo/ — gated on RAILWAY_SERVICE_AUTH_DEMO secret presence so the
+# workflow no-ops cleanly until the demo Railway service is provisioned. Audit-fix
+# 2026-05-04: was running every push to main and failing with "service not found"
+# because no Railway service exists yet (D20 cutover dropped auth-sdk-demo subdomain
+# in favor of api.buildwithbainbridge.com). When demo is needed, set the two secrets
+# below and the workflow self-activates.
 #
-# Required GitHub Actions secrets:
+# Required GitHub Actions secrets (set both to enable):
 #   RAILWAY_TOKEN              — project-scoped Railway token (BB-Production)
 #   RAILWAY_SERVICE_AUTH_DEMO  — service id of `auth-sdk-demo` once created in Railway dashboard
 #
-# One-time Railway setup (Sam, ~5 minutes):
+# One-time Railway setup when re-enabling:
 #   1. Railway dashboard → BB-Production → New Service → GitHub Repo
 #   2. Connect samjonaidi-ship-it/universal-auth (authorize org access)
-#   3. Service name: auth-sdk-demo
-#   4. Root directory: /demo
-#   5. Custom domain: auth-sdk-demo.bainbridgebuilders.com (Railway auto-issues SSL)
-#   6. Add Cloudflare DNS CNAME: auth-sdk-demo → <railway-target>.up.railway.app
-#   7. Generate project token in Railway → copy as RAILWAY_TOKEN secret in GitHub repo
-#   8. Copy service id (visible in Railway service URL) as RAILWAY_SERVICE_AUTH_DEMO
+#   3. Service name: auth-sdk-demo, root directory /demo
+#   4. Custom domain: auth-sdk-demo.buildwithbainbridge.com (Railway auto-issues SSL)
+#   5. Cloudflare DNS CNAME: auth-sdk-demo → <railway-target>.up.railway.app
+#   6. Generate project token → RAILWAY_TOKEN secret in repo
+#   7. Copy service id → RAILWAY_SERVICE_AUTH_DEMO secret in repo
 
 name: Deploy Demo to Railway
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'demo/**'
-      - 'src/**'
-      - '.github/workflows/demo-deploy.yml'
   workflow_dispatch: {}
 
 concurrency:

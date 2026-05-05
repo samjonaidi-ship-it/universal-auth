@@ -406,7 +406,7 @@ Expected line delta: **−1,800 / +200** per spec §13.2 (replaces ~1,800 lines 
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | `npm install` 401 | GitHub token missing `read:packages` scope | regenerate token at github.com/settings/tokens with `read:packages` |
-| `[@bb/universal-auth] HTTP client called before configureClient()` | forgot to `await initUniversalAuth(...)` before first SDK call | move `initUniversalAuth` to top of app entry, before any `<AuthProvider>` |
+| `[@samjonaidi-ship-it/universal-auth] HTTP client called before configureClient()` | forgot to `await initUniversalAuth(...)` before first SDK call | move `initUniversalAuth` to top of app entry, before any `<AuthProvider>` |
 | Cookie not shared between subdomains | CSP blocked Set-Cookie OR cookieDomain wrong | check Network tab for `Set-Cookie`; verify domain matches consumer app's root |
 | SW registration fails | consumer CSP missing `worker-src 'self' blob:` | update CSP per §4 |
 | `UNKNOWN_EVENT_TYPE` errors flooding logs | event types not registered in `ct_bff.app_events` | run §2 SQL |
