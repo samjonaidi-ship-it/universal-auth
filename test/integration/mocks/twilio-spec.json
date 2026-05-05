@@ -1,0 +1,44 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Twilio Mock (integration test stub)",
+    "version": "1.0.0",
+    "description": "Minimal Prism-compatible stub for the Twilio Programmable Messaging API. Integration tests use TEST_MODE_KEY + code='000000' so this is rarely exercised — exists so the prism mock container has a spec to bind to. Returns a fake Message resource matching Twilio's documented shape."
+  },
+  "paths": {
+    "/2010-04-01/Accounts/{AccountSid}/Messages.json": {
+      "post": {
+        "summary": "Send SMS",
+        "operationId": "createMessage",
+        "parameters": [
+          { "name": "AccountSid", "in": "path", "required": true, "schema": { "type": "string", "example": "ACtest123" } }
+        ],
+        "responses": {
+          "201": {
+            "description": "Message created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Message" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Message": {
+        "type": "object",
+        "properties": {
+          "sid": { "type": "string", "example": "SMtest0000000000000000000000000000" },
+          "status": { "type": "string", "example": "queued" },
+          "to": { "type": "string", "example": "+15555550100" },
+          "from": { "type": "string", "example": "+15555550199" },
+          "body": { "type": "string", "example": "Test message" },
+          "date_created": { "type": "string", "format": "date-time", "example": "2026-05-04T12:00:00Z" }
+        }
+      }
+    }
+  }
+}

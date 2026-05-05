@@ -1,0 +1,39 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Resend Mock (integration test stub)",
+    "version": "1.0.0",
+    "description": "Minimal Prism-compatible stub for the Resend Email API. Integration tests use TEST_MODE_KEY + code='000000' so this is rarely exercised — exists so the prism mock container has a spec to bind to. Returns a fake Email resource matching Resend's documented shape."
+  },
+  "paths": {
+    "/emails": {
+      "post": {
+        "summary": "Send email",
+        "operationId": "sendEmail",
+        "responses": {
+          "200": {
+            "description": "Email queued",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Email" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Email": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "example": "re_test_0000000000000000000000" },
+          "from": { "type": "string", "example": "auth@test.example" },
+          "to": { "type": "array", "items": { "type": "string" }, "example": ["test@example.com"] },
+          "created_at": { "type": "string", "format": "date-time", "example": "2026-05-04T12:00:00Z" }
+        }
+      }
+    }
+  }
+}
