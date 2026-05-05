@@ -89,14 +89,18 @@ jobs:
         env:
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
+          NEON_PARENT_BRANCH: ${{ vars.NEON_PARENT_BRANCH }}
         run: |
           set -euo pipefail
           BRANCH_NAME="ci-int-${{ github.run_id }}-${{ github.run_attempt }}"
-          echo "Creating Neon branch $BRANCH_NAME (forked from main)"
+          # Parent branch defaults to `production` (Neon project polished-lab-12287925's
+          # default branch). Override via NEON_PARENT_BRANCH repo var if needed.
+          PARENT_BRANCH="${NEON_PARENT_BRANCH:-production}"
+          echo "Creating Neon branch $BRANCH_NAME (forked from $PARENT_BRANCH)"
           neonctl branches create \
             --project-id "$NEON_PROJECT_ID" \
             --name "$BRANCH_NAME" \
-            --parent main \
+            --parent "$PARENT_BRANCH" \
             --output json > /tmp/branch.json
 
           # Mask the URI in logs before exporting (defense in depth even though
