@@ -27,8 +27,13 @@ export default defineConfig({
     // No coverage on integration runs — unit tests cover the same branches
     // and integration is about contract correctness, not line coverage
     coverage: { enabled: false },
-    // Setup file waits for services to be reachable before running tests
-    setupFiles: ['./test/integration/setup.ts'],
+    // Setup files run BEFORE every test file. Order matters:
+    //   1. fake-indexeddb/auto polyfills indexedDB in Node so the SDK's
+    //      core/storage.ts (idb-based) can boot during the integration tests.
+    //      Without this, tests that exercise the SDK in-process (e.g. 04
+    //      event-batching, 03 offline-queue-flush) throw ReferenceError.
+    //   2. setup.ts waits for the docker-compose stack to be healthy.
+    setupFiles: ['fake-indexeddb/auto', './test/integration/setup.ts'],
     // Allow tests to fail fast if the stack isn't up
     bail: 1,
     // Block 6 Day 18-19 ships scaffolding even when CI can't run them yet
