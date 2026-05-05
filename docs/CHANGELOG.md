@@ -77,14 +77,17 @@ Drift state clears when a new impersonation session starts so old drifts don't h
 
 **`isTrustedClient` extracted from `src/sw/index.ts` → `src/sw/purge-helpers.ts`.** Now a 2-arg function `(source, scope)` that's unit-testable. Original behavior preserved at call site: `sw/index.ts` passes `sw.registration.scope`. Coverage of `purge-helpers.ts` stays at 100%.
 
-### What's NOT in v1.0.4 (deferred to follow-up commits)
+### Lane 2c heavies (landed in the v1.0.4 line — no separate semver bump per SDK_COMPLETION_BACKLOG §15)
 
-| Lane 2c heavy item | Status | Note |
+| Lane 2c heavy item | Status | Commit(s) |
 |---|---|---|
-| L2.12 — Browser test matrix Playwright 12-config | deferred | CI infra; lands as separate commit, no version bump needed |
-| L2.13 — Pact contract test scope expansion | deferred | Same |
-| L2.14 — Integration tests via Neon test branch | deferred | Same; closes Neon-HTTP-vs-local-pg blocker |
-| L2.15 — Trusted Types report-only on CalExp5 | deferred | Doc + CSP work in INTEGRATION_GUIDE |
+| L2.12 — Browser test matrix Playwright 12-config | ✅ shipped 2026-05-04 | `2da0a5d` |
+| L2.13 — Pact contract test scope expansion (2 → 16 interactions) | ✅ shipped 2026-05-04 | `2da0a5d` |
+| L2.14 — Integration tests via Neon test branch (wiring) | ✅ shipped 2026-05-04 | `2da0a5d` + `3184032`/`b416f99`/`0bfb6d7`/`ef890fb`/`adadff9`/`8584312`/`508954f`/`02987b1`/`9721e5d` (post-activation fix-forward) |
+| L2.14a — Secret rollout (NEON_API_KEY / NEON_PROJECT_ID / NEON_INTEGRATION_ENABLED) | ✅ shipped 2026-05-04 | provisioned via neonctl OAuth → console.neon.tech REST → `gh secret set` |
+| L2.15 — Trusted Types report-only on CalExp5 | ✅ shipped 2026-05-04 (passive 7-day observe → enforce 2026-05-11 if logs clean) | CalExp5 commit `534ba10` |
+
+**Integration suite follow-up (not v1.0.4-blocking):** Neon-branch integration job now runs end-to-end (branch creation → ct-bff boot → seeded test users → vitest run). Test #4 `event-batching` surfaces the next blocker: CT BFF lacks `/events/v1/_audit?app_id=...` test-mode endpoint that the integration helpers expect. Tracked as v1.0.5 candidate; this is test-stack-greenup work, not SDK correctness.
 
 ### Migration notes
 

@@ -1,18 +1,18 @@
 # @samjonaidi-ship-it/universal-auth | .github/workflows/chaos.yml | v1.0.4 | 2026-05-04 | BB
 # Nightly chaos + 24h memory soak per spec §11.6 + §11.7.
-# v1.0.5 (2026-05-04, L2.14):
+#
+# v1.0.4 also added (L2.14 — landed in this version, no separate semver bump):
 #   - + integration job: real Neon test branch (neonctl branches create from
-#     prod main) + ct-bff pointed at it via docker-compose.neon.yml override.
-#     Closes the Neon-HTTP-vs-local-pg blocker called out in
-#     test/integration/docker-compose.test.yml line 60-77. A5 audit gates
-#     #2 + #4 unblocked.
-#   - Gated on repo variable NEON_INTEGRATION_ENABLED=true. Until Sam adds the
-#     NEON_API_KEY + NEON_PROJECT_ID secrets and flips the var, the job shows
-#     as "skipped" (green CI), not red. Chaos job left unchanged for now —
-#     same blocker but out of L2.14 scope.
-#   - Branch lifecycle: created from prod `main` (inherits live schema), torn
-#     down in `if: always()` so failures never leak branches. Branch name is
-#     `ci-int-<run_id>-<attempt>` for traceability.
+#     prod `production` branch) + ct-bff pointed at it via the
+#     docker-compose.neon.yml override. Closes the Neon-HTTP-vs-local-pg
+#     blocker called out in test/integration/docker-compose.test.yml line 60-77.
+#     A5 audit gates #2 + #4 unblocked once Sam's secrets are set (L2.14a).
+#   - Gated on repo variable NEON_INTEGRATION_ENABLED=true. Until set, the job
+#     shows as "skipped" (green CI), not red. Chaos job left unchanged — same
+#     blocker but out of L2.14 scope (deferred to v1.0.5+).
+#   - Branch lifecycle: created from prod `production` branch (inherits live
+#     schema), torn down in `if: always()` so failures never leak branches.
+#     Branch name is `ci-int-<run_id>-<attempt>` for traceability.
 #   - URI masked via `::add-mask::` before exporting to GITHUB_ENV.
 # v1.1.0 (2026-04-30):
 #   - Cross-repo checkout of samjoonaidi-ship-it/BB_ControlTower as sibling so
