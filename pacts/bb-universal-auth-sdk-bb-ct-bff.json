@@ -1,0 +1,1562 @@
+{
+  "consumer": {
+    "name": "bb-universal-auth-sdk"
+  },
+  "interactions": [
+    {
+      "description": "a batch of two well-formed events",
+      "providerStates": [
+        {
+          "name": "event ingest is healthy"
+        }
+      ],
+      "request": {
+        "body": {
+          "events": [
+            {
+              "app_id": "bb_express",
+              "client_ts": "2026-05-04T10:00:00Z",
+              "device_id": "dev_uuid",
+              "event_type": "profile.field_saved",
+              "identity_id": "id_uuid",
+              "payload": {
+                "field_keys": [
+                  "display_name"
+                ]
+              },
+              "protocol_version": "v1",
+              "sdk_version": "1.0.4",
+              "session_id": "s_uuid"
+            }
+          ]
+        },
+        "headers": {
+          "Content-Type": "application/json",
+          "Idempotency-Key": "eventbatch1234567",
+          "X-App-Id": "bb_express",
+          "X-Auth-Protocol-Version": "v1"
+        },
+        "matchingRules": {
+          "body": {
+            "$.events": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.events[*].app_id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.events[*].client_ts": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.events[*].device_id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.events[*].event_type": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.events[*].identity_id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.events[*].payload": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.events[*].sdk_version": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.events[*].session_id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          },
+          "header": {
+            "Idempotency-Key": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[A-Za-z0-9_-]{16,}$"
+                }
+              ]
+            }
+          }
+        },
+        "method": "POST",
+        "path": "/events/v1/ingest"
+      },
+      "response": {
+        "body": {
+          "accepted": 2
+        },
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "matchingRules": {
+          "body": {
+            "$.accepted": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 202
+      }
+    },
+    {
+      "description": "a batch with an unknown event_type",
+      "providerStates": [
+        {
+          "name": "event ingest is healthy"
+        }
+      ],
+      "request": {
+        "body": {
+          "events": [
+            {
+              "app_id": "bb_express",
+              "client_ts": "2026-05-04T10:00:00Z",
+              "device_id": "dev_uuid",
+              "event_type": "not.a.real.event",
+              "identity_id": "id_uuid",
+              "payload": {},
+              "protocol_version": "v1",
+              "sdk_version": "1.0.4",
+              "session_id": "s_uuid"
+            }
+          ]
+        },
+        "headers": {
+          "Content-Type": "application/json",
+          "Idempotency-Key": "unknownevent12345",
+          "X-App-Id": "bb_express",
+          "X-Auth-Protocol-Version": "v1"
+        },
+        "matchingRules": {
+          "body": {
+            "$": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          },
+          "header": {
+            "Idempotency-Key": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[A-Za-z0-9_-]{16,}$"
+                }
+              ]
+            }
+          }
+        },
+        "method": "POST",
+        "path": "/events/v1/ingest"
+      },
+      "response": {
+        "body": {
+          "code": "UNKNOWN_EVENT_TYPE",
+          "error": "Unknown event_type: not.a.real.event",
+          "trace_id": "t_unknown_event"
+        },
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "matchingRules": {
+          "body": {
+            "$.error": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.trace_id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 400
+      }
+    },
+    {
+      "description": "a bulk consent acceptance request",
+      "providerStates": [
+        {
+          "name": "identity test-crew-1 exists"
+        }
+      ],
+      "request": {
+        "body": {
+          "consents": [
+            {
+              "consent_type": "terms_of_service",
+              "policy_version": "2026-01-01"
+            }
+          ]
+        },
+        "headers": {
+          "Authorization": "Bearer eyJhbGc...",
+          "Content-Type": "application/json",
+          "Idempotency-Key": "bulkconsent12345",
+          "X-App-Id": "bb_express",
+          "X-Auth-Protocol-Version": "v1"
+        },
+        "matchingRules": {
+          "body": {
+            "$.consents": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            }
+          },
+          "header": {
+            "Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^Bearer .+$"
+                }
+              ]
+            },
+            "Idempotency-Key": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[A-Za-z0-9_-]{16,}$"
+                }
+              ]
+            }
+          }
+        },
+        "method": "POST",
+        "path": "/identity/v1/consents/bulk"
+      },
+      "response": {
+        "body": {
+          "ok": true
+        },
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "status": 200
+      }
+    },
+    {
+      "description": "a bulk consent request missing privacy_policy",
+      "providerStates": [
+        {
+          "name": "identity test-crew-1 exists"
+        },
+        {
+          "name": "audience crew requires terms_of_service + privacy_policy"
+        }
+      ],
+      "request": {
+        "body": {
+          "consents": [
+            {
+              "consent_type": "terms_of_service",
+              "policy_version": "2026-01-01"
+            }
+          ]
+        },
+        "headers": {
+          "Authorization": "Bearer eyJhbGc...",
+          "Content-Type": "application/json",
+          "Idempotency-Key": "partialconsent123",
+          "X-App-Id": "bb_express",
+          "X-Auth-Protocol-Version": "v1"
+        },
+        "matchingRules": {
+          "body": {
+            "$": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          },
+          "header": {
+            "Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^Bearer .+$"
+                }
+              ]
+            },
+            "Idempotency-Key": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[A-Za-z0-9_-]{16,}$"
+                }
+              ]
+            }
+          }
+        },
+        "method": "POST",
+        "path": "/identity/v1/consents/bulk"
+      },
+      "response": {
+        "body": {
+          "code": "CONSENT_REQUIRED",
+          "error": "One or more required consents are missing.",
+          "missing_consents": [
+            "privacy_policy"
+          ],
+          "trace_id": "t_consent_missing"
+        },
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "matchingRules": {
+          "body": {
+            "$.error": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.missing_consents": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.trace_id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 400
+      }
+    },
+    {
+      "description": "a code verify request",
+      "providerStates": [
+        {
+          "name": "identity test-crew-1 exists"
+        },
+        {
+          "name": "a valid one-time code 000000 is pending for test-crew-1"
+        }
+      ],
+      "request": {
+        "body": {
+          "app_id": "bb_express",
+          "code": "000000",
+          "destination": "test-crew-1@test.bainbridgebuilders.com",
+          "device_id": "test-device-abc"
+        },
+        "headers": {
+          "Content-Type": "application/json",
+          "X-Auth-Protocol-Version": "v1"
+        },
+        "matchingRules": {
+          "body": {
+            "$.device_id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "method": "POST",
+        "path": "/auth/v1/code/verify"
+      },
+      "response": {
+        "body": {
+          "access_token": "eyJhbGc...",
+          "aggregate": {
+            "app_access": [
+              "bb_express"
+            ],
+            "features": [
+              "crew.timesheet"
+            ]
+          },
+          "expires_at": "2026-04-28T05:00:00Z",
+          "identity": {
+            "display_name": "Crew Sam",
+            "identity_id": "id_uuid",
+            "identity_kind": "human"
+          },
+          "refresh_token": "rt_a1b2c3d4",
+          "session_id": "s_uuid",
+          "session_meta": {
+            "expires_at": "2026-04-28T05:00:00Z",
+            "issued_at": "2026-04-28T04:30:00Z",
+            "session_id": "s_uuid"
+          }
+        },
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "matchingRules": {
+          "body": {
+            "$.access_token": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.aggregate.app_access": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.aggregate.features": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.expires_at": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}"
+                }
+              ]
+            },
+            "$.identity.display_name": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.identity.identity_id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.identity.identity_kind": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^(human|device|service|external_app|agent)$"
+                }
+              ]
+            },
+            "$.refresh_token": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.session_id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.session_meta.expires_at": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.session_meta.issued_at": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.session_meta.session_id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      }
+    },
+    {
+      "description": "a code verify request with an invalid code",
+      "providerStates": [
+        {
+          "name": "identity test-crew-1 exists"
+        },
+        {
+          "name": "no valid one-time code is pending for test-crew-1"
+        }
+      ],
+      "request": {
+        "body": {
+          "app_id": "bb_express",
+          "code": "999999",
+          "destination": "test-crew-1@test.bainbridgebuilders.com",
+          "device_id": "test-device-abc"
+        },
+        "headers": {
+          "Content-Type": "application/json",
+          "X-Auth-Protocol-Version": "v1"
+        },
+        "matchingRules": {
+          "body": {
+            "$.device_id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "method": "POST",
+        "path": "/auth/v1/code/verify"
+      },
+      "response": {
+        "body": {
+          "code": "AUTH_CODE_INVALID",
+          "error": "The code you entered is invalid.",
+          "trace_id": "t_abc123"
+        },
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "matchingRules": {
+          "body": {
+            "$.error": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.trace_id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 401
+      }
+    },
+    {
+      "description": "a profile update with stale If-Match version",
+      "providerStates": [
+        {
+          "name": "identity test-crew-1 has profile at version 8"
+        },
+        {
+          "name": "a concurrent writer has bumped profile to version 9"
+        }
+      ],
+      "request": {
+        "body": {
+          "display_name": "Crew Sam Updated"
+        },
+        "headers": {
+          "Authorization": "Bearer eyJhbGc...",
+          "Content-Type": "application/json",
+          "Idempotency-Key": "profileput1234567",
+          "If-Match": "8",
+          "X-App-Id": "bb_express",
+          "X-Auth-Protocol-Version": "v1"
+        },
+        "matchingRules": {
+          "body": {
+            "$": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          },
+          "header": {
+            "Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^Bearer .+$"
+                }
+              ]
+            },
+            "Idempotency-Key": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[A-Za-z0-9_-]{16,}$"
+                }
+              ]
+            }
+          }
+        },
+        "method": "PUT",
+        "path": "/identity/v1/profile"
+      },
+      "response": {
+        "body": {
+          "code": "SYNC_CONFLICT",
+          "error": "Profile version mismatch.",
+          "trace_id": "t_conflict_abc"
+        },
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "matchingRules": {
+          "body": {
+            "$.error": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.trace_id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 409
+      }
+    },
+    {
+      "description": "a request for an SMS code",
+      "providerStates": [
+        {
+          "name": "app bb_express is registered"
+        }
+      ],
+      "request": {
+        "body": {
+          "app_id": "bb_express",
+          "channel": "sms",
+          "destination": "+15555550100"
+        },
+        "headers": {
+          "Content-Type": "application/json",
+          "Idempotency-Key": "abcd1234efgh5678",
+          "X-App-Id": "bb_express",
+          "X-Auth-Protocol-Version": "v1"
+        },
+        "matchingRules": {
+          "body": {
+            "$": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          },
+          "header": {
+            "Idempotency-Key": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[A-Za-z0-9_-]{16,}$"
+                }
+              ]
+            }
+          }
+        },
+        "method": "POST",
+        "path": "/auth/v1/code/request"
+      },
+      "response": {
+        "body": {
+          "ok": true
+        },
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "status": 200
+      }
+    },
+    {
+      "description": "a request for consent documents for audience=crew",
+      "providerStates": [
+        {
+          "name": "audience crew has 2 required + 1 optional consent doc"
+        }
+      ],
+      "request": {
+        "headers": {
+          "X-App-Id": "bb_express",
+          "X-Auth-Protocol-Version": "v1"
+        },
+        "method": "GET",
+        "path": "/identity/v1/consent-documents",
+        "query": {
+          "audience": [
+            "crew"
+          ]
+        }
+      },
+      "response": {
+        "body": {
+          "documents": [
+            {
+              "consent_type": "terms_of_service",
+              "policy_version": "2026-01-01",
+              "required": true,
+              "title": "Terms of Service",
+              "url": "https://bainbridgebuilders.com/legal/tos"
+            }
+          ]
+        },
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "matchingRules": {
+          "body": {
+            "$.documents": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.documents[*].consent_type": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.documents[*].policy_version": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.documents[*].required": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.documents[*].title": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.documents[*].url": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      }
+    },
+    {
+      "description": "a request for current settings",
+      "providerStates": [
+        {
+          "name": "identity test-crew-1 has settings at version 4"
+        }
+      ],
+      "request": {
+        "headers": {
+          "Authorization": "Bearer eyJhbGc...",
+          "X-App-Id": "bb_express",
+          "X-Auth-Protocol-Version": "v1"
+        },
+        "matchingRules": {
+          "header": {
+            "Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^Bearer .+$"
+                }
+              ]
+            }
+          }
+        },
+        "method": "GET",
+        "path": "/identity/v1/settings"
+      },
+      "response": {
+        "body": {
+          "settings": {
+            "notifications_enabled": true,
+            "theme": "dark"
+          },
+          "version": 4
+        },
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "matchingRules": {
+          "body": {
+            "$.settings": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.version": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      }
+    },
+    {
+      "description": "a request for the current profile",
+      "providerStates": [
+        {
+          "name": "identity test-crew-1 has an existing profile at version 7"
+        }
+      ],
+      "request": {
+        "headers": {
+          "Authorization": "Bearer eyJhbGc...",
+          "X-App-Id": "bb_express",
+          "X-Auth-Protocol-Version": "v1"
+        },
+        "matchingRules": {
+          "header": {
+            "Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^Bearer .+$"
+                }
+              ]
+            }
+          }
+        },
+        "method": "GET",
+        "path": "/identity/v1/profile"
+      },
+      "response": {
+        "body": {
+          "completeness_score": 85,
+          "display_name": "Crew Sam",
+          "email": "sam@example.com",
+          "family_name": "Naidi",
+          "given_name": "Sam",
+          "identity_id": "id_uuid",
+          "missing_required_fields": [
+            "avatar_url"
+          ],
+          "phone_e164": "+15555550100",
+          "profile_version": 7,
+          "updated_at": "2026-05-04T10:00:00Z"
+        },
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "matchingRules": {
+          "body": {
+            "$.completeness_score": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.display_name": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.email": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.family_name": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.given_name": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.identity_id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.missing_required_fields": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.phone_e164": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.profile_version": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.updated_at": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      }
+    },
+    {
+      "description": "a request for the current session",
+      "providerStates": [
+        {
+          "name": "an active session exists for test-crew-1"
+        }
+      ],
+      "request": {
+        "headers": {
+          "Authorization": "Bearer eyJhbGc...",
+          "X-App-Id": "bb_express",
+          "X-Auth-Protocol-Version": "v1"
+        },
+        "matchingRules": {
+          "header": {
+            "Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^Bearer .+$"
+                }
+              ]
+            }
+          }
+        },
+        "method": "GET",
+        "path": "/auth/v1/me"
+      },
+      "response": {
+        "body": {
+          "aggregate": {
+            "app_access": [
+              "bb_express"
+            ],
+            "features": [
+              "crew.timesheet"
+            ]
+          },
+          "identity": {
+            "display_name": "Crew Sam",
+            "identity_id": "id_uuid",
+            "identity_kind": "human"
+          },
+          "session_meta": {
+            "expires_at": "2026-04-28T05:00:00Z",
+            "issued_at": "2026-04-28T04:30:00Z",
+            "session_id": "s_uuid"
+          }
+        },
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8",
+          "ETag": "\"v3\""
+        },
+        "matchingRules": {
+          "body": {
+            "$.aggregate.app_access": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.aggregate.features": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.identity.display_name": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.identity.identity_id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.identity.identity_kind": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^(human|device|service|external_app|agent)$"
+                }
+              ]
+            },
+            "$.session_meta.expires_at": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.session_meta.issued_at": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.session_meta.session_id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          },
+          "header": {
+            "ETag": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      }
+    },
+    {
+      "description": "a request to list active consents",
+      "providerStates": [
+        {
+          "name": "identity test-crew-1 has 2 active consents"
+        }
+      ],
+      "request": {
+        "headers": {
+          "Authorization": "Bearer eyJhbGc...",
+          "X-App-Id": "bb_express",
+          "X-Auth-Protocol-Version": "v1"
+        },
+        "matchingRules": {
+          "header": {
+            "Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^Bearer .+$"
+                }
+              ]
+            }
+          }
+        },
+        "method": "GET",
+        "path": "/identity/v1/consents"
+      },
+      "response": {
+        "body": {
+          "consents": [
+            {
+              "consent_type": "terms_of_service",
+              "granted_at": "2026-04-15T12:00:00Z",
+              "id": "cons_uuid",
+              "policy_version": "2026-01-01",
+              "revoked_at": null
+            }
+          ]
+        },
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "matchingRules": {
+          "body": {
+            "$.consents": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.consents[*].consent_type": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.consents[*].granted_at": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}"
+                }
+              ]
+            },
+            "$.consents[*].id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.consents[*].policy_version": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      }
+    },
+    {
+      "description": "a session refresh request",
+      "providerStates": [
+        {
+          "name": "a valid refresh token exists for test-crew-1"
+        }
+      ],
+      "request": {
+        "body": {
+          "refresh_token": "rt_a1b2c3d4"
+        },
+        "headers": {
+          "Content-Type": "application/json",
+          "Idempotency-Key": "a1b2c3d4e5f60708",
+          "X-App-Id": "bb_express",
+          "X-Auth-Protocol-Version": "v1"
+        },
+        "matchingRules": {
+          "body": {
+            "$.refresh_token": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          },
+          "header": {
+            "Idempotency-Key": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[A-Fa-f0-9]{16}$"
+                }
+              ]
+            }
+          }
+        },
+        "method": "POST",
+        "path": "/auth/v1/session/refresh"
+      },
+      "response": {
+        "body": {
+          "access_token": "eyJhbGc...new",
+          "expires_at": "2026-04-28T06:00:00Z",
+          "refresh_token": "rt_e5f6g7h8",
+          "session_id": "s_uuid"
+        },
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "matchingRules": {
+          "body": {
+            "$.access_token": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.expires_at": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}"
+                }
+              ]
+            },
+            "$.refresh_token": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.session_id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      }
+    },
+    {
+      "description": "a session revoke request",
+      "providerStates": [
+        {
+          "name": "an active session exists for test-crew-1"
+        }
+      ],
+      "request": {
+        "body": {},
+        "headers": {
+          "Authorization": "Bearer eyJhbGc...",
+          "Content-Type": "application/json",
+          "Idempotency-Key": "revoke1234567890",
+          "X-App-Id": "bb_express",
+          "X-Auth-Protocol-Version": "v1"
+        },
+        "matchingRules": {
+          "header": {
+            "Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^Bearer .+$"
+                }
+              ]
+            },
+            "Idempotency-Key": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[A-Za-z0-9_-]{16,}$"
+                }
+              ]
+            }
+          }
+        },
+        "method": "POST",
+        "path": "/auth/v1/session/revoke"
+      },
+      "response": {
+        "status": 204
+      }
+    },
+    {
+      "description": "a settings update with stale If-Match version",
+      "providerStates": [
+        {
+          "name": "identity test-crew-1 has settings at version 5"
+        },
+        {
+          "name": "a concurrent writer has bumped settings to version 6"
+        }
+      ],
+      "request": {
+        "body": {
+          "settings": {
+            "theme": "light"
+          }
+        },
+        "headers": {
+          "Authorization": "Bearer eyJhbGc...",
+          "Content-Type": "application/json",
+          "Idempotency-Key": "settingsput123456",
+          "If-Match": "5",
+          "X-App-Id": "bb_express",
+          "X-Auth-Protocol-Version": "v1"
+        },
+        "matchingRules": {
+          "body": {
+            "$": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          },
+          "header": {
+            "Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^Bearer .+$"
+                }
+              ]
+            },
+            "Idempotency-Key": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[A-Za-z0-9_-]{16,}$"
+                }
+              ]
+            }
+          }
+        },
+        "method": "PUT",
+        "path": "/identity/v1/settings"
+      },
+      "response": {
+        "body": {
+          "code": "SYNC_CONFLICT",
+          "error": "Settings version mismatch.",
+          "trace_id": "t_conflict_xyz"
+        },
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "matchingRules": {
+          "body": {
+            "$.error": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.trace_id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 409
+      }
+    }
+  ],
+  "metadata": {
+    "pact-js": {
+      "version": "16.3.0"
+    },
+    "pactRust": {
+      "ffi": "0.5.3",
+      "models": "1.3.9"
+    },
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  },
+  "provider": {
+    "name": "bb-ct-bff"
+  }
+}

@@ -1,5 +1,19 @@
-# @samjonaidi-ship-it/universal-auth | .github/workflows/chaos.yml | v1.0.2 | 2026-05-02 | BB
+# @samjonaidi-ship-it/universal-auth | .github/workflows/chaos.yml | v1.0.5 | 2026-05-04 | BB
 # Nightly chaos + 24h memory soak per spec §11.6 + §11.7.
+# v1.0.5 (2026-05-04, L2.14):
+#   - + integration job: real Neon test branch (neonctl branches create from
+#     prod main) + ct-bff pointed at it via docker-compose.neon.yml override.
+#     Closes the Neon-HTTP-vs-local-pg blocker called out in
+#     test/integration/docker-compose.test.yml line 60-77. A5 audit gates
+#     #2 + #4 unblocked.
+#   - Gated on repo variable NEON_INTEGRATION_ENABLED=true. Until Sam adds the
+#     NEON_API_KEY + NEON_PROJECT_ID secrets and flips the var, the job shows
+#     as "skipped" (green CI), not red. Chaos job left unchanged for now —
+#     same blocker but out of L2.14 scope.
+#   - Branch lifecycle: created from prod `main` (inherits live schema), torn
+#     down in `if: always()` so failures never leak branches. Branch name is
+#     `ci-int-<run_id>-<attempt>` for traceability.
+#   - URI masked via `::add-mask::` before exporting to GITHUB_ENV.
 # v1.1.0 (2026-04-30):
 #   - Cross-repo checkout of samjoonaidi-ship-it/BB_ControlTower as sibling so
 #     test/integration/docker-compose.test.yml can build ct-bff from source
@@ -19,7 +33,157 @@ on:
     - cron: '0 4 * * *'  # 04:00 UTC daily
   workflow_dispatch:
 
+# NOTE: NEON_PROJECT_ID is the production Neon project hosting the ct_bff
+# schema. Stored as a repo secret (not env literal) so it's not in git history.
+# If the secret is unset the integration job is skipped — see job `if:` guard.
+
 jobs:
+  # ─────────────────────────────────────────────────────────────────────────
+  # L2.14: Integration tests against a real Neon test branch.
+  # Replaces the previously-blocked local-pg path. The branch is forked from
+  # the prod Neon main branch (so it inherits current ct_bff schema +
+  # migrations) and torn down after the run.
+  # ─────────────────────────────────────────────────────────────────────────
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Only run if the Neon API key is wired up. Until Sam adds the secret,
+    # this job shows as skipped (not red) so CI stays green.
+    if: ${{ vars.NEON_INTEGRATION_ENABLED == 'true' }}
+    outputs:
+      branch_name: ${{ steps.neon.outputs.branch_name }}
+    steps:
+      - name: Checkout universal-auth
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: universal-auth
+
+      - name: Checkout BB_ControlTower (sibling repo for ct-bff Dockerfile)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: samjonaidi-ship-it/BB_ControlTower
+          token: ${{ secrets.BB_CROSS_REPO_PAT }}
+          path: BB_ControlTower
+
+      - uses: pnpm/action-setup@0c17529a66aca453f9227af23103ed11469b1e47 # v4.0.0
+        with:
+          version: 10
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: universal-auth/pnpm-lock.yaml
+
+      - name: Install deps
+        working-directory: universal-auth
+        run: pnpm install --frozen-lockfile
+
+      - name: Install neonctl
+        run: npm install -g neonctl@2
+
+      # Create a fresh Neon branch forked from prod `main`. Inherits whatever
+      # schema + migrations are live in production at this moment, so we never
+      # have to maintain a parallel migration runner here.
+      - name: Create Neon test branch
+        id: neon
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          BRANCH_NAME="ci-int-${{ github.run_id }}-${{ github.run_attempt }}"
+          echo "Creating Neon branch $BRANCH_NAME (forked from main)"
+          neonctl branches create \
+            --project-id "$NEON_PROJECT_ID" \
+            --name "$BRANCH_NAME" \
+            --parent main \
+            --output json > /tmp/branch.json
+
+          # Mask the URI in logs before exporting (defense in depth even though
+          # GitHub already redacts secrets — the URI is freshly minted and not
+          # yet in the secrets store).
+          DB_URL=$(jq -r '.connection_uris[0].connection_uri' /tmp/branch.json)
+          if [ -z "$DB_URL" ] || [ "$DB_URL" = "null" ]; then
+            echo "::error::neonctl returned no connection_uri"
+            cat /tmp/branch.json
+            exit 1
+          fi
+          echo "::add-mask::$DB_URL"
+          echo "DATABASE_URL=$DB_URL" >> "$GITHUB_ENV"
+          echo "branch_name=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
+          echo "Neon branch ready"
+
+      - name: Bring up integration stack (ct-bff → Neon branch + mocks)
+        working-directory: universal-auth
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+        run: |
+          docker compose \
+            -f test/integration/docker-compose.test.yml \
+            -f test/integration/docker-compose.neon.yml \
+            up -d twilio-mock resend-mock ct-bff
+
+      - name: Wait for ct-bff to become healthy
+        working-directory: universal-auth
+        run: |
+          for i in $(seq 1 90); do
+            STATE=$(docker inspect --format='{{.State.Health.Status}}' bb-integration-ct-bff 2>/dev/null || echo "missing")
+            echo "  attempt $i: ct-bff health=$STATE"
+            if [ "$STATE" = "healthy" ]; then
+              echo "ct-bff is healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "ct-bff did not become healthy after 180s — dumping logs"
+          docker logs bb-integration-ct-bff --tail=200 || true
+          exit 1
+
+      - name: Run integration suite (8 scenarios, §11.3)
+        working-directory: universal-auth
+        env:
+          INTEGRATION_BASE_URL: http://localhost:3300
+          TEST_MODE_KEY: test-key-do-not-use-in-prod
+        run: pnpm test:integration
+
+      - name: Capture container logs on failure (BEFORE teardown)
+        if: failure()
+        working-directory: universal-auth
+        run: |
+          echo "=== ct-bff ==="
+          docker logs bb-integration-ct-bff --tail=300 2>&1 || true
+          echo "=== twilio-mock ==="
+          docker logs bb-integration-twilio-mock --tail=80 2>&1 || true
+          echo "=== resend-mock ==="
+          docker logs bb-integration-resend-mock --tail=80 2>&1 || true
+          echo "=== compose ps ==="
+          docker compose \
+            -f test/integration/docker-compose.test.yml \
+            -f test/integration/docker-compose.neon.yml ps -a || true
+
+      - name: Tear down docker stack
+        if: always()
+        working-directory: universal-auth
+        run: |
+          docker compose \
+            -f test/integration/docker-compose.test.yml \
+            -f test/integration/docker-compose.neon.yml \
+            down -v || true
+
+      # CRITICAL: run last + always — never leak a Neon branch.
+      - name: Cleanup Neon test branch
+        if: always() && steps.neon.outputs.branch_name != ''
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
+          BRANCH_NAME: ${{ steps.neon.outputs.branch_name }}
+        run: |
+          echo "Deleting Neon branch $BRANCH_NAME"
+          neonctl branches delete \
+            --project-id "$NEON_PROJECT_ID" \
+            "$BRANCH_NAME" \
+            --confirm || echo "::warning::Failed to delete Neon branch $BRANCH_NAME — manual cleanup required"
+
   chaos:
     runs-on: ubuntu-latest
     timeout-minutes: 60

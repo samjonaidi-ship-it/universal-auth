@@ -1,0 +1,57 @@
+# @samjonaidi-ship-it/universal-auth | test/integration/docker-compose.neon.yml | v1.0.5 | 2026-05-04 | BB
+# Neon-branch override for the integration stack (L2.14 — closes the
+# Neon-HTTP-vs-local-pg blocker called out in docker-compose.test.yml).
+#
+# Layered on top of docker-compose.test.yml:
+#   docker compose \
+#     -f test/integration/docker-compose.test.yml \
+#     -f test/integration/docker-compose.neon.yml \
+#     up -d
+#
+# Effects:
+#   1. Removes the local `postgres` service entirely (set to `replicas: 0` via
+#      `profiles: [disabled]` so the override doesn't bring it up).
+#   2. Drops `ct-bff`'s `depends_on: postgres` healthcheck (postgres no longer
+#      exists in this layered config).
+#   3. Replaces `ct-bff`'s DATABASE_URL with the Neon test-branch URL injected
+#      from CI (env var DATABASE_URL — set by neonctl in chaos.yml).
+#
+# CT BFF's Neon HTTP driver (@neondatabase/serverless) talks to the Neon
+# branch directly over HTTPS — no local pg shim needed. The branch is created
+# fresh per CI run from the production Neon project's `main` branch (so it
+# inherits the current schema + migrations) and torn down in `if: always()`.
+#
+# Local-dev: this override is CI-only. Local devs continue to use
+# docker-compose.test.yml as-is once the local-pg path is unblocked, OR they
+# can opt into Neon by exporting DATABASE_URL + running this override.
+
+services:
+  # Disable the local postgres — Neon branch replaces it. Using `profiles` to
+  # exclude rather than `null`-merge because compose v2 doesn't allow service
+  # removal via override.
+  postgres:
+    profiles:
+      - disabled-by-neon-override
+
+  ct-bff:
+    # Reset depends_on entirely (compose merges depends_on by key, so without
+    # !reset the base file's `postgres: { condition: service_healthy }` would
+    # survive and block ct-bff startup since postgres is excluded by the
+    # `disabled-by-neon-override` profile above). The !reset tag (compose
+    # v2.24+) discards the base value before applying ours.
+    depends_on: !reset
+      twilio-mock:
+        condition: service_started
+      resend-mock:
+        condition: service_started
+    environment:
+      # Override the postgres URL with the Neon branch URL from CI env.
+      # CI sets DATABASE_URL via `neonctl branches create` output.
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set to the Neon branch connection URI}
+      TWILIO_BASE_URL: http://twilio-mock:8080
+      RESEND_BASE_URL: http://resend-mock:8080
+      BB_MODE: test
+      PORT: "3300"
+      TEST_MODE_KEY: test-key-do-not-use-in-prod
+      ACCESS_TOKEN_TTL_SEC: "60"
+      REFRESH_TOKEN_TTL_SEC: "300"
