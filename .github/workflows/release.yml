@@ -108,14 +108,15 @@ jobs:
       # public access, but our package is restricted. GitHub's attestation
       # API generates a sigstore-backed provenance attestation regardless of
       # registry access mode. Verifiable via `gh attestation verify <tarball>
-      # --owner BainbridgeBuilders`.
+      # --owner samjonaidi-ship-it`.
       #
-      # Entitlement reality (CORRECTED 2026-05-03 from v1.0.2 release attempt):
+      # Entitlement reality (UPDATED 2026-05-03 — `BainbridgeBuilders` org
+      # decommissioned same day; repo transferred back to `samjonaidi-ship-it`):
       #   `actions/attest-build-provenance` for PRIVATE repos requires
-      #   GitHub Enterprise Cloud — Team plan only covers PUBLIC repos.
-      #   BainbridgeBuilders org is on Team plan; this step's API call
-      #   returns 403 "Feature not available" until either (a) the org
-      #   moves to Enterprise Cloud, OR (b) the repo is made public.
+      #   GitHub Enterprise Cloud. The new owning org `samjonaidi-ship-it`
+      #   is on the free personal/Pro tier (no Team/Enterprise plan), so
+      #   this step still returns 403 "Feature not available" until either
+      #   (a) the owning account upgrades, OR (b) the repo is made public.
       #   Tracked in SDK_COMPLETION_BACKLOG.md as a v1.1+ deferral.
       #
       # Step is `continue-on-error` until the entitlement is resolved so

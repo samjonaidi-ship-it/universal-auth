@@ -1,4 +1,4 @@
-# Integration Guide | `@samjonaidi-ship-it/universal-auth` | v1.0.1 | 2026-05-01 | BB
+# Integration Guide | `@samjonaidi-ship-it/universal-auth` | v1.0.4 | 2026-05-04 | BB
 
 > **Read first**: [`CREW_UX_PRINCIPLES.md`](./CREW_UX_PRINCIPLES.md). BB
 > Express users wear gloves and have dirty hands. Every UX decision in
@@ -15,6 +15,20 @@ How to add `@samjonaidi-ship-it/universal-auth` to a Bainbridge Builders consume
 - Cross-tab refresh coalescing via `navigator.locks` (replaces former SharedWorker plan). No API change.
 - `Retry-After` header honored on offline queue 429 responses. No API change.
 
+**v1.0.2 changes affecting consumers (2026-05-02 — Lane 2 hardening):**
+- Rcodex security pass — 31 internal bugs fixed (token-manager invalidate, settings-sync changed_keys, storage clearAllSessionState, session-watcher revoke event, entitlements input guards, etc.).
+- `<ConsentVersionWatcher>` gained WCAG 2.1 SC 2.1.2 focus trap; `<ContactInfoForm>` accepts `required?: boolean`; `<VehicleSection>` adds submit-time validation with `aria-invalid` / `role="alert"`.
+- No API breaks. Drop-in upgrade from v1.0.1.
+
+**v1.0.3 changes affecting consumers (2026-05-03 — scope rename):**
+- Package renamed `@bainbridgebuilders/universal-auth` → `@samjonaidi-ship-it/universal-auth`. Bit-identical runtime; only the import path changes.
+- Update `package.json` + `.npmrc` scope key + every `import` site (see CHANGELOG v1.0.3 for diff). Repo transferred to `samjonaidi-ship-it/universal-auth`.
+
+**v1.0.4 changes affecting consumers (2026-05-04 — additive):**
+- New `X-Device-Id: <32-char hex>` header on authenticated requests (anonymous endpoints skip it). Sourced from memoized `getOrCreateDeviceId()`. Additive — no existing contract changes.
+- `useImpersonation()` return value gains `lastDriftEvent: ImpersonationDriftEvent | null` for surfacing `impersonation.local_clear_drift` events. New imperative `onLocalClearDrift(listener)` export.
+- 614/614 tests pass; branch coverage threshold restored to 85%.
+
 **Audience:** Sam (CalExp5 cutover), future ControlTower implementer, third-party integrator.
 
 **Tone:** copy-paste-able. Each section is a self-contained "do this".
@@ -28,7 +42,7 @@ How to add `@samjonaidi-ship-it/universal-auth` to a Bainbridge Builders consume
 | Node 20+ | local + CI | required for ESM + Web Crypto |
 | pnpm, npm, or yarn | local + CI | any modern package manager |
 | GitHub Packages auth token | `.npmrc` | personal access token with `read:packages` scope (see §1) |
-| CT BFF dev branch with migrations 046-058 applied | Neon | required for integration tests; run `pnpm bff:migrate` in `BainbridgeBuilders/control-tower` |
+| CT BFF dev branch with migrations 046-058 applied | Neon | required for integration tests; run `pnpm bff:migrate` in `samjonaidi-ship-it/BB_ControlTower` |
 | App registered in `ct_bff.apps` table | CT BFF | `app_id`, `event_types[]` populated. **Hard prereq before flipping the feature flag** (see §6). |
 
 ---
@@ -38,7 +52,7 @@ How to add `@samjonaidi-ship-it/universal-auth` to a Bainbridge Builders consume
 The package is published private on GitHub Packages registry. Consumer `.npmrc`:
 
 ```ini
-@bainbridgebuilders:registry=https://npm.pkg.github.com
+@samjonaidi-ship-it:registry=https://npm.pkg.github.com
 //npm.pkg.github.com/:_authToken=${GITHUB_PACKAGES_TOKEN}
 ```
 
@@ -117,7 +131,7 @@ ON CONFLICT (id) DO UPDATE SET
 **Verification:** SDK calls `POST /events/v1/ingest` with each declared type — returns 200 with all events accepted. Run smoke check after registration:
 
 ```bash
-curl -X POST https://ct-bff.bainbridgebuilders.com/events/v1/ingest \
+curl -X POST https://api.buildwithbainbridge.com/events/v1/ingest \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"events":[{
@@ -141,8 +155,8 @@ If you see `{"accepted":0,"rejected":1,"details":[{"reason":"UNKNOWN_EVENT_TYPE"
 Add to `<head>` of every consumer-app HTML entry, BEFORE the SDK loads:
 
 ```html
-<link rel="preconnect" href="https://ct-bff.bainbridgebuilders.com">
-<link rel="dns-prefetch" href="https://ct-bff.bainbridgebuilders.com">
+<link rel="preconnect" href="https://api.buildwithbainbridge.com">
+<link rel="dns-prefetch" href="https://api.buildwithbainbridge.com">
 ```
 
 Saves ~100-300ms on cold first auth call (TLS handshake parallelizes with bundle download).
@@ -156,8 +170,8 @@ The SDK is CSP-compatible. Default-deny CSP with explicit allowlist works:
 ```http
 Content-Security-Policy:
   default-src 'self';
-  connect-src 'self' https://ct-bff.bainbridgebuilders.com;
-  img-src 'self' data: https://bb-profile-avatars.bainbridgebuilders.com;
+  connect-src 'self' https://api.buildwithbainbridge.com;
+  img-src 'self' data: https://*.r2.cloudflarestorage.com;  /* TODO: confirm canonical avatar bucket host post-D20 (legacy: bb-profile-avatars.bainbridgebuilders.com) */
   worker-src 'self' blob:;
   script-src 'self' 'nonce-${NONCE}';
   style-src 'self' 'nonce-${NONCE}';
@@ -173,21 +187,21 @@ If CSP blocks the Web Worker, the SDK falls back to inline crypto automatically 
 
 ---
 
-## 5. Cookie domain override (non-`*.bainbridgebuilders.com` consumers)
+## 5. Cookie domain override (non-`*.buildwithbainbridge.com` consumers)
 
-The SDK defaults to `cookieDomain: '.bainbridgebuilders.com'` so the session cookie is shared across BB Express, ControlTower, demo, etc.
+The SDK defaults to `cookieDomain: '.buildwithbainbridge.com'` so the session cookie is shared across BB Express, ControlTower, etc.
 
 **If your app is on a different root domain** (e.g., a partner-branded portal at `mycompany.com`), set:
 
 ```ts
 await initUniversalAuth({
-  apiBaseUrl: 'https://ct-bff.bainbridgebuilders.com',
+  apiBaseUrl: 'https://api.buildwithbainbridge.com',
   appId: 'partner_portal',
   cookieDomain: '.mycompany.com',  // override
 });
 ```
 
-The demo at `auth-sdk-demo.bainbridgebuilders.com` falls under the default and does NOT need the override.
+The former demo at `auth-sdk-demo.bainbridgebuilders.com` is **retired** as of 2026-05-01 (D20). `demo/` source survives in the repo for local `pnpm demo:dev` only.
 
 ---
 
@@ -341,7 +355,7 @@ Per spec §13.4, sessions issued under the SDK remain valid 90 days after rollba
 import * as Sentry from '@sentry/react';
 
 await initUniversalAuth({
-  apiBaseUrl: 'https://ct-bff.bainbridgebuilders.com',
+  apiBaseUrl: 'https://api.buildwithbainbridge.com',
   appId: 'bb_express',
   onError: (err) => Sentry.captureException(err, { tags: { source: 'universal-auth' } }),
 });
@@ -398,7 +412,7 @@ Expected line delta: **−1,800 / +200** per spec §13.2 (replaces ~1,800 lines 
 | `UNKNOWN_EVENT_TYPE` errors flooding logs | event types not registered in `ct_bff.app_events` | run §2 SQL |
 | Tests fail with ENOTFOUND ct-bff.test | docker stack not running | `docker compose -f test/integration/docker-compose.test.yml up -d` |
 
-For anything else, file an issue in `BainbridgeBuilders/universal-auth` with: SDK version, consumer app + version, network HAR, Sentry trace.
+For anything else, file an issue in `samjonaidi-ship-it/universal-auth` with: SDK version, consumer app + version, network HAR, Sentry trace.
 
 ---
 

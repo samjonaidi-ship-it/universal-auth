@@ -1,4 +1,4 @@
-# @samjonaidi-ship-it/universal-auth | .github/workflows/chaos.yml | v1.0.5 | 2026-05-04 | BB
+# @samjonaidi-ship-it/universal-auth | .github/workflows/chaos.yml | v1.0.4 | 2026-05-04 | BB
 # Nightly chaos + 24h memory soak per spec §11.6 + §11.7.
 # v1.0.5 (2026-05-04, L2.14):
 #   - + integration job: real Neon test branch (neonctl branches create from

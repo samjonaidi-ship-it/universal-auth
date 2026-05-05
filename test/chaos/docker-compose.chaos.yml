@@ -1,4 +1,4 @@
-# @bb/universal-auth | test/chaos/docker-compose.chaos.yml | v1.1.0 | 2026-04-30 | BB
+# @samjonaidi-ship-it/universal-auth | test/chaos/docker-compose.chaos.yml | v1.0.4 | 2026-05-04 | BB
 # Chaos overlay — adds Toxiproxy in front of the integration stack.
 # v1.1.0: drop `external: true, name: agent_bb-integration` — that worked when
 #   developers ran the integration stack first under project name "agent" then

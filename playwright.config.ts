@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | playwright.config.ts | v1.0.5 | 2026-05-04 | BB
+// @samjonaidi-ship-it/universal-auth | playwright.config.ts | v1.0.4 | 2026-05-04 | BB
 // Playwright matrix per spec §11.5 + plan Block 6 Day 20-21 + DoD A5 audit gate #3 (L2.12).
 //
 // 12 project configs = 4 browsers × 3 form factors:

@@ -1,5 +1,7 @@
 # Release Notes — `@samjonaidi-ship-it/universal-auth`
 
+> **Scope policy:** RELEASE_NOTES tracks **GA milestones only** (1.0, 1.1, 2.0, etc.). Patch releases (1.0.1 → 1.0.4 to date) are documented in `docs/CHANGELOG.md` — see there for v1.0.1 hardening, v1.0.2 Rcodex pass, v1.0.3 scope rename (`@bainbridgebuilders` → `@samjonaidi-ship-it`), and v1.0.4 Lane 2 ship.
+
 ## v1.0.0 — 2026-04-30 — General Availability
 
 **First stable release.** Recommended upgrade for all consumers on rc.2. No public API breaks; only test hardening + lint cleanup.
@@ -21,7 +23,7 @@
 | 4 | Chaos suite | 🟡 deferred to v1.0.1 |
 | 5 | Performance budget | ✅ cold-start 24.51 ms vs 50 ms |
 | 6 | Security audit | ✅ 18/18 |
-| 7 | Demo deployed | ✅ `auth-sdk-demo.bainbridgebuilders.com` |
+| 7 | Demo deployed | 🪦 historical — `auth-sdk-demo.bainbridgebuilders.com` retired 2026-05-01 per D20 (local-only via `pnpm demo:dev` post-v1.0.1) |
 | 8 | QA runbook (40+ scenarios) | ✅ 43 in `docs/QA_RUNBOOK.md` |
 | 9 | Published to GitHub Packages | ✅ this release |
 | 10 | Threat model | ✅ `docs/THREAT_MODEL.md` |
@@ -147,7 +149,7 @@ If you were on rc.1 with a Vite-based consumer, you may have been seeing build f
 - **Account recovery IDV** (Stripe Identity / Persona) — out of scope
 - **Per-tenant white-label SDK config bundle** — out of scope
 - **OAuth 2.0 provider for smart home** — D12 RESERVED Phase 3+
-- **Sibling packages** `@bainbridgebuilders/universal-comms` (Appendix E) + `@bainbridgebuilders/universal-inspect` (Appendix F) — separate repos when built
+- **Sibling packages** `@samjonaidi-ship-it/universal-comms` (Appendix E) + `@samjonaidi-ship-it/universal-inspect` (Appendix F) — separate repos when built
 
 ### Breaking changes from RC vs prior alphas/betas
 
@@ -157,7 +159,7 @@ This is the first published version. There are no prior releases.
 
 - **Pact contract surface:** 2 interactions today (`POST /auth/v1/code/request` + `POST /auth/v1/code/verify`); plan calls for full §3.1-3.5 coverage before GA. Tracked in A5 finding F5.
 - **Demo deploy + browser-matrix live run:** demo deploys at start of Block 7; the browser matrix gates A5 #3 once demo is live.
-- **CT BFF Pact verifier CI job:** lands in `BainbridgeBuilders/control-tower` repo; coordination per Risk R13.
+- **CT BFF Pact verifier CI job:** lands in `samjonaidi-ship-it/BB_ControlTower` repo; coordination per Risk R13.
 - **Security + Legal sign-off** for `1.0.0` GA: deferred to A6 audit.
 - **CalExp5 cutover:** Block 7 Days 24-27. Expected line delta `−1,800 / +200`.
 

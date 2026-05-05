@@ -219,10 +219,10 @@ function Shell({ children }: { children: ReactNode }): ReactNode {
         }}
       >
         © Bainbridge Builders Inc. · BB Universal Auth Demo · See{' '}
-        <a href="https://github.com/BainbridgeBuilders/universal-auth">
+        <a href="https://github.com/samjonaidi-ship-it/universal-auth">
           repo
         </a>
-        {' '}+ <a href="https://github.com/BainbridgeBuilders/universal-auth/blob/main/docs/INTEGRATION_GUIDE.md">
+        {' '}+ <a href="https://github.com/samjonaidi-ship-it/universal-auth/blob/main/docs/INTEGRATION_GUIDE.md">
           docs
         </a>
       </footer>

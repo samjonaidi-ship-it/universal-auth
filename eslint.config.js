@@ -1,4 +1,4 @@
-// @bb/universal-auth | eslint.config.js | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | eslint.config.js | v1.0.0-rc.1 | 2026-04-24 | BB
 // ESLint 9 flat config. Strict rules per plan CI/CD step 2.
 
 import js from '@eslint/js';

@@ -1,4 +1,4 @@
-# @samjonaidi-ship-it/universal-auth | .github/workflows/browser-matrix.yml | v1.0.5 | 2026-05-04 | BB
+# @samjonaidi-ship-it/universal-auth | .github/workflows/browser-matrix.yml | v1.0.4 | 2026-05-04 | BB
 # Nightly Playwright 12-config browser matrix per DoD A5 audit gate #3 (L2.12).
 #
 # 12 configs = 4 browsers × 3 form factors (see playwright.config.ts header for

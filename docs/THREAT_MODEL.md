@@ -1,4 +1,4 @@
-# Threat Model | `@samjonaidi-ship-it/universal-auth` | v1.0.1 | 2026-05-01 | BB
+# Threat Model | `@samjonaidi-ship-it/universal-auth` | v1.0.4 | 2026-05-04 | BB
 
 This document maps every threat in spec §15.3 to (a) the SDK code path that defends against it, (b) the test that regresses the defense. Cross-walked with spec **`BB_UNIVERSAL_AUTH_SDK_SPEC.md v1.6.0`** §15.
 

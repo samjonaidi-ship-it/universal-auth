@@ -8,7 +8,7 @@
 #
 # One-time Railway setup (Sam, ~5 minutes):
 #   1. Railway dashboard → BB-Production → New Service → GitHub Repo
-#   2. Connect BainbridgeBuilders/universal-auth (authorize org access)
+#   2. Connect samjonaidi-ship-it/universal-auth (authorize org access)
 #   3. Service name: auth-sdk-demo
 #   4. Root directory: /demo
 #   5. Custom domain: auth-sdk-demo.bainbridgebuilders.com (Railway auto-issues SSL)

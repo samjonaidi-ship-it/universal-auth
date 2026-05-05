@@ -1,4 +1,4 @@
-# @bb/universal-auth | .gitignore | v1.0.0-rc.1 | 2026-04-24 | BB
+# @samjonaidi-ship-it/universal-auth | .gitignore | v1.0.0-rc.2 | 2026-05-04 | BB
 node_modules/
 dist/
 coverage/
@@ -50,6 +50,7 @@ test-results.xml
 # Build/release artifacts (regenerated on each build/release)
 *.tgz
 *.cdx.json
+dist-pack/
 
 # Runtime state
 data/

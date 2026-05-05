@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | test/contract/identity-profile.contract.test.ts | v1.0.5 | 2026-05-04 | BB
+// @samjonaidi-ship-it/universal-auth | test/contract/identity-profile.contract.test.ts | v1.0.4 | 2026-05-04 | BB
 // Pact consumer contract for §3.3 identity-profile endpoints.
 //
 // Asserts the wire shapes for:
