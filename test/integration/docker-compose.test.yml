@@ -131,7 +131,10 @@ services:
     networks:
       - bb-integration
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O - http://localhost:3300/healthz || exit 1"]
+      # node:22-slim has no wget/curl. Use node's built-in http instead so the
+      # healthcheck works without extra apt-installs in the BFF Dockerfile.
+      # Returns exit 0 when /healthz responds with 200.
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3300/healthz', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))\""]
       interval: 3s
       timeout: 5s
       retries: 30
