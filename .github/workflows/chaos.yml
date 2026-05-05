@@ -145,6 +145,18 @@ jobs:
           echo "branch_name=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
           echo "Neon branch ready"
 
+      - name: Seed integration test users
+        working-directory: universal-auth
+        run: |
+          set -euo pipefail
+          # Production has Mike/Sarah/Tom seeded but the integration test
+          # helpers use the spec §10.3 user names (test-crew-1, test-supplier-1,
+          # test-client-1, test-admin). Seed them now into the per-run Neon
+          # branch — production is unaffected because the branch is destroyed
+          # in cleanup. Idempotent INSERT ... ON CONFLICT DO NOTHING.
+          sudo apt-get install -y --no-install-recommends postgresql-client >/dev/null 2>&1
+          psql "$DATABASE_URL" -f test/integration/seed-test-users.sql
+
       - name: Bring up integration stack (ct-bff → Neon branch + mocks)
         working-directory: universal-auth
         env:
