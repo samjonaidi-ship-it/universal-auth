@@ -90,6 +90,8 @@ jobs:
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
           NEON_PARENT_BRANCH: ${{ vars.NEON_PARENT_BRANCH }}
+          NEON_ROLE_NAME: ${{ vars.NEON_ROLE_NAME }}
+          NEON_DATABASE_NAME: ${{ vars.NEON_DATABASE_NAME }}
         run: |
           set -euo pipefail
           BRANCH_NAME="ci-int-${{ github.run_id }}-${{ github.run_attempt }}"
@@ -97,29 +99,45 @@ jobs:
           # default branch). Override via NEON_PARENT_BRANCH repo var if needed.
           PARENT_BRANCH="${NEON_PARENT_BRANCH:-production}"
           echo "Creating Neon branch $BRANCH_NAME (forked from $PARENT_BRANCH)"
+          # neonctl writes a "WARNING: parent branch is protected..." line to
+          # stdout BEFORE the JSON when parent is protected. Use --no-color
+          # and grep from the first '{' to skip the warning prefix.
           neonctl branches create \
             --project-id "$NEON_PROJECT_ID" \
             --name "$BRANCH_NAME" \
             --parent "$PARENT_BRANCH" \
-            --output json > /tmp/branch.json
+            --no-color \
+            --output json 2>/tmp/branch.stderr | sed -n '/^{/,$p' > /tmp/branch.json
+          if [ ! -s /tmp/branch.json ]; then
+            echo "::error::neonctl branches create produced no JSON"
+            cat /tmp/branch.stderr || true
+            exit 1
+          fi
 
           # Try `connection_uris[0].connection_uri` first (fast path when parent
           # is unprotected). When parent is protected, Neon creates a new role
           # password but does NOT include it in `branches create` output —
           # `connection_uris` will be missing/null. In that case fall back to
           # `neonctl connection-string` which fetches a usable URI for the new
-          # branch's freshly-minted role.
+          # branch's freshly-minted role. Project polished-lab-12287925 has
+          # multiple roles (bb_runtime_app + neondb_owner), so we must specify
+          # both --role-name and --database-name.
           DB_URL=$(jq -r '.connection_uris[0].connection_uri // empty' /tmp/branch.json)
           if [ -z "$DB_URL" ] || [ "$DB_URL" = "null" ]; then
             echo "branch create did not return connection_uris (parent likely protected); fetching via connection-string"
             DB_URL=$(neonctl connection-string \
               --project-id "$NEON_PROJECT_ID" \
               --branch "$BRANCH_NAME" \
-              --pooled 2>/dev/null || true)
+              --role-name "${NEON_ROLE_NAME:-neondb_owner}" \
+              --database-name "${NEON_DATABASE_NAME:-neondb}" \
+              --pooled 2>/tmp/connstr.stderr || true)
           fi
           if [ -z "$DB_URL" ] || [ "$DB_URL" = "null" ]; then
             echo "::error::could not resolve Neon connection string for branch $BRANCH_NAME"
+            echo "--- branch.json ---"
             cat /tmp/branch.json
+            echo "--- connstr.stderr ---"
+            cat /tmp/connstr.stderr || true
             exit 1
           fi
           echo "::add-mask::$DB_URL"
