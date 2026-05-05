@@ -81,9 +81,11 @@ jobs:
       - name: Install neonctl
         run: npm install -g neonctl@2
 
-      # Create a fresh Neon branch forked from prod `main`. Inherits whatever
-      # schema + migrations are live in production at this moment, so we never
-      # have to maintain a parallel migration runner here.
+      # Create a fresh Neon branch forked from prod `production` (the default
+      # branch on Neon project polished-lab-12287925; overridable via the
+      # NEON_PARENT_BRANCH repo variable). Inherits whatever schema +
+      # migrations are live in production at this moment, so we never have to
+      # maintain a parallel migration runner here.
       - name: Create Neon test branch
         id: neon
         env:
