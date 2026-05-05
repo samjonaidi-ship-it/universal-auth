@@ -50,18 +50,23 @@ describe('Integration #1 — signup → refresh → revoke (§11.3)', () => {
     expect(refreshed.body.access_token).toBeTypeOf('string');
     expect(refreshed.body.access_token).not.toBe(session.accessToken);
 
-    // Step 5: revoke → /me with the OLD access token returns 401
+    // Step 5: revoke → /me with the post-refresh access token returns 401.
+    // We deliberately DON'T pass `cookie:` here. After refresh, the server
+    // issued a new cookie pointing at session_2 (Set-Cookie header), but the
+    // bff() helper doesn't auto-track cookies (browsers do; tests don't).
+    // The original session.cookie still points at session_1 which is NOT
+    // revoked by /session/revoke (revoke kills the *current* session — the
+    // one identified by the bearer token, i.e. session_2 — not session_1).
+    // Bearer-only assertion is the cleanest test of revocation semantics.
     const revoke = await bff('/auth/v1/session/revoke', {
       method: 'POST',
       headers: { Authorization: `Bearer ${refreshed.body.access_token}` },
-      cookie: session.cookie,
       body: {},
     });
     expect(revoke.status).toBe(200);
 
     const meAfterRevoke = await bff('/auth/v1/me', {
       headers: { Authorization: `Bearer ${refreshed.body.access_token}` },
-      cookie: session.cookie,
     });
     expect(meAfterRevoke.status).toBe(401);
   });
