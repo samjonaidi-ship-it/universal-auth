@@ -25,5 +25,54 @@ VALUES
   ('test-admin@test.bainbridgebuilders.com', 'Test Admin', 'admin', 'admin', 'active', 'active', TRUE, NULL)
 ON CONFLICT DO NOTHING;
 
+-- ──────────────────────────────────────────────────────────────────────────
+-- Register the integration-test app (bb_integration_test) with the broad
+-- event_types[] surface every test in this directory exercises. Without
+-- this row, /events/v1/ingest rejects all events with UNKNOWN_EVENT_TYPE
+-- because the app_id isn't registered.
+--
+-- Idempotent: ON CONFLICT DO NOTHING on the primary key.
+-- ──────────────────────────────────────────────────────────────────────────
+
+INSERT INTO ct_bff.apps (id, display_name, app_kind, status, event_types, allowed_personas)
+VALUES (
+  'bb_integration_test',
+  'Integration Test Harness',
+  'consumer',
+  'active',
+  ARRAY[
+    -- §3.2 / §6.3 SDK-emitted events
+    'feature.used',
+    'sync.failed',
+    'sync.flushed',
+    'login.success',
+    'login.failure',
+    'session.refreshed',
+    'session.revoked',
+    'logout',
+    'enrollment.code_sent',
+    'enrollment.completed',
+    'enrollment.code_failed',
+    'enrollment.consent_recorded',
+    'consent.accepted',
+    'consent.revoked',
+    'pin.set',
+    'pin.cleared',
+    'profile.updated',
+    'profile.avatar_updated',
+    'profile.avatar_cleared',
+    'photo.uploaded',
+    'permission.recorded',
+    'impersonation.started',
+    'impersonation.ended',
+    'impersonation.local_clear_drift',
+    'identity.employee_linked',
+    'wizard.step_completed'
+  ]::text[],
+  ARRAY['crew','client','supplier','subcontractor','architect','admin']::text[]
+)
+ON CONFLICT (id) DO NOTHING;
+
 -- Verification (will appear in CI log)
 SELECT email, persona_type, role, is_test_user FROM ct_bff.identities WHERE email LIKE 'test-%@test.bainbridgebuilders.com' ORDER BY email;
+SELECT id, app_kind, status, array_length(event_types, 1) AS n_event_types FROM ct_bff.apps WHERE id = 'bb_integration_test';
