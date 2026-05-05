@@ -19,7 +19,7 @@ import {
   isTrustedClient,
 } from './purge-helpers.js';
 
-const SW_VERSION = '1.0.1';
+const SW_VERSION = '1.0.4';
 const SYNC_TAG = 'bb-universal-auth-flush';
 
 // Cache-name patterns to purge on logout. Bake-time const since v1.0.1 lookback

@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/core/session-watcher.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/session-watcher.ts | v1.0.4 | 2026-05-04 | BB
 // Background session validator — polls `/auth/v1/me` while the tab is active,
 // so admin-forced revocations propagate to the UI within ~1 poll interval.
 //
