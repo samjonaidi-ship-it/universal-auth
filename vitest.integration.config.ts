@@ -34,8 +34,11 @@ export default defineConfig({
     //      event-batching, 03 offline-queue-flush) throw ReferenceError.
     //   2. setup.ts waits for the docker-compose stack to be healthy.
     setupFiles: ['fake-indexeddb/auto', './test/integration/setup.ts'],
-    // Allow tests to fail fast if the stack isn't up
-    bail: 1,
+    // Run all tests even when one fails — integration suite is shallow enough
+    // that surfacing all blockers in one CI run is more useful than bailing.
+    // (Was bail:1 during initial scaffold; flipped 2026-05-04 once stack was
+    //  proven to boot reliably. Individual test timeouts still apply.)
+    bail: 0,
     // Block 6 Day 18-19 ships scaffolding even when CI can't run them yet
     passWithNoTests: false,
     reporters: ['default'],
