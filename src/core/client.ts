@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/core/client.ts | v1.0.5 | 2026-05-05 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/client.ts | v1.1.0-rc.1 | 2026-05-06 | BB
 // HTTP client for CT BFF. Owns:
 //
 //   §3   Every endpoint at `https://api.buildwithbainbridge.com/auth/v1/*`
