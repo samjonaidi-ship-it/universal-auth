@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.1.0 | 2026-05-06 | BB
 // Access + refresh token lifecycle. Enforces spec invariants:
 //
 //   §15.1  Access token in memory only, never disk
@@ -227,6 +227,10 @@ export async function setSession(tokens: SessionTokens): Promise<void> {
 /**
  * Clear all session state — memory + IDB + broadcast.
  * Called on logout, session.revoked, or 401 during refresh.
+ *
+ * v1.1.0 (L3.2): also closes the SSE stream (idempotent no-op when SSE
+ * isn't running). Lazy-imported to avoid a static circular dep with
+ * session-events, which calls back into clearSession on session.revoked.
  */
 export async function clearSession(): Promise<void> {
   state.accessToken = null;
@@ -237,6 +241,13 @@ export async function clearSession(): Promise<void> {
   await clearAllSessionState();
   broadcast({ type: 'session_cleared' });
   notifyListeners();
+
+  try {
+    const { stopSessionEvents } = await import('./session-events.js');
+    stopSessionEvents();
+  } catch {
+    // Module not loaded (e.g., older bundle) — ignore.
+  }
 }
 
 /**

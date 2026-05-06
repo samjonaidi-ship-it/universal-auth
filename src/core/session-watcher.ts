@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/core/session-watcher.ts | v1.0.4 | 2026-05-04 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/session-watcher.ts | v1.1.0 | 2026-05-06 | BB
 // Background session validator — polls `/auth/v1/me` while the tab is active,
 // so admin-forced revocations propagate to the UI within ~1 poll interval.
 //
@@ -8,13 +8,19 @@
 //   §6.1     Emits `session.revoked` on AUTH_SESSION_REVOKED
 //   §8.1     Uses If-None-Match / ETag on `/auth/v1/me` to cut egress
 //
-// Phase 2: swap polling for an SSE connection per §8.1 item 6.
+// v1.1.0 (L3.2 SSE): when `config.useSSE !== 'never'` AND `EventSource` is
+// available, `startSessionWatcher()` delegates to `startSessionEvents()`
+// (SSE_DESIGN_v1.0.md §5) and skips the polling path. The polling path
+// remains intact as the fallback for `useSSE: 'never'` and for environments
+// without `EventSource` (older browsers, jest harnesses without polyfill).
 
 import { get } from './client.js';
 import { AuthSessionRevoked, AuthSessionExpired, AuthSdkError } from '../errors.js';
 import { clearSession } from './token-manager.js';
 import { refreshEntitlements } from './entitlements.js';
 import { emit } from './event-reporter.js';
+import { startSessionEvents, stopSessionEvents } from './session-events.js';
+import { getUseSSE } from '../config.js';
 
 // ── Config ────────────────────────────────────────────────────────────────
 
@@ -38,9 +44,38 @@ export function configureSessionWatcher(opts: SessionWatcherConfig = {}): void {
 /**
  * Start periodic session polling. Idempotent — second call is a no-op.
  * Must be called after SDK init + first login.
+ *
+ * v1.1.0: when `config.useSSE !== 'never'` AND `EventSource` is defined in
+ * the global scope, this delegates to `startSessionEvents()` (SSE) and
+ * returns without scheduling any polls. The SSE module owns the fallback
+ * path back to polling if its connection ultimately fails (3 reconnects),
+ * so consumers always get exactly one of the two strategies running.
  */
 export function startSessionWatcher(): void {
   if (running) return;
+
+  if (getUseSSE() !== 'never' && typeof EventSource !== 'undefined') {
+    // SSE path. session-events is itself idempotent.
+    startSessionEvents();
+    return;
+  }
+
+  startPollingOnly();
+}
+
+/**
+ * v1.1.0 (L3.2): polling-only start path. Called directly by
+ * `session-events.handleFallback()` after 3 SSE reconnect failures —
+ * bypasses the `useSSE` gate so we don't re-enter SSE on the fallback.
+ *
+ * Idempotent — second call while already polling is a no-op.
+ */
+export function startSessionWatcherPolling(): void {
+  if (running) return;
+  startPollingOnly();
+}
+
+function startPollingOnly(): void {
   running = true;
 
   if (typeof document !== 'undefined') {
@@ -51,6 +86,10 @@ export function startSessionWatcher(): void {
 }
 
 export function stopSessionWatcher(): void {
+  // Always tell session-events to clean up — idempotent no-op when SSE never
+  // started (e.g., useSSE === 'never' or EventSource unavailable).
+  stopSessionEvents();
+
   running = false;
   if (pollTimer !== null) {
     clearTimeout(pollTimer);

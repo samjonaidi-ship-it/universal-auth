@@ -159,4 +159,8 @@ export {
   startSessionWatcher,
   stopSessionWatcher,
 } from './core/session-watcher.js';
+export {
+  startSessionEvents,
+  stopSessionEvents,
+} from './core/session-events.js';
 export { onSessionChange } from './core/token-manager.js';
