@@ -556,6 +556,77 @@
   border-radius: var(--bb-radius);
 }
 
+/* Effective Access tab (v0.2 — wires L3.3 ABAC engine) */
+
+.bb-delegation-effective-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--bb-spacing) / 2);
+}
+
+.bb-delegation-effective-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--bb-spacing);
+  padding: var(--bb-spacing);
+  border: 1px solid var(--bb-color-border);
+  border-radius: var(--bb-radius);
+  background: var(--bb-color-surface);
+}
+
+.bb-delegation-effective-row--permit {
+  border-left: 3px solid var(--bb-color-success, #2a9d3a);
+}
+
+.bb-delegation-effective-row--deny {
+  border-left: 3px solid var(--bb-color-disabled);
+  opacity: 0.7;
+}
+
+.bb-delegation-effective-row--danger {
+  border-left-color: var(--bb-color-danger, #C8102E);
+}
+
+.bb-delegation-effective-icon {
+  font-size: 1.25em;
+  font-weight: 700;
+  width: 1.5em;
+  text-align: center;
+}
+
+.bb-delegation-effective-row--permit .bb-delegation-effective-icon {
+  color: var(--bb-color-success, #2a9d3a);
+}
+
+.bb-delegation-effective-row--deny .bb-delegation-effective-icon {
+  color: var(--bb-color-disabled);
+}
+
+.bb-delegation-effective-label {
+  font-weight: 500;
+}
+
+.bb-delegation-effective-meta {
+  font-size: 0.85em;
+  color: var(--bb-color-disabled);
+  font-family: var(--bb-font-mono, monospace);
+}
+
+@media (min-width: 768px) {
+  .bb-delegation-effective-row {
+    grid-template-columns: auto 1fr 2fr;
+  }
+}
+
+.bb-delegation-error {
+  padding: var(--bb-spacing);
+  border-radius: var(--bb-radius);
+}
+
 /* Confirm dialog (D5 — button + confirm, NOT swipe) */
 
 .bb-delegation-confirm-overlay {

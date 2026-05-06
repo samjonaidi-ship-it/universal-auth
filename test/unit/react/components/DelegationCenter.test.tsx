@@ -203,7 +203,7 @@ describe('<DelegationCenter>', () => {
     ).not.toBeNull();
   });
 
-  it('Effective access tab is hidden by default and rendered as stub when opt-in', () => {
+  it('Effective access tab is hidden by default and shows ABAC checks when opt-in', async () => {
     setHook();
     const { rerender } = render(
       <DelegationCenter identity={SAM} scopeCatalog={CATALOG} />
@@ -220,7 +220,15 @@ describe('<DelegationCenter>', () => {
       />
     );
     fireEvent.click(screen.getByRole('tab', { name: /Effective access/i }));
-    expect(screen.getByText(/Available in v1\.1\.x/i)).toBeInTheDocument();
+    // v0.2: tab now wires useAccessBulk against grants_to_me. Since the test
+    // hook returns no grants_to_me by default, the tab renders the empty
+    // state — NOT the prior 'Available in v1.1.x' stub text.
+    expect(
+      screen.queryByText(/Available in v1\.1\.x/i)
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/haven't been granted any active delegations/i)
+    ).toBeInTheDocument();
   });
 
   it('shows error from hook in alert', () => {

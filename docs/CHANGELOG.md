@@ -6,6 +6,74 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
 
 > **Note on rc.3 / rc.4 entries below:** these were **internal-only milestones** between rc.2 (2026-04-28) and 1.0.0 (2026-04-30). Neither was tagged or published to the registry — public consumer path is rc.2 → 1.0.0. The rc.3 / rc.4 entries document work that landed on `main` but never shipped under those version numbers; "Recommended upgrade" wording in those sections is historical and does not apply to actual consumers.
 
+## [1.1.0-rc.1] — 2026-05-06 — Lane 3 release candidate
+
+**First v1.1.0 RC.** All 4 Lane 3 tracks ship together per SDK_COMPLETION_BACKLOG §15. Designs locked 2026-05-05 (`DPOP_DESIGN_v1.0.md`, `SSE_DESIGN_v1.0.md`, `ABAC_DESIGN_v1.0.md`, `DELEGATION_CENTER_DESIGN_v1.0.md`). 7-day soak target before tagging `1.1.0`.
+
+### L3.1 — DPoP (RFC 9449) sender-constrained tokens
+
+- `src/core/dpop/{keypair, thumbprint, proof, nonce-cache, index}.ts` — WebCrypto ES256 keypair (extractable=false), RFC 7638 thumbprint, JWS-compact proof builder. 23 unit tests.
+- `src/core/client.ts` — fetch wrapper auto-attaches `Authorization: DPoP <token>` + `DPoP: <jws>` on the 6 protected endpoints (`/auth/v1/code/verify`, `/passkey/authenticate/verify`, `/enroll/activate`, `/session/refresh`, `/session/revoke`, `/session/revoke-all`). Lazy keypair gen on first use; `USE_DPOP_NONCE` retry path; soft-fallback on `auto`, hard-fail on `always`.
+- `src/config.ts` — new `useDpop?: 'auto' | 'always' | 'never'` (default `auto`).
+- `src/core/token-manager.ts` — `clearSession()` deletes the DPoP keypair so signOut kills the cryptographic identity.
+- Server side: migration 072 (cnf_jkt + dpop_jti_seen) + `bff/services/dpop.js` + `dpop-bridge.js` + 6 endpoint integrations. Existing legacy refresh tokens (cnf_jkt NULL) keep working unchanged.
+
+### L3.2 — SSE session-event push (replaces 60s polling)
+
+- `src/core/session-events.ts` — `EventSource` lifecycle, exponential reconnect backoff (1→2→4→8→30s), automatic fallback to polling after 3 failed reconnects.
+- `src/core/session-watcher.ts` — delegates to SSE on `auto`/`always`; new `startSessionWatcherPolling()` polling-only entry to avoid SSE re-entry loop.
+- `src/config.ts` — new `useSSE?: 'auto' | 'always' | 'never'` (default `auto`).
+- Server side: `GET /auth/v1/session/events` endpoint, per-(identity, app_id) connection cap of 5 (S1), 30s heartbeat (S2), 100/5min ring buffer for `Last-Event-ID` replay (S3), cross-app revocation broadcast (S5). 11 unit tests SDK + 13 server integration tests.
+
+### L3.3 — ABAC engine + `useAccess()` hook
+
+- `src/core/abac.ts` — imperative `canAccess(resource, action)` + `canAccessBulk(checks[])` + 60s in-memory cache + `onAccessChange` listener pub/sub.
+- `src/react/useAccess.ts` — SWR React hook `{allowed, loading, error}`.
+- `src/react/useAccessBulk.ts` — bulk variant for list-views.
+- AuthProvider invalidates ABAC cache on session change.
+- Server side: migration 073 (`access_decisions_log` audit table) + `bff/services/abac/{matcher, engine}.js` + `GET /access/v1/check` + `POST /access/v1/check-bulk` + admin CRUD on `/admin/v1/access-policies`. MongoDB-style operators, one-hop variables, default-deny, delegation AND-compose. 61 server tests.
+
+### L3.4 — `<DelegationCenter>` component
+
+- `src/react/components/DelegationCenter.tsx` v0.1.0 → v0.2.0 — 4 tabs now functional: Active, Granted to me, History, **Effective Access** (newly wired this RC; uses `useAccessBulk` to verify ABAC permits each scope on the current user's `grants_to_me`).
+- `src/react/components/scope-catalogs.ts` — 5 persona-keyed default catalogs (crew, homeowner, subcontractor, supplier, architect).
+- `src/flows/delegation.ts` — wraps existing `/identity/v1/delegated-grants` endpoints + client-side GDPR JSON export.
+- `src/react/useDelegatedGrants.ts` — 60s cache hook.
+- 17 component tests + 5 hook tests.
+
+### L3.5 — NOTIFY-based ABAC cache invalidation (cross-replica)
+
+- Server-only. Admin policy CRUD + delegated-grants CRUD fire `pg_notify('bb_events', ...)`; consumer in `bff/services/events.js` v1.3.0 dispatches `policy.changed` → `invalidatePolicyCache()` and `grant.changed` → `invalidateForIdentity(grantor, grantee)`. Cross-replica cache freshness < 1s instead of waiting on the 60s TTL.
+
+### Tests + bundles
+
+| Layer | Count | Status |
+|---|---|---|
+| SDK unit tests (vitest) | 690 | all green, 0 failures |
+| BFF tests (vitest) | 384 | all green, 0 failures (1 pre-existing parallel-flake on sse-connections clears in isolation) |
+| Bundle: core | 13.93 KB / 40 KB | well under budget |
+| Bundle: react | ~52 KB / 60 KB | within budget (DPoP + SSE + ABAC + DelegationCenter all combined) |
+| Bundle: passkey lazy | 9.23 KB / 10 KB | unchanged |
+| Bundle: sw lazy | 488 B / 5 KB | unchanged |
+
+### Migration notes
+
+**Default flags (`auto` for both DPoP and SSE) are zero-break.** Existing v1.0.4 consumers can upgrade with no code change:
+- DPoP soft-falls-back to plain Bearer if anything errors. Existing refresh tokens with `cnf_jkt = NULL` stay legacy until first DPoP-enabled sign-in.
+- SSE auto-falls-back to the 60s polling watcher after 3 failed reconnects.
+
+To opt OUT of DPoP for emergency: `useDpop: 'never'`. To opt out of SSE: `useSSE: 'never'`. Both retire in v1.2 once a soak window confirms zero issues.
+
+### What's NOT in 1.1.0-rc.1 (deferred to 1.2 or later)
+
+- **OPA/Rego WASM ABAC engine** — JSONB matchers ship in v1.1; Rego is Phase 2 per `ABAC_DESIGN_v1.0.md` §11.
+- **Grant-flow templates** — D1 locked to v1.2; v1.1 ships bare DelegationCenter + `onGrantCreated` callback for consumer-owned create flows.
+- **Per-grantee impersonation in Effective Access** — current tab checks the **current user's** access under their `grants_to_me`. Showing "what the GRANTEE can do under my grants_from_me" needs an admin-API impersonation endpoint, Phase 2+.
+- **Hardware attestation** (App Attest / Play Integrity) — Phase 2 per DPoP §10 Q5.
+- **Migration to enforced DPoP everywhere** — v1.2 flips default to `'always'` after 90-day legacy window.
+
+---
+
 ## [1.0.4] — 2026-05-04 — Lane 2 ships: test cleanup + new coverage + small SDK extensions
 
 **Maintenance release.** Closes the v1.0.2 backlog (Lanes 2a + 2b + 2c-light) that was originally planned but deferred through 1.0.2 → 1.0.3. Source changes are minor (additive); the bulk is test infrastructure cleanup.

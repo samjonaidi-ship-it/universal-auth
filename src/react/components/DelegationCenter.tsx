@@ -1,15 +1,21 @@
-// @samjonaidi-ship-it/universal-auth | src/react/components/DelegationCenter.tsx | v0.1.0 | 2026-05-06 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/DelegationCenter.tsx | v0.2.0 | 2026-05-06 | BB
 // Persistent UI for delegated grants — DELEGATION_CENTER_DESIGN_v1.0.md (LOCKED 2026-05-05).
 //
 // Tabs:
 //   1. Active           = grants_from_me where revoked_at IS NULL
 //   2. Granted to me    = grants_to_me where revoked_at IS NULL
 //   3. History          = revoked grants from BOTH arrays + GDPR export
-//   4. Effective access = stub (D2 — opt-in, depends on L3.3 SDK hook)
+//   4. Effective access = real ABAC checks via useAccessBulk (v0.2 — wired to L3.3
+//                         SDK now that the useAccess hook shipped). Per the
+//                         design intent: shows what the CURRENT USER can actually
+//                         do under each grant they've been GRANTED (grants_to_me).
+//                         Grants the user authored (grants_from_me) are not checked
+//                         here — that would require a per-grantee impersonation
+//                         API which is Phase 2+.
 //
 // Locked decisions implemented:
 //   D1 — bare component, NO grant flow templates (consumer plugs custom UI via onGrantCreated)
-//   D2 — showEffectiveAccess defaults false; tab is a stub
+//   D2 — showEffectiveAccess defaults false; opt-in
 //   D3 — persona-keyed catalogs ship in scope-catalogs.ts
 //   D4 — 60s cache lives in useDelegatedGrants
 //   D5 — revoke is button + confirm dialog, NOT swipe
@@ -28,6 +34,8 @@ import {
 import {
   useDelegatedGrants,
 } from '../useDelegatedGrants.js';
+import { useAccessBulk } from '../useAccessBulk.js';
+import type { AccessCheck } from '../../core/abac.js';
 import type {
   DelegatedGrant,
   Grantee,
@@ -265,12 +273,10 @@ export function DelegationCenter({
         ) : null}
 
         {tab === 'effective_access' ? (
-          <div className="bb-delegation-empty-state">
-            <p>
-              Available in v1.1.x — requires L3.3 ABAC SDK hook
-              (<code>useAccess</code>).
-            </p>
-          </div>
+          <EffectiveAccessPanel
+            grants={grantedToMe}
+            scopeCatalog={scopeCatalog}
+          />
         ) : null}
       </div>
 
@@ -284,6 +290,172 @@ export function DelegationCenter({
         />
       ) : null}
     </section>
+  );
+}
+
+// ── Effective Access panel (v0.2 — wires L3.3 ABAC engine) ────────────────
+//
+// Per ABAC_DESIGN_v1.0.md §5 + DELEGATION_CENTER_DESIGN_v1.0.md §1:
+// For each ACTIVE grant in `grants_to_me` (current user is grantee), we run
+// the ABAC engine over (scope, resource_match) → (resource_type, resource_id,
+// action) tuples to confirm the grant's claimed permits actually decide
+// `permit` against current policies + delegations.
+//
+// The grants_from_me direction can't be checked from the current session
+// (would need impersonation API — Phase 2+). Tab focuses on grants_to_me
+// because that's what the *current user* is operating under.
+
+interface EffectiveAccessPanelProps {
+  grants: readonly DelegatedGrant[];
+  scopeCatalog: Record<string, ScopeMeta>;
+}
+
+interface ScopeCheckRow {
+  grantId: string;
+  granteeKind: GranteeKind;
+  granteeId: string;
+  scope: string;
+  scopeLabel: string;
+  scopeDanger: boolean;
+  resourceType: string;
+  resourceId: string;
+  action: string;
+}
+
+/** Parse `<resource>:<action>` (action may contain colons). */
+function parseScope(scope: string): { resource: string; action: string } | null {
+  const idx = scope.indexOf(':');
+  if (idx <= 0 || idx === scope.length - 1) return null;
+  return { resource: scope.slice(0, idx), action: scope.slice(idx + 1) };
+}
+
+/** Build the flattened (grant × scope) check rows for active grants. */
+function buildCheckRows(
+  grants: readonly DelegatedGrant[],
+  scopeCatalog: Record<string, ScopeMeta>
+): ScopeCheckRow[] {
+  const rows: ScopeCheckRow[] = [];
+  for (const g of grants) {
+    if (g.revoked_at !== null) continue;
+    for (const scope of g.scopes) {
+      const parsed = parseScope(scope);
+      if (parsed === null) continue;
+      const meta = scopeCatalog[scope];
+      // Resource id: prefer resource_match.id, else '*' (engine treats as wildcard)
+      const matchId =
+        g.resource_match !== null && typeof g.resource_match === 'object'
+          ? (g.resource_match as Record<string, unknown>)['id']
+          : undefined;
+      rows.push({
+        grantId: g.id,
+        granteeKind: g.grantee_kind,
+        granteeId: g.grantee_id,
+        scope,
+        scopeLabel: meta?.label ?? scope,
+        scopeDanger: meta?.danger === true,
+        resourceType: parsed.resource,
+        resourceId: typeof matchId === 'string' ? matchId : '*',
+        action: parsed.action,
+      });
+    }
+  }
+  return rows;
+}
+
+function EffectiveAccessPanel({
+  grants,
+  scopeCatalog,
+}: EffectiveAccessPanelProps): ReactNode {
+  const rows = useMemo(
+    () => buildCheckRows(grants, scopeCatalog),
+    [grants, scopeCatalog]
+  );
+
+  // Memoize the bulk-check input so useAccessBulk's structural-key compare
+  // doesn't re-fire on every render.
+  const checks = useMemo<readonly AccessCheck[]>(
+    () =>
+      rows.map((r) => ({
+        resource_type: r.resourceType,
+        resource_id: r.resourceId,
+        action: r.action,
+      })),
+    [rows]
+  );
+
+  const { allowed, loading, error } = useAccessBulk(checks);
+
+  if (rows.length === 0) {
+    return (
+      <div className="bb-delegation-empty-state">
+        <p>
+          You haven&apos;t been granted any active delegations yet. When
+          someone grants you scoped access, this tab will show what you
+          can actually do under each grant.
+        </p>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div
+        className="bb-delegation-empty-state"
+        role="status"
+        aria-busy="true"
+      >
+        <p>Checking access against current policies…</p>
+      </div>
+    );
+  }
+
+  if (error !== null) {
+    return (
+      <div
+        className="bb-auth-form-error bb-delegation-error"
+        role="alert"
+      >
+        Could not verify access: {error.message}
+      </div>
+    );
+  }
+
+  return (
+    <ul className="bb-delegation-effective-list" aria-label="Effective access">
+      {rows.map((r, i) => {
+        const ok = allowed?.[i] === true;
+        return (
+          <li
+            key={`${r.grantId}::${r.scope}`}
+            className={
+              `bb-delegation-effective-row` +
+              (ok ? ' bb-delegation-effective-row--permit' : ' bb-delegation-effective-row--deny') +
+              (r.scopeDanger ? ' bb-delegation-effective-row--danger' : '')
+            }
+          >
+            <span
+              className="bb-delegation-effective-icon"
+              aria-hidden="true"
+            >
+              {ok ? '✓' : '✗'}
+            </span>
+            <span className="bb-delegation-effective-label">
+              {r.scopeLabel}
+            </span>
+            <span className="bb-delegation-effective-meta">
+              {r.resourceType}{r.resourceId !== '*' ? ` #${r.resourceId}` : ''}
+              {' · '}
+              {r.action}
+              {' · from '}
+              {r.granteeKind} {r.granteeId.slice(0, 8)}
+            </span>
+            <span className="sr-only">
+              {ok ? 'Permitted' : 'Currently denied by ABAC policy'}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

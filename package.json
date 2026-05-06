@@ -1,6 +1,6 @@
 {
   "name": "@samjonaidi-ship-it/universal-auth",
-  "version": "1.0.4",
+  "version": "1.1.0-rc.1",
   "description": "Bainbridge Builders universal authentication SDK — one package, every consumer app (BB_Express, ControlTower, future Customer Portal, Buddy Console).",
   "license": "UNLICENSED",
   "type": "module",
@@ -116,9 +116,9 @@
       "limit": "40 KB"
     },
     {
-      "name": "passkey lazy (§12.1 L1202 budget 10 KB)",
+      "name": "passkey lazy (§12.1 L1202 was 10 KB; v1.1 raised to 12 KB — DPoP shares WebCrypto)",
       "path": "dist/esm/flows/passkey-flow.js",
-      "limit": "10 KB"
+      "limit": "12 KB"
     },
     {
       "name": "sw lazy (§12.1 L1203 budget 5 KB)",
