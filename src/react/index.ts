@@ -28,6 +28,19 @@ export type { ImpersonationDriftEvent } from '../flows/impersonation.js';
 export { useSettingsSync, type UseSettingsSyncReturn } from './useSettingsSync.js';
 export { usePermissionGrants, type UsePermissionGrantsReturn } from './usePermissionGrants.js';
 
+// L3.3 (v0.1.0) — ABAC hooks per ABAC_DESIGN_v1.0.md §5.1 + §8.1
+export { useAccess, type UseAccessReturn } from './useAccess.js';
+export { useAccessBulk, type UseAccessBulkReturn } from './useAccessBulk.js';
+export {
+  canAccess,
+  canAccessBulk,
+  invalidateAccessCache,
+  type ResourceDescriptor,
+  type AccessCheck,
+  type AccessDecision,
+  type AccessDecisionEffect,
+} from '../core/abac.js';
+
 // Components per §D2.5
 export { SignInForm, type SignInFormProps } from './components/SignInForm.js';
 export { CodeEntry, type CodeEntryProps } from './components/CodeEntry.js';

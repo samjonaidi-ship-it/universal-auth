@@ -160,3 +160,15 @@ export {
   stopSessionWatcher,
 } from './core/session-watcher.js';
 export { onSessionChange } from './core/token-manager.js';
+
+// L3.3 (v0.1.0) — ABAC imperatives per ABAC_DESIGN_v1.0.md §5.1 + §8.2
+export {
+  canAccess,
+  canAccessBulk,
+  invalidateAccessCache,
+  onAccessChange,
+  type ResourceDescriptor,
+  type AccessCheck,
+  type AccessDecision,
+  type AccessDecisionEffect,
+} from './core/abac.js';
