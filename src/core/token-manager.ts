@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.0.2 | 2026-05-05 | BB
 // Access + refresh token lifecycle. Enforces spec invariants:
 //
 //   §15.1  Access token in memory only, never disk
@@ -27,6 +27,7 @@ import {
   clearRefreshToken,
   clearAllSessionState,
 } from './storage.js';
+import { deleteKeypair } from './dpop/keypair.js';
 
 // ── Public types ──────────────────────────────────────────────────────────
 
@@ -227,6 +228,11 @@ export async function setSession(tokens: SessionTokens): Promise<void> {
 /**
  * Clear all session state — memory + IDB + broadcast.
  * Called on logout, session.revoked, or 401 during refresh.
+ *
+ * v1.0.2 (L3.1, DPOP_DESIGN_v1.0.md §5.3): also deletes the DPoP keypair.
+ * Sign-out kills the cryptographic identity along with the session — the
+ * next sign-in mints a fresh keypair so old proofs can't bind to a new
+ * session. `deleteKeypair()` is best-effort and swallows IDB errors.
  */
 export async function clearSession(): Promise<void> {
   state.accessToken = null;
@@ -235,6 +241,7 @@ export async function clearSession(): Promise<void> {
   state.inFlightRefresh = null;
 
   await clearAllSessionState();
+  await deleteKeypair();
   broadcast({ type: 'session_cleared' });
   notifyListeners();
 }
