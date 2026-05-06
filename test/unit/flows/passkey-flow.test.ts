@@ -117,6 +117,19 @@ describe('flows/passkey-flow', () => {
     expect(cred.transports).toEqual(['internal']);
   });
 
+  // P1-H helper: build a valid authenticatorData base64url with UV flag set/unset.
+  function authDataB64Url(uvBit: boolean): string {
+    // 32 bytes rpIdHash (zeros) + 1 byte flags + 4 bytes signCount = 37 bytes
+    const bytes = new Uint8Array(37);
+    // UP=0x01 always set on a real authenticator response; OR UV=0x04 if requested.
+    bytes[32] = 0x01 | (uvBit ? 0x04 : 0x00);
+    // base64url encode
+    let bin = '';
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]!);
+    const b64 = typeof btoa === 'function' ? btoa(bin) : Buffer.from(bin, 'binary').toString('base64');
+    return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+
   it('authenticatePasskey: full happy path installs session', async () => {
     fetchSpy.mockImplementation((url) => {
       const u = String(url);
@@ -150,7 +163,7 @@ describe('flows/passkey-flow', () => {
       id: 'cred-1abcd',
       rawId: 'cred-1abcd',
       response: {
-        authenticatorData: 'ad',
+        authenticatorData: authDataB64Url(true),  // P1-H: UV bit set
         clientDataJSON: 'cd',
         signature: 'sig',
       },
@@ -194,7 +207,7 @@ describe('flows/passkey-flow', () => {
     vi.mocked(startAuthentication).mockResolvedValueOnce({
       id: 'cred-2efgh',
       rawId: 'cred-2efgh',
-      response: { authenticatorData: 'ad', clientDataJSON: 'cd', signature: 'sig' },
+      response: { authenticatorData: authDataB64Url(true), clientDataJSON: 'cd', signature: 'sig' },
       type: 'public-key',
       clientExtensionResults: {},
     } as unknown as Awaited<ReturnType<typeof startAuthentication>>);
@@ -202,5 +215,62 @@ describe('flows/passkey-flow', () => {
     await authenticatePasskey({ conditionalUI: true });
     const args = vi.mocked(startAuthentication).mock.calls[0]![0];
     expect(args.useBrowserAutofill).toBe(true);
+  });
+
+  // ── P1-H: UV (User Verification) enforcement ─────────────────────────────
+
+  it('authenticatePasskey rejects server options with userVerification:"discouraged"', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResp(200, { challenge: 'xyz', userVerification: 'discouraged' }),
+    );
+    await expect(authenticatePasskey()).rejects.toThrow(/discouraged/i);
+    // startAuthentication MUST NOT be invoked when policy is discouraged
+    expect(vi.mocked(startAuthentication)).not.toHaveBeenCalled();
+  });
+
+  it('authenticatePasskey rejects assertion with UV bit unset when policy demands UV', async () => {
+    fetchSpy.mockImplementation((url) => {
+      const u = String(url);
+      if (u.includes('/passkey/authenticate/options')) {
+        // userVerification omitted → defaults to "preferred" → UV demanded
+        return Promise.resolve(jsonResp(200, { challenge: 'xyz' }));
+      }
+      // /verify should NEVER be hit — the SDK must reject before submit
+      return Promise.resolve(jsonResp(500, { error: 'should-not-be-called' }));
+    });
+    vi.mocked(startAuthentication).mockResolvedValueOnce({
+      id: 'cred-no-uv',
+      rawId: 'cred-no-uv',
+      response: {
+        authenticatorData: authDataB64Url(false), // UV bit UNSET
+        clientDataJSON: 'cd',
+        signature: 'sig',
+      },
+      type: 'public-key',
+      clientExtensionResults: {},
+    } as unknown as Awaited<ReturnType<typeof startAuthentication>>);
+
+    await expect(authenticatePasskey()).rejects.toThrow(
+      /did not perform user verification/i,
+    );
+
+    // Confirm the verify endpoint was never called
+    const verifyCalls = fetchSpy.mock.calls.filter(([u]) =>
+      String(u).includes('/passkey/authenticate/verify'),
+    );
+    expect(verifyCalls.length).toBe(0);
+  });
+
+  it('registerPasskey rejects server options with userVerification:"discouraged"', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResp(200, {
+        challenge: 'abc',
+        rp: {},
+        user: {},
+        authenticatorSelection: { userVerification: 'discouraged' },
+      }),
+    );
+    await expect(registerPasskey()).rejects.toThrow(/discouraged/i);
+    expect(vi.mocked(startRegistration)).not.toHaveBeenCalled();
   });
 });
