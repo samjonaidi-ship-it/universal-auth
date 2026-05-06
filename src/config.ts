@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/config.ts | v1.0.2 | 2026-05-05 | BB
+// @samjonaidi-ship-it/universal-auth | src/config.ts | v1.1.0 | 2026-05-06 | BB
 // SDK initialization config + mode-safety assertion (§10.6).
 // Day 3-4: wires core modules (client, token-manager) via configureClient().
 // v1.0.1: assertModeSafety now consumes config.cookieDomain (no hardcoded domain).
@@ -7,6 +7,10 @@
 //   attaches Authorization: DPoP + DPoP: <jws>, soft-falls-back to plain Bearer
 //   if the DPoP path errors (per §10 Q3). 'always' hard-fails on any DPoP
 //   error; 'never' is the legacy-crew opt-out.
+// v1.1.0 (L3.2, SSE_DESIGN_v1.0.md §5): + useSSE flag. Default 'auto':
+//   `startSessionWatcher()` opens an EventSource if available, else falls
+//   back to the 60s polling watcher. 'always' = require SSE (no polling
+//   fallback), 'never' = polling only.
 
 /**
  * Operating modes per §10.
@@ -29,6 +33,36 @@ export type PersonaMismatchBehavior = 'redirect_to_app_chooser' | 'show_persona_
  * How to handle agent sessions per D11 (§D2.3).
  */
 export type AgentSessionBehavior = 'render_agent_ui' | 'redirect_to_admin' | 'error';
+
+/**
+ * SSE (Server-Sent Events) session-watcher mode per SSE_DESIGN_v1.0.md §5.
+ * - `auto`   (default): `startSessionWatcher()` uses SSE when `EventSource`
+ *            is defined, polling otherwise. SSE module also auto-falls-back
+ *            to polling after 3 reconnect failures.
+ * - `always`: same as auto for transport selection (SSE when available),
+ *            but explicitly opted-in. Reserved for future enforcement.
+ * - `never`:  legacy poll-only path. Skips EventSource entirely.
+ */
+export type UseSSEMode = 'auto' | 'always' | 'never';
+
+const USE_SSE_MODES: ReadonlySet<UseSSEMode> = new Set<UseSSEMode>([
+  'auto',
+  'always',
+  'never',
+]);
+
+// Resolved at init time and re-read by session-watcher on each
+// `startSessionWatcher()` call. Module-level state is safe here — there's
+// only ever one SDK instance per page.
+let resolvedUseSSE: UseSSEMode = 'auto';
+
+/**
+ * Read the SDK-resolved `useSSE` mode. Used by `session-watcher.ts` to
+ * decide between SSE delegation and the legacy polling path.
+ */
+export function getUseSSE(): UseSSEMode {
+  return resolvedUseSSE;
+}
 
 /**
  * Per-persona auto-prompt policy for ProfileSetupScreen (§5.5.2).
@@ -64,6 +98,8 @@ export interface UniversalAuthConfig {
   mode?: SdkMode;
   /** DPoP enforcement (DPOP_DESIGN_v1.0.md §5.3). Default `auto`. */
   useDpop?: DpopMode;
+  /** SSE session-watcher mode (SSE_DESIGN_v1.0.md §5). Default `auto`. */
+  useSSE?: UseSSEMode;
 
   // Cross-subdomain cookie per D10 + SDK §5.0 v1.4.0 locked
   /** Cookie domain for shared session across subdomains. Default `.buildwithbainbridge.com` (post-D20 cutover 2026-05-03). */
@@ -151,6 +187,19 @@ export async function initUniversalAuth(config: UniversalAuthConfig): Promise<vo
       )}'. Must be one of: 'auto' | 'always' | 'never'.`
     );
   }
+
+  // v1.1.0 (L3.2): validate useSSE early — fail loud on a typo'd value
+  // rather than silently defaulting. Mirrors the spec §5 contract: only
+  // the three documented strings are accepted.
+  const useSSE: UseSSEMode = config.useSSE ?? 'auto';
+  if (!USE_SSE_MODES.has(useSSE)) {
+    throw new Error(
+      `[@samjonaidi-ship-it/universal-auth] Invalid useSSE value '${String(
+        config.useSSE
+      )}'. Must be one of: 'auto' | 'always' | 'never'.`
+    );
+  }
+  resolvedUseSSE = useSSE;
 
   // Browser-context safety check (skipped in Node test harness)
   if (typeof window !== 'undefined' && typeof window.location !== 'undefined') {

@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.0.2 | 2026-05-05 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.1.0 | 2026-05-06 | BB
 // Access + refresh token lifecycle. Enforces spec invariants:
 //
 //   §15.1  Access token in memory only, never disk
@@ -233,6 +233,10 @@ export async function setSession(tokens: SessionTokens): Promise<void> {
  * Sign-out kills the cryptographic identity along with the session — the
  * next sign-in mints a fresh keypair so old proofs can't bind to a new
  * session. `deleteKeypair()` is best-effort and swallows IDB errors.
+ *
+ * v1.1.0 (L3.2): also closes the SSE stream (idempotent no-op when SSE
+ * isn't running). Lazy-imported to avoid a static circular dep with
+ * session-events, which calls back into clearSession on session.revoked.
  */
 export async function clearSession(): Promise<void> {
   state.accessToken = null;
@@ -244,6 +248,13 @@ export async function clearSession(): Promise<void> {
   await deleteKeypair();
   broadcast({ type: 'session_cleared' });
   notifyListeners();
+
+  try {
+    const { stopSessionEvents } = await import('./session-events.js');
+    stopSessionEvents();
+  } catch {
+    // Module not loaded (e.g., older bundle) — ignore.
+  }
 }
 
 /**
