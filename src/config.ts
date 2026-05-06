@@ -222,7 +222,7 @@ export function assertApiBaseUrlSafety(
  *  MUST be kept in sync with `package.json:version`. Audit-fix 2026-05-04: was
  *  '1.0.2' on the v1.0.4 build, causing telemetry to misattribute traffic.
  */
-export const SDK_VERSION = '1.1.0-rc.1';
+export const SDK_VERSION = '1.1.0-rc.2';
 
 /**
  * Initialize the SDK. Called once at app startup.
