@@ -1,7 +1,11 @@
-// @samjonaidi-ship-it/universal-auth | src/react/components/SignInForm.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/SignInForm.tsx | v1.1.0 | 2026-05-06 | BB
 // Code-first sign-in form. Two-screen flow:
 //   1. Destination entry (phone or email) → POST /auth/v1/code/request
 //   2. Code entry → POST /auth/v1/code/verify
+//
+// v1.1.0 (P1-C): + defaultDestination + onDestinationChange props so
+// consumers can pre-fill (e.g. from a query param after a magic-link click)
+// without forking the component.
 //
 // a11y per §11.10 Appendix F:
 //   * Form has accessible name (aria-label / heading)
@@ -29,6 +33,15 @@ export interface SignInFormProps {
   onSignedIn?: () => void;
   /** Allow the consumer to override how passkey is invoked. */
   onPasskeyClick?: () => void;
+  /**
+   * Pre-fill the destination input. Useful for magic-link landings where the
+   * server-issued URL carries the email/phone in a query param. The user can
+   * still edit before submit. Read once at mount; subsequent changes are
+   * not reflected (this is `defaultValue` semantics, not `value`).
+   */
+  defaultDestination?: string;
+  /** Called on every keystroke in the destination field. */
+  onDestinationChange?: (destination: string) => void;
 }
 
 const DEFAULTS = {
@@ -44,10 +57,12 @@ export function SignInForm({
   labels = {},
   onSignedIn,
   onPasskeyClick,
+  defaultDestination,
+  onDestinationChange,
 }: SignInFormProps): ReactNode {
   const L = { ...DEFAULTS, ...labels };
   const { requestCode, signIn } = useAuth();
-  const [destination, setDestination] = useState('');
+  const [destination, setDestination] = useState(defaultDestination ?? '');
   const [stage, setStage] = useState<'destination' | 'code'>('destination');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -124,7 +139,11 @@ export function SignInForm({
           autoComplete="username"
           required
           value={destination}
-          onChange={(e) => setDestination(e.target.value)}
+          onChange={(e) => {
+            const v = e.target.value;
+            setDestination(v);
+            onDestinationChange?.(v);
+          }}
           aria-invalid={error !== null}
           aria-describedby={error !== null ? 'bb-auth-signin-error' : undefined}
         />

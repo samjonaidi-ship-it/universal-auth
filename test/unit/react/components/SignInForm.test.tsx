@@ -172,6 +172,54 @@ describe('SignInForm', () => {
     );
   });
 
+  // P1-C — defaultDestination + onDestinationChange (rc.2 → 1.1.0 GA gate #C)
+
+  it('initializes destination from defaultDestination prop', () => {
+    render(
+      <AuthProvider>
+        <SignInForm defaultDestination="prefilled@example.com" />
+      </AuthProvider>
+    );
+    const input = screen.getByLabelText(/phone or email/i) as HTMLInputElement;
+    expect(input.value).toBe('prefilled@example.com');
+  });
+
+  it('falls back to empty string when defaultDestination is undefined', () => {
+    render(
+      <AuthProvider>
+        <SignInForm />
+      </AuthProvider>
+    );
+    const input = screen.getByLabelText(/phone or email/i) as HTMLInputElement;
+    expect(input.value).toBe('');
+  });
+
+  it('fires onDestinationChange on each keystroke (text edit)', () => {
+    const onDestinationChange = vi.fn();
+    render(
+      <AuthProvider>
+        <SignInForm onDestinationChange={onDestinationChange} />
+      </AuthProvider>
+    );
+    const input = screen.getByLabelText(/phone or email/i);
+    fireEvent.change(input, { target: { value: 'a' } });
+    fireEvent.change(input, { target: { value: 'ab' } });
+    fireEvent.change(input, { target: { value: 'abc' } });
+    expect(onDestinationChange).toHaveBeenCalledTimes(3);
+    expect(onDestinationChange).toHaveBeenLastCalledWith('abc');
+  });
+
+  it('user can edit a pre-filled defaultDestination before submit', () => {
+    render(
+      <AuthProvider>
+        <SignInForm defaultDestination="old@example.com" />
+      </AuthProvider>
+    );
+    const input = screen.getByLabelText(/phone or email/i) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'new@example.com' } });
+    expect(input.value).toBe('new@example.com');
+  });
+
   it('resend button on code stage re-fires requestCode', async () => {
     render(
       <AuthProvider>
