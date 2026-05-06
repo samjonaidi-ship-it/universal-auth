@@ -94,7 +94,8 @@ describe('core/abac', () => {
     });
 
     it('invalidateAccessCache forces a re-fetch', async () => {
-      fetchSpy.mockResolvedValue(jsonResp(200, decision(true)));
+      // Each call needs its own Response — bodies can only be consumed once.
+      fetchSpy.mockImplementation(async () => jsonResp(200, decision(true)));
       await canAccess({ resource_type: 'r', id: 'x' }, 'read');
       invalidateAccessCache();
       await canAccess({ resource_type: 'r', id: 'x' }, 'read');

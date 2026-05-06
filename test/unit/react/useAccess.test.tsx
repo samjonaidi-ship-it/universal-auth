@@ -103,7 +103,7 @@ describe('react/useAccess', () => {
   });
 
   it('does not infinite-loop when resource descriptor is a fresh object on every render', async () => {
-    fetchSpy.mockResolvedValue(jsonResp(200, decision(true)));
+    fetchSpy.mockImplementation(async () => jsonResp(200, decision(true)));
     const { rerender } = renderHook(
       ({ id }: { id: string }) =>
         useAccess({ resource_type: 'receipt', id }, 'delete'),
@@ -117,7 +117,7 @@ describe('react/useAccess', () => {
   });
 
   it('re-fetches after invalidateAccessCache fires', async () => {
-    fetchSpy.mockResolvedValue(jsonResp(200, decision(true)));
+    fetchSpy.mockImplementation(async () => jsonResp(200, decision(true)));
     const { result } = renderHook(() =>
       useAccess({ resource_type: 'receipt', id: 'r1' }, 'delete')
     );
