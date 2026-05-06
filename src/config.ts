@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/config.ts | v1.1.0 | 2026-05-06 | BB
+// @samjonaidi-ship-it/universal-auth | src/config.ts | v1.1.1 | 2026-05-06 | BB
 // SDK initialization config + mode-safety assertion (§10.6).
 // Day 3-4: wires core modules (client, token-manager) via configureClient().
 // v1.0.1: assertModeSafety now consumes config.cookieDomain (no hardcoded domain).
@@ -154,6 +154,70 @@ export function assertModeSafety(
   }
 }
 
+/**
+ * P1-I — production-mode `apiBaseUrl` validation.
+ *
+ * In production mode the SDK ships cookies cross-origin via SSE
+ * (`session-events.ts:114`, `withCredentials: true`) and via `fetch` with
+ * `credentials: 'include'`. A consumer who passes an attacker-controlled
+ * `apiBaseUrl` (or a misconfigured production deploy) would leak the
+ * session cookie to the attacker's host. We refuse to start in production
+ * mode unless:
+ *
+ *   1. `apiBaseUrl` parses as a valid `https://...` URL.
+ *   2. The hostname shares a registrable domain with `cookieDomain`.
+ *
+ * The registrable-domain check is "naive endsWith" rather than full
+ * public-suffix-list lookup. This is sufficient for BB's two owned eTLD+1s
+ * (`bainbridgebuilders.com`, `buildwithbainbridge.com`). Consumers using a
+ * different eTLD+1 should override `cookieDomain` to match.
+ *
+ * Skipped in non-production modes — local development against `http://localhost`
+ * remains unimpaired.
+ *
+ * Exported for unit testing; called from `initUniversalAuth`.
+ */
+export function assertApiBaseUrlSafety(
+  mode: SdkMode,
+  apiBaseUrl: string,
+  cookieDomain?: string,
+): void {
+  if (mode !== 'production') return;
+
+  // 1. Must be a valid URL with https scheme.
+  let parsed: URL;
+  try {
+    parsed = new URL(apiBaseUrl);
+  } catch {
+    throw new Error(
+      `[@samjonaidi-ship-it/universal-auth] apiBaseUrl '${apiBaseUrl}' is not a valid URL.`,
+    );
+  }
+  if (parsed.protocol !== 'https:') {
+    throw new Error(
+      `[@samjonaidi-ship-it/universal-auth] apiBaseUrl must use HTTPS in production (got '${parsed.protocol}//${parsed.host}'). ` +
+        `Cookies and DPoP proofs require an authenticated transport.`,
+    );
+  }
+
+  // 2. Hostname must share registrable domain with cookieDomain.
+  const apiHost = parsed.hostname;
+  const cookieHost = (cookieDomain ?? '.buildwithbainbridge.com').replace(/^\./, '');
+  // A and B share registrable domain iff one is the other or a subdomain of it.
+  // (Naive — see docstring.)
+  const sameRegistrable =
+    apiHost === cookieHost ||
+    apiHost.endsWith(`.${cookieHost}`) ||
+    cookieHost.endsWith(`.${apiHost}`);
+  if (!sameRegistrable) {
+    throw new Error(
+      `[@samjonaidi-ship-it/universal-auth] apiBaseUrl host '${apiHost}' does not share a registrable domain with cookieDomain '${cookieHost}'. ` +
+        `In production, the SDK ships cookies + DPoP cross-origin to apiBaseUrl, so the two MUST share an eTLD+1. ` +
+        `Either set cookieDomain to match apiBaseUrl, or fix apiBaseUrl to live under '${cookieHost}'.`,
+    );
+  }
+}
+
 /** Current SDK version. Stamped on every event + every outbound HTTP request.
  *  MUST be kept in sync with `package.json:version`. Audit-fix 2026-05-04: was
  *  '1.0.2' on the v1.0.4 build, causing telemetry to misattribute traffic.
@@ -205,6 +269,11 @@ export async function initUniversalAuth(config: UniversalAuthConfig): Promise<vo
   if (typeof window !== 'undefined' && typeof window.location !== 'undefined') {
     assertModeSafety(mode, window.location.hostname, config.cookieDomain);
   }
+
+  // P1-I — apiBaseUrl validation: production mode must use HTTPS + registrable
+  // domain matching cookieDomain. Runs in all environments (including Node
+  // test harness) because misconfiguration is just as dangerous in CI.
+  assertApiBaseUrlSafety(mode, config.apiBaseUrl, config.cookieDomain);
 
   // Wire the HTTP client (registers the refresh callback with token-manager internally)
   const { configureClient } = await import('./core/client.js');

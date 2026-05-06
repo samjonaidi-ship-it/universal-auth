@@ -108,9 +108,12 @@ beforeEach(async () => {
   __resetEntitlementsForTests();
 
   // Default to useSSE: 'auto' — overridden by specific tests as needed.
+  // mode: 'development' so the v1.1.0 P1-I production-mode apiBaseUrl
+  // validation doesn't reject the synthetic `ct-bff.test` host.
   await initUniversalAuth({
     apiBaseUrl: API_BASE,
     appId: 'bb_test',
+    mode: 'development',
   });
 });
 
@@ -253,6 +256,7 @@ describe('session-events', () => {
     await initUniversalAuth({
       apiBaseUrl: API_BASE,
       appId: 'bb_test',
+      mode: 'development',
       useSSE: 'never',
     });
 
