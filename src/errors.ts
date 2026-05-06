@@ -1,7 +1,8 @@
-// @samjonaidi-ship-it/universal-auth | src/errors.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/errors.ts | v1.0.2 | 2026-05-08 | BB
 // Typed error classes for every canonical error code per §3.7.
 // Full enumeration: 15 from §3.7 + `VALIDATION_PHONE_UNREACHABLE` (§5.4.5)
-// + `CONSENT_REQUIRED` (v1.4.0 §3.4) = 17 total.
+// + `CONSENT_REQUIRED` (v1.4.0 §3.4) = 17 server-canonical
+// + `AUTH_PROVIDER_MISSING` (rc.5 D8) = 18 total publicly typed.
 //
 // Day 2 delivery — consumed by client.ts (Block 2 Days 3-4) when HTTP responses
 // arrive from CT BFF. Every canonical error surface gets a typed constructor
@@ -14,6 +15,62 @@
 //   - no longer collapses an unknown/missing blocker into `identity_disabled`.
 //     Unknown blocker codes surface as `unknown` and the raw token is preserved
 //     in `ProvisioningIncomplete.details.rawBlocker` for diagnostics.
+//
+// v1.0.2 (rc.5 audit D7 + D8):
+//   - `AuthErrorCode` literal union exported so consumers can write exhaustive
+//     `switch (err.code)` over the canonical codes. Includes a widening
+//     `(string & {})` fallback so future server-only codes don't break the type.
+//   - `AuthSdkError.code` re-typed `AuthErrorCode` (was `string`).
+//   - `AuthProviderMissingError` new class — replaces the 3 plain `throw new
+//     Error(...)` sites in useAuth/useEntitlements/useProfile so consumers
+//     can `instanceof AuthProviderMissingError` instead of string-matching.
+
+// ── Public error-code union (D7 / rc.5) ───────────────────────────────────
+
+/**
+ * Literal union of canonical SDK error codes. Every `AuthSdkError.code` value
+ * is one of these; the trailing `(string & {})` fallback admits forward-
+ * compatible unknown codes from future BFF versions without breaking the type.
+ *
+ * Use this for exhaustive `switch (err.code)` consumer code:
+ * ```
+ * switch (err.code) {
+ *   case 'AUTH_CODE_INVALID': ...; break;
+ *   case 'AUTH_CODE_EXPIRED': ...; break;
+ *   // ...
+ * }
+ * ```
+ */
+export type AuthErrorCode =
+  // §3.7 server-canonical (15)
+  | 'AUTH_CODE_INVALID'
+  | 'AUTH_CODE_EXPIRED'
+  | 'AUTH_RATE_LIMITED'
+  | 'AUTH_SESSION_EXPIRED'
+  | 'AUTH_SESSION_REVOKED'
+  | 'PROVISIONING_INCOMPLETE'
+  | 'PLAN_SUSPENDED'
+  | 'FEATURE_NOT_ENTITLED'
+  | 'PASSKEY_UV_REQUIRED'
+  | 'DEVICE_UNRECOGNIZED'
+  | 'IDEMPOTENCY_KEY_REPLAY'
+  | 'APP_NOT_REGISTERED'
+  | 'UNKNOWN_EVENT_TYPE'
+  | 'VERSION_INCOMPATIBLE'
+  | 'MAINTENANCE_MODE'
+  // §5.4.5 + v1.4.0 (2)
+  | 'VALIDATION_PHONE_UNREACHABLE'
+  | 'CONSENT_REQUIRED'
+  // SDK-internal codes used by config.onError soft-fail wiring (rc.2 P1-E)
+  | 'DPOP_FALLBACK'
+  | 'LEGACY_REFRESH_RESPONSE'
+  | 'NO_NAVIGATOR_LOCKS'
+  | 'CNF_JKT_MISMATCH'
+  // SDK-only (D8 / rc.5)
+  | 'AUTH_PROVIDER_MISSING'
+  // Forward-compat — admits unknown future codes
+  | 'UNKNOWN'
+  | (string & {});
 
 // ── Base class ────────────────────────────────────────────────────────────
 
@@ -23,13 +80,13 @@
  * per §3.6 error envelope.
  */
 export class AuthSdkError extends Error {
-  readonly code: string;
+  readonly code: AuthErrorCode;
   readonly hint?: string;
   readonly retryAfterSeconds?: number;
   readonly traceId?: string;
 
   constructor(
-    code: string,
+    code: AuthErrorCode,
     message: string,
     options?: {
       hint?: string;
@@ -211,6 +268,29 @@ export class ConsentRequired extends AuthSdkError {
       opts
     );
     if (missingConsents !== undefined) this.missingConsents = missingConsents;
+  }
+}
+
+// ── SDK-only errors (not from BFF wire envelope) ──────────────────────────
+
+/**
+ * Thrown when a React hook is called outside `<AuthProvider>`. Replaces
+ * earlier plain-`Error` throws so consumers can do
+ * `if (e instanceof AuthProviderMissingError) ...`.
+ *
+ * Added rc.5 audit D8 — wired into useAuth, useEntitlements, useProfile
+ * where the same pattern previously emitted three slightly-different
+ * string messages.
+ */
+export class AuthProviderMissingError extends AuthSdkError {
+  readonly hookName: string;
+  constructor(hookName: string) {
+    super(
+      'AUTH_PROVIDER_MISSING',
+      `[@samjonaidi-ship-it/universal-auth] ${hookName}() called outside <AuthProvider>. ` +
+        `Wrap your app: <AuthProvider><App /></AuthProvider>.`
+    );
+    this.hookName = hookName;
   }
 }
 

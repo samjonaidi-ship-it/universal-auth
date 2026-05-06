@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | vitest.config.ts | v1.1.0-rc.3 | 2026-05-06 | BB
+// @samjonaidi-ship-it/universal-auth | vitest.config.ts | v1.1.0-rc.5 | 2026-05-08 | BB
 // Vitest unit-test config. Coverage gates per §11 thresholds.
 
 import { defineConfig } from 'vitest/config';
@@ -29,9 +29,15 @@ export default defineConfig({
       // 83.74%. Threshold is a temporary backstop; v1.1.0 GA target is to
       // restore 85 by adding focused *-branches.test.ts files for the four
       // P1 modules (tracked in docs/BACKLOG.md COV-1).
+      // v1.1.0-rc.5 (2026-05-08): partial COV-1 restoration. Added 4 focused
+      // *-branches.test.ts files (entitlements, validators, delegation, CodeEntry),
+      // +31 tests. Branches lifted 83.74 → 84.45 (+0.71pp). Threshold raised
+      // 83 → 84. Remaining gap to 85 is concentrated in storage.ts HMAC v3→v4
+      // upgrade path (76.19%) + useAccess.ts callback (63.63%) — deferred to
+      // GA per COV-1 in BACKLOG.
       thresholds: {
         lines: 90,
-        branches: 83,
+        branches: 84,
         functions: 90,
         statements: 90,
       },

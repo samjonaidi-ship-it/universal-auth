@@ -1,9 +1,13 @@
-// @samjonaidi-ship-it/universal-auth | src/react/index.ts | v1.0.5 | 2026-05-06 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/index.ts | v1.0.6 | 2026-05-08 | BB
 // React subpath barrel — `@samjonaidi-ship-it/universal-auth/react`.
 // Tree-shakeable named exports only (sideEffects: false).
 //
 // v1.0.0-rc.4: + ConsentCenter, PermissionCenter, ConsentVersionWatcher.
 // v1.0.5 (L3.4): + DelegationCenter, useDelegatedGrants, scope catalogs.
+// v1.0.6 (rc.5 audit fix D1): + useIdentity, MediaGallery, AddressInput,
+//   VehicleSection, GearSection, ComplianceDocsSection, PropertySection,
+//   CompletenessBar. These were built into dist/ but never re-exported —
+//   unreachable from any documented import path. Latent since v1.0.0-rc.4.
 
 // Provider + contexts
 export {
@@ -124,3 +128,41 @@ export type {
   CreateDelegatedGrantInput,
   ListDelegatedGrantsResult,
 } from '../flows/delegation.js';
+
+// rc.5 (D1 audit fix) — Person-Centric Profile (PCP) hook + components.
+// Built since v1.0.0-rc.4 but never re-exported. The PCP envelope hook
+// (useIdentity) is the single-source-of-truth for the address book +
+// asset/media collections that power BB's crew profile UX.
+export {
+  useIdentity,
+  type UseIdentityReturn,
+  type IdentityState,
+} from './useIdentity.js';
+export {
+  MediaGallery,
+  type MediaGalleryProps,
+} from './components/MediaGallery.js';
+export {
+  AddressInput,
+  type AddressInputProps,
+} from './components/AddressInput.js';
+export {
+  VehicleSection,
+  type VehicleSectionProps,
+} from './components/VehicleSection.js';
+export {
+  GearSection,
+  type GearSectionProps,
+} from './components/GearSection.js';
+export {
+  ComplianceDocsSection,
+  type ComplianceDocsSectionProps,
+} from './components/ComplianceDocsSection.js';
+export {
+  PropertySection,
+  type PropertySectionProps,
+} from './components/PropertySection.js';
+export {
+  CompletenessBar,
+  type CompletenessBarProps,
+} from './components/CompletenessBar.js';

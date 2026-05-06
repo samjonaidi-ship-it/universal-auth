@@ -46,12 +46,22 @@ if (!bump || !['patch', 'minor', 'major'].includes(bump)) {
 // Step 0 — pre-flight (v1.0.2 lookback C9)
 if (!skipPreFlight) {
   console.log('[release] running pre-flight gates (typecheck + lint + tests + verify)...');
+  // BUILD-3 (rc.5 audit): added verify:readme + verify:version-sync + build +
+  // size-check + verify:bundle + test:perf — these are exactly the gates that
+  // failed on rc.2/rc.3 main pushes (lint + version-sync + size-limit script).
+  // Pre-flight now mirrors CI's `build` job step-for-step.
   const gates: { name: string; cmd: string }[] = [
-    { name: 'typecheck',          cmd: 'pnpm typecheck' },
-    { name: 'lint',               cmd: 'pnpm lint' },
-    { name: 'verify:no-jose',     cmd: 'pnpm verify:no-jose' },
-    { name: 'verify:watermarks',  cmd: 'pnpm verify:watermarks' },
-    { name: 'test:unit',          cmd: 'pnpm test:unit -- --run' },
+    { name: 'typecheck',           cmd: 'pnpm typecheck' },
+    { name: 'verify:readme',       cmd: 'pnpm verify:readme' },
+    { name: 'verify:version-sync', cmd: 'pnpm verify:version-sync' },
+    { name: 'lint',                cmd: 'pnpm lint' },
+    { name: 'verify:no-jose',      cmd: 'pnpm verify:no-jose' },
+    { name: 'verify:watermarks',   cmd: 'pnpm verify:watermarks' },
+    { name: 'test:unit',           cmd: 'pnpm test:unit -- --run' },
+    { name: 'build',               cmd: 'pnpm build' },
+    { name: 'size-check',          cmd: 'pnpm size-check' },
+    { name: 'verify:bundle',       cmd: 'pnpm verify:bundle' },
+    { name: 'test:perf',           cmd: 'pnpm test:perf' },
   ];
   for (const g of gates) {
     console.log(`[release]   • ${g.name}…`);

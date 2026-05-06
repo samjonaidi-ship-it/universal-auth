@@ -8,6 +8,115 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
 
 > **Note on v1.1.0-rc.3 (2026-05-06):** rc.3 landed on `main` but failed CI on 3 lint errors before it could be tagged or published. v1.1.0-rc.4 is the same code with those 3 errors resolved + coverage threshold reconciled with measured coverage. Public consumer path for the v1.1 line is rc.1 → rc.4 (rc.2 and rc.3 were never published).
 
+## [1.1.0-rc.5] — 2026-05-08 — rc.4 lookback debt cleanup
+
+**rc.5 closes 14 of the 17 debt items surfaced by the 2026-05-08 lookback
+audit (`audits/holistic-2026-05-08-rc4/`).** No SDK runtime API or behavior
+change vs rc.4 — every addition is additive (new hooks, new exports, new
+type signatures that widen the previous shapes).
+
+### Closed (HIGH / Medium)
+
+- **H4 — `SDK_VERSION` constant drift.** `src/config.ts:235` was `'1.1.0-rc.3'`
+  on the rc.4 release; every event envelope and outbound HTTP request was
+  self-identifying as the previous version. Now `'1.1.0-rc.5'` + new
+  `pnpm verify:version-sync` CI gate (`scripts/verify-version-sync.ts`)
+  prevents recurrence.
+- **D1 — 7 PCP components + `useIdentity` not exported.** `MediaGallery`,
+  `AddressInput`, `VehicleSection`, `GearSection`, `ComplianceDocsSection`,
+  `PropertySection`, `CompletenessBar` + the `useIdentity()` hook were
+  built into `dist/` since v1.0.0-rc.4 but never re-exported from
+  `src/react/index.ts`. Consumers had no documented import path. Latent
+  for ~6 months. Now exported under a `// rc.5 (D1 audit fix)` block.
+- **D2 — `signOut` / `signOutEverywhere` AbortSignal type-boundary gap.**
+  The underlying recovery flows accepted `signal?` since rc.2 P1-D, but
+  `useAuth().signOut` was typed `() => Promise<void>` (no signal arg).
+  Now declared `(options?: { signal?: AbortSignal }) => Promise<void>`.
+- **D7 — `AuthErrorCode` literal union.** `AuthSdkError.code` was typed
+  `string`. Now `AuthErrorCode` (literal union of 22 canonical codes +
+  `(string & {})` widening fallback). Consumers can write exhaustive
+  `switch (err.code)` and forward-compat unknown codes still parse.
+- **D8 — `AuthProviderMissingError`.** New error class. Replaces 2 plain
+  `throw new Error(...)` sites in `useAuth` + `useEntitlements`. Consumers
+  can now `instanceof AuthProviderMissingError`-check.
+- **D4 — README banner.** Was `rc.3 (614/614 tests, old bundle figures)`;
+  now `rc.5 (752/752 tests, closure-aware bundle figures)`.
+- **D6 — `INTEGRATION_GUIDE.md` v1.1 coverage.** The guide was watermarked
+  v1.0.4 with zero coverage of DPoP, ABAC, DelegationCenter, useAccess,
+  useDelegatedGrants, useSettingsSync, hydrateSettings, validatePhone-async
+  migration, classNames slot maps, forwardRef, signal pattern, config.onError,
+  assertApiBaseUrlSafety. New v1.1 changelog block + 15 capability examples
+  + migration recipe added.
+- **NL7 — Constant-time HMAC compare.** `entitlements.ts:165` used
+  variable-time `===` for the HMAC verify. Now `constantTimeStringEquals`
+  helper (XOR-accumulated, length-fast-path).
+- **BUILD-1 — Pre-push git hook.** `.githooks/pre-push` mirrors the CI
+  build-job gates locally (typecheck + verify:readme + verify:version-sync
+  + lint + verify:no-jose + verify:watermarks). Same regression that
+  caused rc.2 + rc.3 to land red on `main` is now caught at push-time.
+  Opt-in: `git config core.hooksPath .githooks`.
+- **BUILD-2 — `browser-smoke` + `browser-matrix` gating.** Production
+  target `app.buildwithbainbridge.com` is the CalExp5 calendar (no sign-in
+  form), original `auth-sdk-demo` target was DNS-dropped 2026-05-03.
+  Both jobs now gated on `vars.BROWSER_SMOKE_ENABLED == 'true'` (default
+  off). Status flips from `failure` to `skipped` until a working smoke
+  target lands.
+- **BUILD-3 — `release.ts` pre-flight extension.** Pre-flight gates were
+  a subset of CI build-job — adds `verify:readme`, `verify:version-sync`,
+  `build`, `size-check`, `verify:bundle`, `test:perf`. Now mirrors
+  `.github/workflows/ci.yml` step-for-step.
+- **BUILD-4 — Removed 4 unused devDeps.** `size-limit`,
+  `@size-limit/preset-small-lib`, `tiny-invariant`, `toxiproxy-node-client`
+  had zero live consumers — verified via grep.
+- **BUILD-5 — `docs/CI_SECRETS.md`.** Documents every `secrets.*` and
+  `vars.*` reference across `.github/workflows/*.yml` (7 secrets + 6
+  variables), with rotation policy + fork-bootstrap checklist.
+- **BUILD-6 — `chaos.yml` watermark drift.** Header was v1.0.4; inline
+  note already said v1.1.0. Now consistent.
+- **BUILD-7 — `verify-watermarks.ts` scans `.github/workflows/*.yml`.**
+  Why BUILD-6 went uncaught for two releases. Adds YAML support
+  (`#`-prefixed comment style) + `.github/workflows` to scan dirs.
+- **BUILD-8 — Explicit `timeout-minutes` on every CI job.** Was 6h
+  default. Now: build 15, perf 10, security 15, memory-quick 10,
+  browser-smoke 20.
+
+### Coverage (COV-1 partial restoration)
+
+Branches threshold raised 83 → 84 (was lowered to 83 in rc.3 backstop).
+Adds 4 focused `*-branches.test.ts` files (entitlements, validators,
+delegation, CodeEntry) — +31 tests, branches 83.74 → 84.45 measured.
+Remaining gap to original 85 concentrated in `storage.ts` HMAC v3→v4
+upgrade (76.19%) + `useAccess.ts` callback (63.63%) — deferred to GA per
+COV-1 in `docs/BACKLOG.md`.
+
+### Tests + verification
+
+- **783/783 unit tests pass** (rc.4 was 752; +31 from new branch tests).
+- All 8 CI build-job gates green locally.
+- 5 closure-aware bundle budgets pass with margin: core 23.39 / react 36.21
+  / profile 15.29 / passkey-marginal 0.20 / sw 0.56 KB gzipped.
+- 0 `any`, 0 `@ts-ignore` across 16,105 LOC.
+- `verify:no-jose` confirms production dep tree clean.
+
+### Migration notes (rc.4 → rc.5)
+
+Drop-in replacement. 5 new optional `signal?: AbortSignal` params, 7 new
+React exports, 1 new `AuthProviderMissingError` class, 1 new `AuthErrorCode`
+type — all additive. Existing call sites compile and behave identically.
+
+### Deferred to v1.1.0 GA (low-priority audit items)
+
+- COV-1 finish: restore branches threshold 84 → 85 by adding
+  `storage-branches.test.ts` + `useAccess-branches.test.ts`.
+- NL8: thread `AbortSignal` through `tryRefresh` / `refreshTokenRequest`
+  (touches token-manager cross-tab lock — needs deeper refactor).
+- TEST-1: `ProfileCompletenessBar.test.tsx` flakes intermittently (DNS
+  resolution on `ct-bff.test`). Pre-existing — independent of rc.5 work.
+- INTEGRATION_GUIDE.md deeper rewrite (the rc.5 v1.1 block is additive;
+  the older v1.0-era walkthrough sections still reference the v1.0 surface).
+
+---
+
 ## [1.1.0-rc.4] — 2026-05-06 — CI greens for rc.3
 
 **rc.4 = rc.3 with 3 lint errors fixed and coverage threshold reconciled.**

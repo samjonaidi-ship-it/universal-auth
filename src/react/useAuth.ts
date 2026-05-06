@@ -1,8 +1,14 @@
-// @samjonaidi-ship-it/universal-auth | src/react/useAuth.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/useAuth.ts | v1.0.1 | 2026-05-08 | BB
 // Public useAuth hook — subscribes to IdentityContext + StatusContext only.
 // Per §D2.4: personas / activePersona / hasPersona / switchActivePersona / allFeatures / agent.
 // allFeatures() reads entitlements module directly (so useAuth doesn't subscribe
 // to EntitlementsContext and re-render when features change — see §8.4 split rule).
+//
+// v1.0.1 (rc.5 audit D2 + D8): signOut/signOutEverywhere now accept
+// { signal?: AbortSignal } at the type boundary (the underlying flows
+// already did, the React surface was hiding it). useAuth() throws
+// AuthProviderMissingError instead of generic Error when called outside
+// AuthProvider — gives consumers an instanceof check.
 
 import { useContext, useCallback } from 'react';
 import {
@@ -14,6 +20,7 @@ import type { Identity, Persona, AgentContext } from '../types/api.js';
 import { getEntitlementsSnapshot } from '../core/entitlements.js';
 import { signOut as signOutFlow, signOutEverywhere as signOutAllFlow } from '../flows/recovery.js';
 import { requestCode as requestCodeFlow, verifyCode as verifyCodeFlow } from '../flows/code-flow.js';
+import { AuthProviderMissingError } from '../errors.js';
 
 export interface UseAuthReturn {
   // Core identity
@@ -34,18 +41,17 @@ export interface UseAuthReturn {
   // Sign-in / sign-out
   signIn: typeof verifyCodeFlow;
   requestCode: typeof requestCodeFlow;
-  signOut: () => Promise<void>;
-  signOutEverywhere: () => Promise<void>;
+  // D2 (rc.5): signal? plumbed through. The underlying recovery.ts flows
+  // already accepted AbortSignal; the React surface was hiding it.
+  signOut: (options?: { signal?: AbortSignal }) => Promise<void>;
+  signOutEverywhere: (options?: { signal?: AbortSignal }) => Promise<void>;
 }
 
 export function useAuth(): UseAuthReturn {
   const id = useContext(IdentityContext);
   const st = useContext(StatusContext);
   if (id === null || st === null) {
-    throw new Error(
-      '[@samjonaidi-ship-it/universal-auth] useAuth() called outside <AuthProvider>. ' +
-        'Wrap your app: <AuthProvider><App /></AuthProvider>.'
-    );
+    throw new AuthProviderMissingError('useAuth');
   }
 
   const hasPersona = useCallback(

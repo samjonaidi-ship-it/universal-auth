@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/core/entitlements.ts | v1.2.1 | 2026-05-06 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/entitlements.ts | v1.2.2 | 2026-05-08 | BB
 // Entitlement (feature + app_access) cache with stale-while-revalidate.
 //
 // Invariants per spec:
@@ -162,7 +162,12 @@ async function verifyDiskSignatureAsync(envelope: SignedEnvelope): Promise<void>
   try {
     const hmacKey = await getOrCreateHmacKey();
     const expectedSig = await computeSignature(envelope.data, hmacKey);
-    if (expectedSig === envelope.sig) {
+    // NL7 (rc.5 audit fix): constant-time compare. The async + same-origin
+    // threat model makes timing attack practically infeasible (an XSS
+    // attacker already has full session compromise via H3), but a freshly-
+    // shipped HMAC verifier should not use variable-time `===` — sets a
+    // bad pattern for future copies.
+    if (constantTimeStringEquals(expectedSig, envelope.sig)) {
       signatureVerified = true;
       return;
     }
@@ -173,6 +178,22 @@ async function verifyDiskSignatureAsync(envelope: SignedEnvelope): Promise<void>
     // cache in place; server enforcement is the ultimate gate.
     signatureVerified = true;
   }
+}
+
+/**
+ * Constant-time string equality for ASCII / base64url comparison. Iterates
+ * the longer string so the loop count doesn't reveal the shorter operand's
+ * length. Returns false immediately for distinguishable lengths (the length
+ * itself is not secret — both inputs come from the same SHA-256 HMAC and
+ * are always 43 chars base64url, so unequal length means definite mismatch).
+ */
+function constantTimeStringEquals(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
 }
 
 async function computeSignature(data: CacheShape, hmacKey: CryptoKey): Promise<string> {

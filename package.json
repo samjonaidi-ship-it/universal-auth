@@ -1,6 +1,6 @@
 {
   "name": "@samjonaidi-ship-it/universal-auth",
-  "version": "1.1.0-rc.4",
+  "version": "1.1.0-rc.5",
   "description": "Bainbridge Builders universal authentication SDK — one package, every consumer app (BB_Express, ControlTower, future Customer Portal, Buddy Console).",
   "license": "UNLICENSED",
   "type": "module",
@@ -65,6 +65,7 @@
     "verify:watermarks": "tsx scripts/verify-watermarks.ts",
     "verify:no-jose": "tsx scripts/verify-no-jose.ts",
     "verify:readme": "tsx scripts/check-readme-code.ts",
+    "verify:version-sync": "tsx scripts/verify-version-sync.ts",
     "release": "tsx scripts/release.ts",
     "publish:dry": "npm publish --dry-run --provenance"
   },
@@ -80,7 +81,6 @@
     "@pact-foundation/pact": "^16.3.0",
     "@playwright/test": "^1.47.0",
     "@simplewebauthn/server": "^13.0.0",
-    "@size-limit/preset-small-lib": "^11.0.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
@@ -100,9 +100,6 @@
     "msw": "^2.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "size-limit": "^11.0.0",
-    "tiny-invariant": "^1.3.0",
-    "toxiproxy-node-client": "^2.0.0",
     "tsx": "^4.0.0",
     "typescript": "^5.5.0",
     "vitest": "^2.0.0"
@@ -111,7 +108,6 @@
     "react": ">=18.0.0",
     "react-dom": ">=18.0.0"
   },
-  "_comment-size-limit": "v1.1.0-rc.2 (P1-F): replaced by scripts/size-check-closure.ts. The size-limit package measures brotli of entry+all-imports (including dynamic imports), which over-counts after libphonenumber-js was lazy-loaded. Closure-aware walker is now the authoritative budget gate.",
   "engines": {
     "node": ">=20.0.0"
   },
