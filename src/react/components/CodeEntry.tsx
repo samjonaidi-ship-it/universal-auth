@@ -6,6 +6,7 @@
 
 import { forwardRef, useState, type CSSProperties, type FormEvent } from 'react';
 import { AuthSdkError } from '../../errors.js';
+import { reportSoftError } from '../../core/error-hook.js';
 
 export interface CodeEntryClassNames {
   root?: string;
@@ -78,6 +79,12 @@ export const CodeEntry = forwardRef<HTMLFormElement, CodeEntryProps>(
         if (err instanceof AuthSdkError) {
           setError(err.message);
         } else {
+          // v1.1.0-rc.3 (P1-fixup): non-AuthSdkError previously got swallowed
+          // behind the generic "Verification failed" banner — consumer
+          // observability stacks (Sentry/LogRocket/Datadog) had no visibility.
+          // Route the underlying error through reportSoftError so config.onError
+          // catches it; the generic UX banner remains unchanged.
+          reportSoftError(err);
           setError('Verification failed. Try again.');
         }
       } finally {

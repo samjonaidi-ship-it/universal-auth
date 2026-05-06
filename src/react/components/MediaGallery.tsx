@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/react/components/MediaGallery.tsx | v1.1.0 | 2026-05-06 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/MediaGallery.tsx | v1.1.1 | 2026-05-06 | BB
 // 3-column R2-backed media grid with upload tile + per-item delete.
 // Implements PERSONA_PCP_DESIGN.md §10 (SDK component map) +
 // SDK_SPEC §5.4.1 (ProfileMedia) + §5.4.2 (POST/DELETE /identity/v1/profile/media).
@@ -6,8 +6,11 @@
 // Optimistic UI is delegated to the parent (useIdentity().uploadMedia /
 // deleteMedia mutate the store on resolve); this component only owns the
 // per-file upload spinner + delete confirmation.
+//
+// v1.1.1 (P1-A fixup, 2026-05-06): + className/style. Audit ARCH-2026-05-07
+// caught this component as the missing 25th in the P1-A pass.
 
-import { useRef, useState, type ChangeEvent, type ReactNode } from 'react';
+import { useRef, useState, type ChangeEvent, type CSSProperties, type ReactNode } from 'react';
 import type { ProfileMedia } from '../../types/pcp.js';
 
 export interface MediaGalleryProps {
@@ -25,6 +28,10 @@ export interface MediaGalleryProps {
   accept?: string;
   /** ARIA label for the gallery region. */
   label?: string;
+  /** Optional class for the root <section> element (overrides default). */
+  className?: string;
+  /** Inline style for the root <section> element. */
+  style?: CSSProperties;
 }
 
 export function MediaGallery({
@@ -35,6 +42,8 @@ export function MediaGallery({
   maxItems,
   accept = 'image/*,application/pdf',
   label = 'Media gallery',
+  className,
+  style,
 }: MediaGalleryProps): ReactNode {
   const fileRef = useRef<HTMLInputElement>(null);
   const [busyIds, setBusyIds] = useState<ReadonlySet<string>>(() => new Set());
@@ -83,7 +92,7 @@ export function MediaGallery({
   }
 
   return (
-    <section className="bb-auth-media-gallery" aria-label={label}>
+    <section className={className ?? 'bb-auth-media-gallery'} style={style} aria-label={label}>
       <ul role="list" className="bb-auth-media-grid">
         {visible.map((item) => (
           <li

@@ -32,24 +32,32 @@ export {
 
 // v1.0.1 (Phase C6): `setSession` deprecation shim. The canonical home is
 // now `@samjonaidi-ship-it/universal-auth/internal`. This shim warns once
-// on first call, then delegates. Removed in v1.1.
+// on first call, then delegates. Removed in v1.1.0 GA.
+//
+// v1.1.0-rc.3 (P1-fixup, 2026-05-06): the deprecation warning now routes
+// through `reportSoftError` so consumers wiring `config.onError` (Sentry,
+// LogRocket, Datadog) can surface the migration signal in their own
+// telemetry rather than relying on raw console.warn.
 import { setSession as _setSessionInternal, type SessionTokens as _SessionTokens } from './core/token-manager.js';
+import { reportSoftError } from './core/error-hook.js';
 
 let __setSessionDeprecationWarned = false;
 
 /**
  * @deprecated Since v1.0.1 — import from `@samjonaidi-ship-it/universal-auth/internal` instead.
- * This main-barrel re-export will be removed in v1.1. `setSession` bypasses the
+ * This main-barrel re-export will be removed in v1.1.0 GA. `setSession` bypasses the
  * canonical sign-in flows (code / passkey / enroll) and is intended only for
  * non-SDK token sources (e.g., legacy PIN-based sign-in).
  */
 export function setSession(tokens: _SessionTokens): void {
   if (!__setSessionDeprecationWarned) {
     __setSessionDeprecationWarned = true;
-    console.warn(
-      '[universal-auth] setSession is deprecated from the main barrel as of v1.0.1. ' +
-        'Import it from "@samjonaidi-ship-it/universal-auth/internal" instead. ' +
-        'This shim will be removed in v1.1.'
+    reportSoftError(
+      new Error(
+        'SETSESSION_DEPRECATED: setSession is deprecated from the main barrel as of v1.0.1. ' +
+          'Import it from "@samjonaidi-ship-it/universal-auth/internal" instead. ' +
+          'This shim will be removed in v1.1.0 GA.',
+      ),
     );
   }
   _setSessionInternal(tokens);

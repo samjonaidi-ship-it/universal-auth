@@ -77,10 +77,19 @@ export function configureSettingsSync(opts: SettingsSyncConfig = {}): void {
  * First-load hydration against `/identity/v1/settings`. Call on session start.
  * Emits `settings.restored` when the server version > 0 and the SDK's local
  * snapshot was empty (= fresh device restoring remembered settings).
+ *
+ * v1.1.0-rc.3 (P1-D fixup): accepts `signal` to align with the rest of the
+ * public surface — TanStack Query / SWR / React 18 Strict Mode consumers can
+ * now cancel hydrateSettings the same way they cancel everything else.
  */
-export async function hydrateSettings(): Promise<void> {
+export async function hydrateSettings(
+  options: { signal?: AbortSignal } = {},
+): Promise<void> {
   const wasEmpty = state.hydrated === false && Object.keys(state.settings).length === 0;
-  const { data } = await get<GetResponse>('/identity/v1/settings');
+  const { data } = await get<GetResponse>(
+    '/identity/v1/settings',
+    options.signal !== undefined ? { signal: options.signal } : {},
+  );
   state.settings = data.settings;
   state.version = data.version;
   state.hydrated = true;
