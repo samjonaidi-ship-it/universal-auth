@@ -275,6 +275,13 @@ export async function initUniversalAuth(config: UniversalAuthConfig): Promise<vo
   // test harness) because misconfiguration is just as dangerous in CI.
   assertApiBaseUrlSafety(mode, config.apiBaseUrl, config.cookieDomain);
 
+  // P1-E — register consumer-supplied onError hook. Modules under src/core
+  // route soft errors (DPoP build failure, navigator.locks unavailable,
+  // legacy refresh-response shape, etc.) through `reportSoftError(err)`,
+  // which delegates to this hook when set or falls through to console.warn.
+  const { registerOnError } = await import('./core/error-hook.js');
+  registerOnError(config.onError ?? null);
+
   // Wire the HTTP client (registers the refresh callback with token-manager internally)
   const { configureClient } = await import('./core/client.js');
   configureClient({

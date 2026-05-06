@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.1.1 | 2026-05-06 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.1.2 | 2026-05-06 | BB
 // Access + refresh token lifecycle. Enforces spec invariants:
 //
 //   §15.1  Access token in memory only, never disk
@@ -29,6 +29,7 @@ import {
 } from './storage.js';
 import { deleteKeypair, loadKeypair } from './dpop/keypair.js';
 import { jwkThumbprint } from './dpop/thumbprint.js';
+import { reportSoftError } from './error-hook.js';
 
 // ── Public types ──────────────────────────────────────────────────────────
 
@@ -349,9 +350,9 @@ async function performRefresh(): Promise<string | null> {
         // declined to rotate this round; existing TTL stands).
         if (!warnedMissingRefreshExpiresAt) {
           warnedMissingRefreshExpiresAt = true;
-          console.warn(
-            '[@samjonaidi-ship-it/universal-auth] Refresh response is missing `refresh_expires_at`; falling back to 90-day default. Update CT BFF to v1.0.1+.'
-          );
+          // P1-E — route through onError hook; fall back to console.warn.
+          const err = new Error('LEGACY_REFRESH_RESPONSE: refresh response missing `refresh_expires_at`; falling back to 90-day default. Update CT BFF to v1.0.1+.');
+          reportSoftError(err);
         }
         refreshExpiresAt = Date.now() + DEFAULT_REFRESH_TTL_MS;
       }
@@ -455,9 +456,9 @@ async function runUnderRefreshLock<T>(work: () => Promise<T>): Promise<T> {
   if (nav?.locks?.request === undefined) {
     if (!warnedNoNavigatorLocks) {
       warnedNoNavigatorLocks = true;
-       
-      console.warn(
-        '[@samjonaidi-ship-it/universal-auth] navigator.locks is unavailable; falling back to in-tab refresh mutex only. Cross-tab refreshes may run in parallel.'
+      // P1-E — route through onError hook; fall back to console.warn.
+      reportSoftError(
+        new Error('NO_NAVIGATOR_LOCKS: navigator.locks is unavailable; falling back to in-tab refresh mutex only. Cross-tab refreshes may run in parallel.'),
       );
     }
     return work();
