@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/flows/recovery.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/flows/recovery.ts | v1.1.0 | 2026-05-06 | BB
 // Session/credential recovery flows — logout-all, passkey removal, device revoke.
 // Full identity-recovery (IDV) is Phase 2+ per §Out-of-scope.
 //
@@ -33,16 +33,24 @@ export interface ActiveSession {
  * session, so a user toggling a setting and immediately signing out doesn't
  * lose the edit. The flush is best-effort.
  */
-export async function signOut(): Promise<void> {
+export async function signOut(
+  options: { signal?: AbortSignal } = {},
+): Promise<void> {
   try {
     // Best-effort flush of pending settings patches before the access token
     // disappears. Failures are non-fatal — local sign-out still proceeds.
     try {
-      await flushSettingsNow();
+      await flushSettingsNow(
+        options.signal !== undefined ? { signal: options.signal } : {},
+      );
     } catch {
       // Network / 4xx — we'll lose those patches. Better than blocking sign-out.
     }
-    await post('/auth/v1/session/revoke', {});
+    await post(
+      '/auth/v1/session/revoke',
+      {},
+      options.signal !== undefined ? { signal: options.signal } : {},
+    );
   } catch {
     // Even if server call fails (network / already revoked), local cleanup
     // must still happen — `finally` fires.
@@ -58,14 +66,22 @@ export async function signOut(): Promise<void> {
  * suspected compromise. Destructive; no confirmation prompt in this API
  * (that's the UI layer's job).
  */
-export async function signOutEverywhere(): Promise<void> {
+export async function signOutEverywhere(
+  options: { signal?: AbortSignal } = {},
+): Promise<void> {
   try {
     try {
-      await flushSettingsNow();
+      await flushSettingsNow(
+        options.signal !== undefined ? { signal: options.signal } : {},
+      );
     } catch {
       // Same best-effort policy as signOut.
     }
-    await post('/auth/v1/session/revoke-all', {});
+    await post(
+      '/auth/v1/session/revoke-all',
+      {},
+      options.signal !== undefined ? { signal: options.signal } : {},
+    );
   } catch {
     // Even if server call fails (network / already revoked), local cleanup
     // must still happen — `finally` fires. Consistent with signOut().
@@ -79,15 +95,27 @@ export async function signOutEverywhere(): Promise<void> {
 /**
  * List active sessions for `/me/devices` device-management UI.
  */
-export async function listSessions(): Promise<readonly ActiveSession[]> {
-  const { data } = await get<{ sessions: readonly ActiveSession[] }>('/auth/v1/sessions');
+export async function listSessions(
+  options: { signal?: AbortSignal } = {},
+): Promise<readonly ActiveSession[]> {
+  const { data } = await get<{ sessions: readonly ActiveSession[] }>(
+    '/auth/v1/sessions',
+    options.signal !== undefined ? { signal: options.signal } : {},
+  );
   return data.sessions;
 }
 
 /**
  * Revoke a specific session by id (kicks another device).
  */
-export async function revokeSession(sessionId: string): Promise<void> {
-  await post('/auth/v1/sessions/revoke', { session_id: sessionId });
+export async function revokeSession(
+  sessionId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<void> {
+  await post(
+    '/auth/v1/sessions/revoke',
+    { session_id: sessionId },
+    options.signal !== undefined ? { signal: options.signal } : {},
+  );
   void emit('session.revoked', { reason: 'user_initiated', target_session: sessionId });
 }

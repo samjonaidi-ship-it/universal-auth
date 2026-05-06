@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/flows/enroll-flow.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/flows/enroll-flow.ts | v1.1.0 | 2026-05-06 | BB
 // Magic-link enrollment flow (v1.4.0 §3.1bis).
 //
 // Endpoints:
@@ -82,11 +82,17 @@ interface ActivateResponse {
  * preview crawlers can't consume the token (D3). Returns the identity stub
  * and required consents for the `<ConsentScreen>`.
  */
-export async function verifyEnrollmentToken(token: string): Promise<EnrollVerifyResult> {
+export async function verifyEnrollmentToken(
+  token: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<EnrollVerifyResult> {
   const { data } = await post<EnrollVerifyResult>(
     `/auth/v1/enroll/verify/${encodeURIComponent(token)}`,
     {},
-    { anonymous: true }
+    {
+      anonymous: true,
+      ...(options.signal !== undefined && { signal: options.signal }),
+    }
   );
   void emit('enrollment.started', { dispatched_to: data.invite.dispatched_to });
   return data;
@@ -98,7 +104,8 @@ export async function verifyEnrollmentToken(token: string): Promise<EnrollVerify
  * after the user provides a passkey (or PIN during CalExp5 migration window).
  */
 export async function activateEnrollment(
-  input: EnrollActivateInput
+  input: EnrollActivateInput,
+  options: { signal?: AbortSignal } = {},
 ): Promise<EnrollActivateResult> {
   const device_id = await getOrCreateDeviceId();
 
@@ -111,7 +118,10 @@ export async function activateEnrollment(
       device_id,
       consents: input.consents,
     },
-    { anonymous: true }
+    {
+      anonymous: true,
+      ...(options.signal !== undefined && { signal: options.signal }),
+    }
   );
 
   await setSession({
