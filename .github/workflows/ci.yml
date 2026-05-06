@@ -1,4 +1,4 @@
-# @samjonaidi-ship-it/universal-auth | .github/workflows/ci.yml | v1.1.0 | 2026-05-06 | BB
+# @samjonaidi-ship-it/universal-auth | .github/workflows/ci.yml | v1.1.1 | 2026-05-08 | BB
 # Per-PR CI gate. Block 6 Day 22 expansion: + perf cold-start, + memory soak
 # (5 min CI cap), + security suite. Heavy suites (24h soak, full chaos,
 # Playwright 12-config matrix) live in chaos.yml + browser-matrix.yml nightly.
@@ -102,6 +102,16 @@ jobs:
   # desktop together cover 95% of regressions detectable at the form-factor
   # level since Playwright's device presets only override viewport + UA.
   browser-smoke:
+    # BUILD-2 (rc.5 audit 2026-05-08): smoke target points at production
+    # CalExp5 (https://app.buildwithbainbridge.com), which is a crew calendar
+    # landing — NOT a sign-in form. Test 01-signin-flow expects '<heading
+    # "Sign in">' + '[label="phone or email"]' which the production app
+    # doesn't render at /. The original target auth-sdk-demo.bainbridgebuilders.com
+    # was DNS-dropped 2026-05-03 (D20). Until a new sdk-demo deploy ships
+    # (or tests are rewritten against CalExp5's sign-in path), this job is
+    # gated behind vars.BROWSER_SMOKE_ENABLED=true so it shows 'skipped'
+    # (green) instead of timing out at 20 min on every push.
+    if: vars.BROWSER_SMOKE_ENABLED == 'true'
     runs-on: ubuntu-latest
     needs: build
     timeout-minutes: 20
@@ -120,8 +130,7 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium firefox webkit msedge
       - name: Run browser smoke (4 desktop projects)
         env:
-          # Audit-fix 2026-05-04: was auth-sdk-demo.bainbridgebuilders.com (DNS-dropped post-D20).
-          PLAYWRIGHT_BASE_URL: ${{ vars.PLAYWRIGHT_BASE_URL || 'https://app.buildwithbainbridge.com' }}
+          PLAYWRIGHT_BASE_URL: ${{ vars.PLAYWRIGHT_BASE_URL }}
           TEST_MODE_KEY: ${{ secrets.TEST_MODE_KEY }}
         run: pnpm test:browser:smoke
       - name: Upload Playwright report on failure

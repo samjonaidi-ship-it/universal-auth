@@ -1,4 +1,4 @@
-# @samjonaidi-ship-it/universal-auth | .github/workflows/browser-matrix.yml | v1.0.4 | 2026-05-04 | BB
+# @samjonaidi-ship-it/universal-auth | .github/workflows/browser-matrix.yml | v1.0.5 | 2026-05-08 | BB
 # Nightly Playwright 12-config browser matrix per DoD A5 audit gate #3 (L2.12).
 #
 # 12 configs = 4 browsers × 3 form factors (see playwright.config.ts header for
@@ -39,6 +39,13 @@ on:
 
 jobs:
   matrix:
+    # BUILD-2 (rc.5 audit 2026-05-08): same gating as ci.yml browser-smoke —
+    # production target https://app.buildwithbainbridge.com is the CalExp5
+    # crew calendar, not a sign-in form. Original auth-sdk-demo target was
+    # DNS-dropped 2026-05-03 (D20). Job runs only when vars.BROWSER_SMOKE_ENABLED
+    # is 'true' (deliberately gated until a new sdk-demo deploys, or tests
+    # are rewritten against the production sign-in path).
+    if: vars.BROWSER_SMOKE_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:

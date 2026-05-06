@@ -27,6 +27,7 @@ Updated when a workflow adds/removes a secret. Authority: workflow YAML at HEAD 
 | `NEON_PARENT_BRANCH` | `chaos.yml` (integration job) | Name of the Neon branch to fork from for per-run integration branches | `production` |
 | `NEON_DATABASE_NAME` | `chaos.yml` (integration job) | Postgres database name on the forked branch | `bb_production` (verify against `neonctl branches list`) |
 | `NEON_ROLE_NAME` | `chaos.yml` (integration job) | Postgres role to use on the connection string | `bb_app` (verify against `neonctl roles list`) |
+| `BROWSER_SMOKE_ENABLED` | `ci.yml` (browser-smoke), `browser-matrix.yml` | Boolean flag (`'true'` to enable). Gates Playwright runs against `PLAYWRIGHT_BASE_URL`. **Currently NOT enabled** — the production target `app.buildwithbainbridge.com` is the CalExp5 crew calendar, not a sign-in form, and the original `auth-sdk-demo` target was DNS-dropped 2026-05-03. Set to `'true'` once a new SDK-demo deploys or the smoke tests are rewritten against the live sign-in path | Skipped (green) — opt-in only |
 
 ---
 
