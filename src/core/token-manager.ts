@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.1.0 | 2026-05-06 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.1.1 | 2026-05-06 | BB
 // Access + refresh token lifecycle. Enforces spec invariants:
 //
 //   §15.1  Access token in memory only, never disk
@@ -27,7 +27,8 @@ import {
   clearRefreshToken,
   clearAllSessionState,
 } from './storage.js';
-import { deleteKeypair } from './dpop/keypair.js';
+import { deleteKeypair, loadKeypair } from './dpop/keypair.js';
+import { jwkThumbprint } from './dpop/thumbprint.js';
 
 // ── Public types ──────────────────────────────────────────────────────────
 
@@ -310,6 +311,26 @@ async function performRefresh(): Promise<string | null> {
       const result = await refreshCallback!(rt);
       const newExpiresAt = new Date(result.expires_at).getTime();
 
+      // P1-G (RFC 9449 §6.1): if the issued access token carries `cnf.jkt`,
+      // verify it matches the local DPoP keypair's thumbprint. Mismatch means
+      // the server bound the token to a different key — clear session + abort
+      // rather than adopt a token we can't sign proofs for. Defensive only:
+      // catches BFF mis-config (e.g., key rotation drift) one round-trip
+      // earlier than waiting for the next request to fail server-side.
+      // JWT parse errors (opaque tokens, no `cnf` claim) are non-fatal.
+      const verifyResult = await verifyAccessTokenJktBinding(result.access_token);
+      if (verifyResult === 'mismatch') {
+        await clearRefreshToken();
+        state.accessToken = null;
+        state.accessExpiresAt = 0;
+        state.sessionId = null;
+        broadcast({ type: 'session_cleared' });
+        notifyListeners();
+        throw new Error(
+          'CNF_JKT_MISMATCH: refresh issued an access token bound to a different DPoP key',
+        );
+      }
+
       state.accessToken = result.access_token;
       state.accessExpiresAt = newExpiresAt;
       state.sessionId = result.session_id;
@@ -370,6 +391,51 @@ async function performRefresh(): Promise<string | null> {
       throw err;
     }
   });
+}
+
+/**
+ * P1-G — verify the issued access token is bound to our DPoP keypair.
+ *
+ * Decode the JWT payload (no signature verify — informational only) and
+ * compare `cnf.jkt` to the SHA-256 thumbprint of our local public key
+ * (RFC 7638 / RFC 9449 §6.1). Returns:
+ *
+ *   'match'    — token's cnf.jkt equals our local thumbprint (good)
+ *   'mismatch' — token's cnf.jkt is non-null AND differs (BAD — abort)
+ *   'unbound'  — token has no `cnf.jkt` claim (legacy token, OK)
+ *
+ * Any parse error (opaque token, malformed JWT, missing keypair) returns
+ * 'unbound' — the SDK shouldn't refuse a token just because it can't
+ * inspect it. Server-side enforcement is the ultimate gate.
+ */
+async function verifyAccessTokenJktBinding(
+  accessToken: string,
+): Promise<'match' | 'mismatch' | 'unbound'> {
+  try {
+    const parts = accessToken.split('.');
+    if (parts.length !== 3) return 'unbound';
+    const payloadSeg = parts[1];
+    if (typeof payloadSeg !== 'string' || payloadSeg.length === 0) return 'unbound';
+    // base64url → base64 → string
+    const pad = payloadSeg.length % 4 === 0 ? 0 : 4 - (payloadSeg.length % 4);
+    const b64 = (payloadSeg + '='.repeat(pad)).replace(/-/g, '+').replace(/_/g, '/');
+    const json = typeof atob === 'function' ? atob(b64) : Buffer.from(b64, 'base64').toString('binary');
+    const payload = JSON.parse(json) as { cnf?: { jkt?: unknown } };
+    const serverJkt = payload?.cnf?.jkt;
+    if (typeof serverJkt !== 'string' || serverJkt.length === 0) return 'unbound';
+
+    const pair = await loadKeypair();
+    if (pair === null) return 'unbound'; // no local DPoP key yet — pre-DPoP install
+
+    const localJwk = await crypto.subtle.exportKey('jwk', pair.publicKey);
+    const localJkt = await jwkThumbprint(localJwk);
+    return serverJkt === localJkt ? 'match' : 'mismatch';
+  } catch {
+    // JSON parse failure, base64 corruption, missing keypair store, etc.
+    // Fail-safe to 'unbound' — don't block legitimate refreshes on parser
+    // edge cases. The mismatch check is defense-in-depth, not the primary gate.
+    return 'unbound';
+  }
 }
 
 interface NavigatorWithLocks {
