@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/config.ts | v1.1.1 | 2026-05-06 | BB
+// @samjonaidi-ship-it/universal-auth | src/config.ts | v1.1.2 | 2026-05-08 | BB
 // SDK initialization config + mode-safety assertion (§10.6).
 // Day 3-4: wires core modules (client, token-manager) via configureClient().
 // v1.0.1: assertModeSafety now consumes config.cookieDomain (no hardcoded domain).
@@ -219,10 +219,16 @@ export function assertApiBaseUrlSafety(
 }
 
 /** Current SDK version. Stamped on every event + every outbound HTTP request.
- *  MUST be kept in sync with `package.json:version`. Audit-fix 2026-05-04: was
- *  '1.0.2' on the v1.0.4 build, causing telemetry to misattribute traffic.
+ *  MUST be kept in sync with `package.json:version`.
+ *
+ *  Audit-fix 2026-05-04: was '1.0.2' on the v1.0.4 build, causing telemetry
+ *  to misattribute traffic.
+ *
+ *  Audit-fix 2026-05-08 (rc.5): was '1.1.0-rc.3' on rc.4 release — same class
+ *  of regression. `pnpm verify:version-sync` (scripts/verify-version-sync.ts)
+ *  now CI-gates this constant against package.json:version on every build.
  */
-export const SDK_VERSION = '1.1.0-rc.3';
+export const SDK_VERSION = '1.1.0-rc.5';
 
 /**
  * Initialize the SDK. Called once at app startup.

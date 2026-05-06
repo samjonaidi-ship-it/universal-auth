@@ -1,6 +1,6 @@
 {
   "name": "@samjonaidi-ship-it/universal-auth",
-  "version": "1.1.0-rc.4",
+  "version": "1.1.0-rc.5",
   "description": "Bainbridge Builders universal authentication SDK — one package, every consumer app (BB_Express, ControlTower, future Customer Portal, Buddy Console).",
   "license": "UNLICENSED",
   "type": "module",
@@ -65,6 +65,7 @@
     "verify:watermarks": "tsx scripts/verify-watermarks.ts",
     "verify:no-jose": "tsx scripts/verify-no-jose.ts",
     "verify:readme": "tsx scripts/check-readme-code.ts",
+    "verify:version-sync": "tsx scripts/verify-version-sync.ts",
     "release": "tsx scripts/release.ts",
     "publish:dry": "npm publish --dry-run --provenance"
   },

@@ -30,6 +30,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm verify:readme
+      - run: pnpm verify:version-sync
       - run: pnpm lint
       - run: pnpm test:unit
       - run: pnpm build
