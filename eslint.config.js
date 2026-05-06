@@ -1,9 +1,10 @@
-// @samjonaidi-ship-it/universal-auth | eslint.config.js | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | eslint.config.js | v1.0.0-rc.2 | 2026-05-06 | BB
 // ESLint 9 flat config. Strict rules per plan CI/CD step 2.
 
 import js from '@eslint/js';
 import tsPlugin from '@typescript-eslint/eslint-plugin';
 import tsParser from '@typescript-eslint/parser';
+import reactHooks from 'eslint-plugin-react-hooks';
 
 export default [
   // Ignore generated + dependency output
@@ -50,9 +51,11 @@ export default [
     },
     plugins: {
       '@typescript-eslint': tsPlugin,
+      'react-hooks': reactHooks,
     },
     rules: {
       ...tsPlugin.configs.recommended.rules,
+      ...reactHooks.configs.recommended.rules,
 
       // Strict type safety (plan CI/CD step 2)
       '@typescript-eslint/no-explicit-any': 'error',

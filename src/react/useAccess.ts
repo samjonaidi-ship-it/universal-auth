@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/react/useAccess.ts | v0.1.0 | 2026-05-06 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/useAccess.ts | v0.1.1 | 2026-05-06 | BB
 // React hook for ABAC checks. Per ABAC_DESIGN_v1.0.md §5.1 + §8.1.
 //
 // Stale-while-revalidate:
@@ -77,8 +77,7 @@ export function useAccess(
       cancelled = true;
       unsubscribe();
     };
-    // key is the canonical input; action + resource fields participate in it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // key encodes resource fields (resource_type:id) + action; resourceRef is read via .current.
   }, [key, action]);
 
   return { allowed, loading, error };

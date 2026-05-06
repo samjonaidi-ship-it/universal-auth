@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/react/useAccessBulk.ts | v0.1.0 | 2026-05-06 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/useAccessBulk.ts | v0.1.1 | 2026-05-06 | BB
 // Bulk ABAC hook — one network round-trip for 5–50 (resource, action) pairs.
 // Powers DelegationCenter's "effective-access" tab + similar list-views per
 // ABAC_DESIGN_v1.0.md §8 follow-up (L3.4).
@@ -75,7 +75,7 @@ export function useAccessBulk(checks: readonly AccessCheck[]): UseAccessBulkRetu
       cancelled = true;
       unsubscribe();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // key encodes the full bulk-checks shape; checksRef is read via .current.
   }, [key]);
 
   return { allowed, loading, error };

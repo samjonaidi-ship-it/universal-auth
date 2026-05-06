@@ -1,6 +1,6 @@
 {
   "name": "@samjonaidi-ship-it/universal-auth",
-  "version": "1.1.0-rc.3",
+  "version": "1.1.0-rc.4",
   "description": "Bainbridge Builders universal authentication SDK — one package, every consumer app (BB_Express, ControlTower, future Customer Portal, Buddy Console).",
   "license": "UNLICENSED",
   "type": "module",
@@ -92,6 +92,7 @@
     "@vitest/coverage-v8": "^2.0.0",
     "esbuild": "^0.23.0",
     "eslint": "^9.0.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
     "fake-indexeddb": "^6.0.0",
     "fast-check": "^3.0.0",
     "happy-dom": "^20.9.0",

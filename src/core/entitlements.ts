@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/core/entitlements.ts | v1.2.0 | 2026-05-06 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/entitlements.ts | v1.2.1 | 2026-05-06 | BB
 // Entitlement (feature + app_access) cache with stale-while-revalidate.
 //
 // Invariants per spec:
@@ -114,7 +114,6 @@ function isValidCacheShape(o: unknown): o is CacheShape {
 // memory; an async verifier (kicked off by hydrate-then-verify) decides
 // whether to keep or clear the cache.
 let signatureVerified = false;
-let unsignedLegacyAdopted = false;
 
 function loadFromDisk(): CacheShape | null {
   if (memory !== null) return memory;
@@ -140,7 +139,6 @@ function loadFromDisk(): CacheShape | null {
     // Legacy (v1.0/v1.1) format: bare CacheShape. Accept ONCE; re-sign on next save.
     if (isValidCacheShape(parsed)) {
       memory = parsed;
-      unsignedLegacyAdopted = true;
       signatureVerified = true; // legacy is "trusted" once for graceful migration
       return parsed;
     }
@@ -221,7 +219,6 @@ async function saveToDisk(snap: CacheShape): Promise<void> {
       // memory state — no need to re-verify on next load (until a tab refresh).
       if (envelope !== null) {
         signatureVerified = true;
-        unsignedLegacyAdopted = false;
       }
     } catch {
       // Quota exceeded or storage disabled — in-memory only
@@ -373,7 +370,6 @@ export function __resetEntitlementsForTests(): void {
   memory = null;
   inFlightRefresh = null;
   signatureVerified = false;
-  unsignedLegacyAdopted = false;
   listeners.clear();
   if (typeof localStorage !== 'undefined') {
     try {
