@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# @samjonaidi-ship-it/universal-auth | .githooks/pre-push | v1.0.0 | 2026-05-08 | BB
+# BUILD-1 (rc.5 audit): runs the same fast CI gates locally before any push,
+# preventing rc.2/rc.3-class incidents (red lint landing on main because the
+# commit was pushed before pnpm lint was checked).
+#
+# Install:
+#   git config core.hooksPath .githooks
+#
+# Skip (emergency hotfix only):
+#   git push --no-verify
+
+set -euo pipefail
+
+remote="$1"
+url="$2"
+
+# Only run when pushing to origin/main or any agent/* branch on origin.
+# Other remotes (rebase mirrors, fork pushes) skip — this hook is a CI-parity
+# guard, not a general code-quality gate.
+if [[ "$remote" != "origin" ]]; then
+  exit 0
+fi
+
+cd "$(git rev-parse --show-toplevel)"
+
+echo "[pre-push] running CI build-job gates locally (skip with --no-verify)..."
+
+# Mirror .github/workflows/ci.yml:30-40 exactly. Order matters — fail-fast on
+# the cheapest gates first.
+GATES=(
+  "pnpm typecheck"
+  "pnpm verify:readme"
+  "pnpm verify:version-sync"
+  "pnpm lint"
+  "pnpm verify:no-jose"
+  "pnpm verify:watermarks"
+)
+
+for gate in "${GATES[@]}"; do
+  echo "[pre-push]   • $gate"
+  if ! eval "$gate"; then
+    echo ""
+    echo "[pre-push] BLOCKED — '$gate' failed."
+    echo "[pre-push] Fix locally + recommit, OR push with --no-verify if this is a documented hotfix."
+    exit 1
+  fi
+done
+
+echo "[pre-push] all CI build-job gates passed locally — push proceeding."
+exit 0
