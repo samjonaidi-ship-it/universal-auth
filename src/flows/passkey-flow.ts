@@ -123,22 +123,28 @@ interface RegisterVerifyResponse {
  *   2. browser prompts user → returns attestation
  *   3. POST /verify     → server stores credential
  */
-export async function registerPasskey(): Promise<RegisterPasskeyResult> {
+export async function registerPasskey(
+  options: { signal?: AbortSignal } = {},
+): Promise<RegisterPasskeyResult> {
   if (!browserSupportsWebAuthn()) {
     throw new Error('WebAuthn is not supported in this browser.');
   }
 
-  const { data: options } = await post<PublicKeyCredentialCreationOptionsJSON>(
+  const reqOpts: { signal?: AbortSignal } =
+    options.signal !== undefined ? { signal: options.signal } : {};
+
+  const { data: regOptions } = await post<PublicKeyCredentialCreationOptionsJSON>(
     '/auth/v1/passkey/register/options',
-    {}
+    {},
+    reqOpts,
   );
 
   // P1-H: pre-call guard — server must not request UV='discouraged'.
-  assertUvNotDiscouraged(options, 'register');
+  assertUvNotDiscouraged(regOptions, 'register');
 
   let attestation: RegistrationResponseJSON;
   try {
-    attestation = await startRegistration({ optionsJSON: options });
+    attestation = await startRegistration({ optionsJSON: regOptions });
   } catch (err) {
     void emit('passkey.cancelled', { phase: 'register' });
     throw err;
@@ -154,7 +160,8 @@ export async function registerPasskey(): Promise<RegisterPasskeyResult> {
 
   const { data } = await post<RegisterVerifyResponse>(
     '/auth/v1/passkey/register/verify',
-    { attestation }
+    { attestation },
+    reqOpts,
   );
 
   void emit('passkey.registered', {
@@ -174,6 +181,13 @@ export interface AuthenticatePasskeyOptions {
    * autocomplete="username webauthn">` mounted at the time of the call.
    */
   conditionalUI?: boolean;
+  /**
+   * Optional AbortSignal threaded into the underlying fetches (options +
+   * verify). Aborting cancels the in-flight request — the WebAuthn ceremony
+   * itself is not aborted by this signal (the browser's prompt is cancelled
+   * via the user, not the SDK).
+   */
+  signal?: AbortSignal;
 }
 
 export interface AuthenticatePasskeyResult {
@@ -203,7 +217,10 @@ export async function authenticatePasskey(
   const { data: assertOptions } = await post<PublicKeyCredentialRequestOptionsJSON>(
     '/auth/v1/passkey/authenticate/options',
     {},
-    { anonymous: true }
+    {
+      anonymous: true,
+      ...(options.signal !== undefined && { signal: options.signal }),
+    }
   );
 
   // P1-H: pre-call guard — refuse downgrade to UV='discouraged'.
@@ -237,7 +254,10 @@ export async function authenticatePasskey(
   const { data } = await post<AuthenticateVerifyResponse>(
     '/auth/v1/passkey/authenticate/verify',
     { assertion, device_id },
-    { anonymous: true }
+    {
+      anonymous: true,
+      ...(options.signal !== undefined && { signal: options.signal }),
+    }
   );
 
   await setSession({

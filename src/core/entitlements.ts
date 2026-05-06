@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/core/entitlements.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/entitlements.ts | v1.1.0 | 2026-05-06 | BB
 // Entitlement (feature + app_access) cache with stale-while-revalidate.
 //
 // Invariants per spec:
@@ -182,14 +182,23 @@ interface MeResponse {
  * the previous cache stays readable via `hasFeature` for the duration of the
  * call; on success it's swapped atomically.
  *
- * Concurrent callers coalesce on the in-flight request.
+ * Concurrent callers coalesce on the in-flight request — only the first
+ * caller's `signal` reaches the underlying fetch. Subsequent callers receive
+ * the same in-flight promise; aborting their signal does NOT cancel the
+ * shared fetch (it would also abort other callers). Callers needing
+ * independent cancellation should not coalesce here.
  */
-export async function refreshEntitlements(): Promise<CacheShape | null> {
+export async function refreshEntitlements(
+  options: { signal?: AbortSignal } = {},
+): Promise<CacheShape | null> {
   if (inFlightRefresh !== null) return inFlightRefresh;
 
   inFlightRefresh = (async () => {
     try {
-      const { data } = await get<MeResponse>('/auth/v1/me');
+      const { data } = await get<MeResponse>(
+        '/auth/v1/me',
+        options.signal !== undefined ? { signal: options.signal } : {},
+      );
       const features = data.aggregate?.features ?? [];
       const app_access = data.aggregate?.app_access ?? [];
       const next: CacheShape = {
