@@ -1,8 +1,9 @@
-// @samjonaidi-ship-it/universal-auth | src/react/index.ts | v1.0.4 | 2026-05-04 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/index.ts | v1.0.5 | 2026-05-06 | BB
 // React subpath barrel — `@samjonaidi-ship-it/universal-auth/react`.
 // Tree-shakeable named exports only (sideEffects: false).
 //
 // v1.0.0-rc.4: + ConsentCenter, PermissionCenter, ConsentVersionWatcher.
+// v1.0.5 (L3.4): + DelegationCenter, useDelegatedGrants, scope catalogs.
 
 // Provider + contexts
 export {
@@ -84,3 +85,29 @@ export {
   computeStale,
   type ConsentVersionWatcherProps,
 } from './ConsentVersionWatcher.js';
+
+// L3.4 (v1.0.5) — DelegationCenter per DELEGATION_CENTER_DESIGN_v1.0.md (LOCKED 2026-05-05)
+export {
+  useDelegatedGrants,
+  type UseDelegatedGrantsReturn,
+} from './useDelegatedGrants.js';
+export {
+  DelegationCenter,
+  type DelegationCenterProps,
+} from './components/DelegationCenter.js';
+export {
+  crewScopeCatalog,
+  homeownerScopeCatalog,
+  subcontractorScopeCatalog,
+  supplierScopeCatalog,
+  architectScopeCatalog,
+} from './components/scope-catalogs.js';
+export type {
+  DelegatedGrant,
+  Grantee,
+  GranteeKind,
+  GrantedVia,
+  ScopeMeta,
+  CreateDelegatedGrantInput,
+  ListDelegatedGrantsResult,
+} from '../flows/delegation.js';
