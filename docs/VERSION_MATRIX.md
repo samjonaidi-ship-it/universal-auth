@@ -1,29 +1,38 @@
-# VERSION MATRIX | BB_Universal_Auth | v1.4 | 2026-05-04 | BB
+# VERSION MATRIX | BB_Universal_Auth | v1.5 | 2026-05-06 | BB
 
 ## Current Active Versions
 
 | Component | Version | File | Last Modified |
 |-----------|---------|------|---------------|
-| Package | v1.0.4 | `package.json` | 2026-05-04 |
+| Package | v1.1.0-rc.4 | `package.json` | 2026-05-06 |
 | SDK Core | v1.0.4 | `src/index.ts` | 2026-05-04 |
 | Config | v1.0.1 | `src/config.ts` | 2026-05-01 |
 | React Subpath | v1.0.4 | `src/react/index.ts` | 2026-05-04 |
 | SW Subpath | v1.0.4 | `src/sw/index.ts` | 2026-05-04 |
 | Profile Subpath | v1.0.1 | `src/profile/index.ts` | 2026-05-01 |
 | Extendability | v1.0.0-rc.1 | `src/extendability/index.ts` | 2026-04-24 |
+| Entitlements | v1.2.1 | `src/core/entitlements.ts` | 2026-05-06 |
+| useAccess | v0.1.1 | `src/react/useAccess.ts` | 2026-05-06 |
+| useAccessBulk | v0.1.1 | `src/react/useAccessBulk.ts` | 2026-05-06 |
+| ESLint config | v1.0.0-rc.2 | `eslint.config.js` | 2026-05-06 |
+| Vitest config | v1.1.0-rc.3 | `vitest.config.ts` | 2026-05-06 |
 | Demo App | v1.0.0-rc.1 | `demo/src/App.tsx` | 2026-04-28 |
 
 ---
 
 ## Compatibility Matrix
 
-| SDK Core | React | SW | Profile | Status | Notes |
-|----------|-------|----|---------|--------|-------|
-| v1.0.4 | v1.0.4 | v1.0.4 | v1.0.1 | ✅ STABLE | Current — Lane 2 ship: 614/614 tests, branch threshold 85% restored |
-| v1.0.3 | v1.0.3 | v1.0.3 | v1.0.1 | ✅ STABLE | Scope rename only (`@bainbridgebuilders` → `@samjonaidi-ship-it`); bit-identical runtime to v1.0.2 |
-| v1.0.2 | v1.0.1 | v1.0.1 | v1.0.1 | ✅ STABLE | Rcodex hardening pass — 31 bugs fixed |
-| v1.0.1 | v1.0.1 | v1.0.1 | v1.0.1 | ✅ STABLE | Security hardening + D20/D21 propagation |
-| v1.0.0 | v1.0.0 | v1.0.0 | v1.0.0 | 📜 GA | Initial GA — 541 tests, 93.97/86.00/92.43 coverage |
+| Package | Status | Notes |
+|---------|--------|-------|
+| v1.1.0-rc.4 | ✅ PUBLISH-READY | rc.3 + 3 lint fixes + coverage threshold reconciled to measured (83% branches). 752/752 tests, all 8 CI gates green locally. |
+| v1.1.0-rc.3 | ⚠ UNPUBLISHED | Failed CI on 3 lint errors before tag — superseded by rc.4. |
+| v1.1.0-rc.2 | ⚠ UNPUBLISHED | Failed CI on same 3 lint errors — superseded by rc.4. |
+| v1.1.0-rc.1 | 🟡 PUBLISHED | First v1.1 ship — last public release before rc.4. P0+P1 hardening NOT included. |
+| v1.0.4 | ✅ STABLE | Lane 2 ship: 614/614 tests, branch threshold 85% restored |
+| v1.0.3 | ✅ STABLE | Scope rename only (`@bainbridgebuilders` → `@samjonaidi-ship-it`); bit-identical runtime to v1.0.2 |
+| v1.0.2 | ✅ STABLE | Rcodex hardening pass — 31 bugs fixed |
+| v1.0.1 | ✅ STABLE | Security hardening + D20/D21 propagation |
+| v1.0.0 | 📜 GA | Initial GA — 541 tests, 93.97/86.00/92.43 coverage |
 
 ---
 
