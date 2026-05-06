@@ -1,21 +1,29 @@
-# VERSION MATRIX | BB_Universal_Auth | v1.5 | 2026-05-06 | BB
+# VERSION MATRIX | BB_Universal_Auth | v1.6 | 2026-05-08 | BB
 
 ## Current Active Versions
 
 | Component | Version | File | Last Modified |
 |-----------|---------|------|---------------|
-| Package | v1.1.0-rc.4 | `package.json` | 2026-05-06 |
+| Package | v1.1.0-rc.5 | `package.json` | 2026-05-08 |
 | SDK Core | v1.0.4 | `src/index.ts` | 2026-05-04 |
-| Config | v1.0.1 | `src/config.ts` | 2026-05-01 |
-| React Subpath | v1.0.4 | `src/react/index.ts` | 2026-05-04 |
+| Config | v1.1.2 | `src/config.ts` | 2026-05-08 |
+| React Subpath | v1.0.6 | `src/react/index.ts` | 2026-05-08 |
 | SW Subpath | v1.0.4 | `src/sw/index.ts` | 2026-05-04 |
 | Profile Subpath | v1.0.1 | `src/profile/index.ts` | 2026-05-01 |
 | Extendability | v1.0.0-rc.1 | `src/extendability/index.ts` | 2026-04-24 |
-| Entitlements | v1.2.1 | `src/core/entitlements.ts` | 2026-05-06 |
+| Errors | v1.0.2 | `src/errors.ts` | 2026-05-08 |
+| Entitlements | v1.2.2 | `src/core/entitlements.ts` | 2026-05-08 |
+| useAuth | v1.0.1 | `src/react/useAuth.ts` | 2026-05-08 |
+| useEntitlements | v1.0.1 | `src/react/useEntitlements.ts` | 2026-05-08 |
 | useAccess | v0.1.1 | `src/react/useAccess.ts` | 2026-05-06 |
 | useAccessBulk | v0.1.1 | `src/react/useAccessBulk.ts` | 2026-05-06 |
 | ESLint config | v1.0.0-rc.2 | `eslint.config.js` | 2026-05-06 |
-| Vitest config | v1.1.0-rc.3 | `vitest.config.ts` | 2026-05-06 |
+| Vitest config | v1.1.0-rc.5 | `vitest.config.ts` | 2026-05-08 |
+| CI workflow | v1.1.1 | `.github/workflows/ci.yml` | 2026-05-08 |
+| Chaos workflow | v1.1.0 | `.github/workflows/chaos.yml` | 2026-05-08 |
+| Browser-matrix workflow | v1.0.5 | `.github/workflows/browser-matrix.yml` | 2026-05-08 |
+| verify-watermarks | v1.0.3 | `scripts/verify-watermarks.ts` | 2026-05-08 |
+| verify-version-sync | v1.0.0 (new) | `scripts/verify-version-sync.ts` | 2026-05-08 |
 | Demo App | v1.0.0-rc.1 | `demo/src/App.tsx` | 2026-04-28 |
 
 ---
@@ -24,7 +32,8 @@
 
 | Package | Status | Notes |
 |---------|--------|-------|
-| v1.1.0-rc.4 | ✅ PUBLISH-READY | rc.3 + 3 lint fixes + coverage threshold reconciled to measured (83% branches). 752/752 tests, all 8 CI gates green locally. |
+| v1.1.0-rc.5 | ✅ PUBLISH-READY | 14/17 audit-debt items closed. 783/783 tests, branches 84.45 / threshold 84. New: verify:version-sync, AuthErrorCode union, AuthProviderMissingError, 7 PCP exports + useIdentity, pre-push hook, browser-smoke gating, 4 new branch-test files. |
+| v1.1.0-rc.4 | 🟡 PUBLISHED | First publishable v1.1 ship; superseded by rc.5. |
 | v1.1.0-rc.3 | ⚠ UNPUBLISHED | Failed CI on 3 lint errors before tag — superseded by rc.4. |
 | v1.1.0-rc.2 | ⚠ UNPUBLISHED | Failed CI on same 3 lint errors — superseded by rc.4. |
 | v1.1.0-rc.1 | 🟡 PUBLISHED | First v1.1 ship — last public release before rc.4. P0+P1 hardening NOT included. |
