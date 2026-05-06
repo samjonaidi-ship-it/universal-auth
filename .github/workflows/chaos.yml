@@ -1,4 +1,4 @@
-# @samjonaidi-ship-it/universal-auth | .github/workflows/chaos.yml | v1.0.4 | 2026-05-04 | BB
+# @samjonaidi-ship-it/universal-auth | .github/workflows/chaos.yml | v1.1.0 | 2026-05-08 | BB
 # Nightly chaos + 24h memory soak per spec §11.6 + §11.7.
 #
 # v1.0.4 also added (L2.14 — landed in this version, no separate semver bump):
