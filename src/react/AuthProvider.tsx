@@ -31,6 +31,7 @@ import {
   refreshEntitlements,
   onEntitlementsChange,
 } from '../core/entitlements.js';
+import { invalidateAccessCache } from '../core/abac.js';
 import { get } from '../core/client.js';
 import type { Session, Identity, Persona, AgentContext } from '../types/api.js';
 
@@ -167,6 +168,10 @@ export function AuthProvider({
 
   useEffect(() => {
     const unsubscribe = onSessionChange(() => {
+      // ABAC cache is identity-scoped; flush on every session change so
+      // a sign-out → sign-in as a different identity can't surface a
+      // stale `permit` from the previous session.
+      invalidateAccessCache();
       if (!hasLiveAccessToken()) {
         // Session cleared
         setIdentity(null);
