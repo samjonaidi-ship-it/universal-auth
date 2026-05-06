@@ -60,10 +60,11 @@
     "test:chaos": "vitest run --config vitest.chaos.config.ts",
     "test:security": "vitest run --config vitest.security.config.ts",
     "test:memory": "vitest run --config vitest.memory.config.ts",
-    "size-check": "size-limit",
+    "size-check": "size-limit && tsx scripts/size-check-closure.ts",
     "verify:bundle": "tsx scripts/verify-bundle.ts",
     "verify:watermarks": "tsx scripts/verify-watermarks.ts",
     "verify:no-jose": "tsx scripts/verify-no-jose.ts",
+    "verify:readme": "tsx scripts/check-readme-code.ts",
     "release": "tsx scripts/release.ts",
     "publish:dry": "npm publish --dry-run --provenance"
   },

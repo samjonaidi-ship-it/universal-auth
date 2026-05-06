@@ -1,4 +1,4 @@
-# @samjonaidi-ship-it/universal-auth | .github/workflows/ci.yml | v1.0.4 | 2026-05-04 | BB
+# @samjonaidi-ship-it/universal-auth | .github/workflows/ci.yml | v1.1.0 | 2026-05-06 | BB
 # Per-PR CI gate. Block 6 Day 22 expansion: + perf cold-start, + memory soak
 # (5 min CI cap), + security suite. Heavy suites (24h soak, full chaos,
 # Playwright 12-config matrix) live in chaos.yml + browser-matrix.yml nightly.
@@ -29,6 +29,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
+      - run: pnpm verify:readme
       - run: pnpm lint
       - run: pnpm test:unit
       - run: pnpm build
