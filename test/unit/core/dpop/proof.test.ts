@@ -1,5 +1,6 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/core/dpop/proof.test.ts | v0.1.0 | 2026-05-06 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/dpop/proof.test.ts | v0.2.0 | 2026-05-06 | BB
 // Build a DPoP proof, parse the JWS, verify required claims + signature.
+// v0.2.0 (P0-3): + `ath` claim coverage per RFC 9449 §4.2.
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { buildDpopProof } from '../../../../src/core/dpop/proof.js';
@@ -75,6 +76,57 @@ describe('dpop/proof.buildDpopProof', () => {
     expect(payload.iat).toBeGreaterThanOrEqual(before);
     expect(payload.iat).toBeLessThanOrEqual(after);
     expect(payload.nonce).toBeUndefined();
+  });
+
+  it('includes ath claim (base64url SHA-256 of access token) when accessToken is provided', async () => {
+    const accessToken = 'eyJhbGciOiJFUzI1NiJ9.test_access_token_payload.test_sig';
+    const proof = await buildDpopProof({
+      url: 'https://api.example.com/x',
+      method: 'POST',
+      accessToken,
+    });
+    const payload = JSON.parse(b64urlDecodeToString(proof.split('.')[1]!)) as {
+      ath?: string;
+    };
+    // Compute expected ath ourselves to confirm value matches RFC 9449 §4.2.
+    const expectedDigest = await crypto.subtle.digest(
+      'SHA-256',
+      new TextEncoder().encode(accessToken),
+    );
+    const expectedAth = (() => {
+      const bytes = new Uint8Array(expectedDigest);
+      let bin = '';
+      for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]!);
+      const b64 = typeof btoa === 'function' ? btoa(bin) : Buffer.from(bin, 'binary').toString('base64');
+      return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    })();
+    expect(typeof payload.ath).toBe('string');
+    expect(payload.ath).toBe(expectedAth);
+    expect(payload.ath).toMatch(/^[A-Za-z0-9_-]+$/); // valid base64url
+  });
+
+  it('omits ath claim when accessToken is not provided', async () => {
+    const proof = await buildDpopProof({
+      url: 'https://api.example.com/auth/v1/session/refresh',
+      method: 'POST',
+    });
+    const payload = JSON.parse(b64urlDecodeToString(proof.split('.')[1]!)) as {
+      ath?: string;
+    };
+    expect(payload.ath).toBeUndefined();
+  });
+
+  it('omits ath claim when accessToken is the empty string', async () => {
+    // Defensive: zero-length tokens shouldn't produce a useless `ath` of SHA-256("").
+    const proof = await buildDpopProof({
+      url: 'https://api.example.com/x',
+      method: 'POST',
+      accessToken: '',
+    });
+    const payload = JSON.parse(b64urlDecodeToString(proof.split('.')[1]!)) as {
+      ath?: string;
+    };
+    expect(payload.ath).toBeUndefined();
   });
 
   it('includes nonce claim when supplied', async () => {

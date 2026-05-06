@@ -1,12 +1,17 @@
-// @samjonaidi-ship-it/universal-auth | src/core/dpop/proof.ts | v0.1.0 | 2026-05-06 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/dpop/proof.ts | v0.2.0 | 2026-05-06 | BB
 // Build + sign DPoP proof JWS per RFC 9449 §4.2.
 //
 // Header:    { typ: 'dpop+jwt', alg: 'ES256', jwk: <publicKeyAsJwk> }
-// Payload:   { jti, htm, htu, iat, [nonce] }
+// Payload:   { jti, htm, htu, iat, [ath], [nonce] }
 // Signature: ES256 over `base64url(header) + '.' + base64url(payload)` using
 //            crypto.subtle.sign({name:'ECDSA', hash:'SHA-256'}, privateKey, ...).
 //
 // JWS-compact output: `${b64hdr}.${b64payload}.${b64sig}`.
+//
+// v0.2.0 (P0-3, 2026-05-06): + `ath` claim per RFC 9449 §4.2 when an access
+// token is presented. `ath = base64url(SHA-256(accessToken))` binds the proof
+// to the specific token in use, preventing a captured proof from being paired
+// with a different access token issued to the same client key.
 //
 // Hand-rolled rather than via `jsonwebtoken` because that lib is Node-only
 // (uses Buffer + node:crypto). The server (bff/services/dpop.js) verifies
@@ -23,10 +28,12 @@ export interface BuildDpopProofInput {
   /** Uppercase HTTP method — used for the `htm` claim. */
   method: string;
   /**
-   * The access token currently in use. Reserved for forward-compat with
-   * RFC 9449's `ath` claim binding; in DPOP_DESIGN v1.1 first cut the
-   * `cnf` is bound to the refresh token, not the access token, so this
-   * parameter is accepted but not yet placed in the payload.
+   * The access token currently in use. When provided, the proof carries
+   * `ath = base64url(SHA-256(accessToken))` per RFC 9449 §4.2, binding the
+   * proof to that specific token. Server-side verifiers compare `ath` against
+   * the hash of the bearer token presented in the same request — a captured
+   * proof cannot be paired with a different access token bound to the same
+   * client key.
    */
   accessToken?: string;
   /** Server-issued nonce from a prior `USE_DPOP_NONCE` challenge. */
@@ -44,6 +51,8 @@ interface DpopPayload {
   htm: string;
   htu: string;
   iat: number;
+  /** RFC 9449 §4.2 — base64url(SHA-256(accessToken)). Present iff an access token accompanies the request. */
+  ath?: string;
   nonce?: string;
 }
 
@@ -53,9 +62,17 @@ interface DpopPayload {
  * produce non-colliding proofs.
  */
 export async function buildDpopProof(input: BuildDpopProofInput): Promise<string> {
-  const { url, method, nonce } = input;
+  const { url, method, accessToken, nonce } = input;
   const pair = await getOrCreateKeypair();
   const jwk = await crypto.subtle.exportKey('jwk', pair.publicKey);
+
+  // RFC 9449 §4.2 — if an access token is present, bind the proof to it via `ath`.
+  let ath: string | undefined;
+  if (accessToken !== undefined && accessToken.length > 0) {
+    const tokenBytes = new TextEncoder().encode(accessToken);
+    const digest = await crypto.subtle.digest('SHA-256', tokenBytes);
+    ath = base64UrlEncode(new Uint8Array(digest));
+  }
 
   const header: DpopHeader = { typ: 'dpop+jwt', alg: 'ES256', jwk };
   const payload: DpopPayload = {
@@ -63,6 +80,7 @@ export async function buildDpopProof(input: BuildDpopProofInput): Promise<string
     htm: method.toUpperCase(),
     htu: url,
     iat: Math.floor(Date.now() / 1000),
+    ...(ath !== undefined ? { ath } : {}),
     ...(nonce !== undefined ? { nonce } : {}),
   };
 
