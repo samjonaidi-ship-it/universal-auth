@@ -1,10 +1,12 @@
-// @samjonaidi-ship-it/universal-auth | src/react/components/ImpersonationBanner.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/ImpersonationBanner.tsx | v1.1.0 | 2026-05-06 | BB
 // Banner shown when an admin is acting as another user (§D2.2 + §11.10).
 // Persists across in-app navigations because it's rendered ONCE in the layout
 // shell, NOT per route. Reads `actingAs` from useImpersonation() — populated
 // by flows/impersonation when startImpersonation succeeds.
+//
+// v1.1.0 (P1-A/B): + style + forwardRef<HTMLDivElement>
 
-import type { ReactNode } from 'react';
+import { forwardRef, type CSSProperties } from 'react';
 import { useImpersonation } from '../useImpersonation.js';
 
 export interface ImpersonationBannerProps {
@@ -12,29 +14,39 @@ export interface ImpersonationBannerProps {
   label?: (targetName: string) => string;
   /** Optional style override — pass `null` to suppress the default banner. */
   className?: string;
+  /** Inline style for the root <div>. */
+  style?: CSSProperties;
 }
 
-export function ImpersonationBanner({
-  label = (target) => `Acting as ${target}. Every action is audited.`,
-  className,
-}: ImpersonationBannerProps): ReactNode {
-  const { actingAs, end } = useImpersonation();
-  if (actingAs === null) return null;
+export const ImpersonationBanner = forwardRef<HTMLDivElement, ImpersonationBannerProps>(
+  function ImpersonationBanner(
+    {
+      label = (target) => `Acting as ${target}. Every action is audited.`,
+      className,
+      style,
+    },
+    ref
+  ) {
+    const { actingAs, end } = useImpersonation();
+    if (actingAs === null) return null;
 
-  return (
-    <div
-      className={className ?? 'bb-auth-impersonation-banner'}
-      role="status"
-      aria-live="polite"
-    >
-      <span className="bb-auth-impersonation-text">{label(actingAs.display_name)}</span>
-      <button
-        type="button"
-        className="bb-auth-button bb-auth-button-link"
-        onClick={() => void end()}
+    return (
+      <div
+        ref={ref}
+        className={className ?? 'bb-auth-impersonation-banner'}
+        style={style}
+        role="status"
+        aria-live="polite"
       >
-        Stop
-      </button>
-    </div>
-  );
-}
+        <span className="bb-auth-impersonation-text">{label(actingAs.display_name)}</span>
+        <button
+          type="button"
+          className="bb-auth-button bb-auth-button-link"
+          onClick={() => void end()}
+        >
+          Stop
+        </button>
+      </div>
+    );
+  }
+);

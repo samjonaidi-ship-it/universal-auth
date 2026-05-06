@@ -1,9 +1,19 @@
-// @samjonaidi-ship-it/universal-auth | src/react/components/CodeEntry.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/CodeEntry.tsx | v1.1.0 | 2026-05-06 | BB
 // 6-digit code entry. Single text input (avoids the per-digit anti-pattern
 // that breaks paste, screen readers, and autofill).
+//
+// v1.1.0 (P1-A/B): + className/style/classNames slot map + forwardRef<HTMLFormElement>
 
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { forwardRef, useState, type CSSProperties, type FormEvent } from 'react';
 import { AuthSdkError } from '../../errors.js';
+
+export interface CodeEntryClassNames {
+  root?: string;
+  label?: string;
+  input?: string;
+  error?: string;
+  button?: string;
+}
 
 export interface CodeEntryProps {
   destination: string;
@@ -18,6 +28,12 @@ export interface CodeEntryProps {
     resendLabel: string;
     backLabel: string;
   }>;
+  /** Optional class for the root <form> element (overrides default). */
+  className?: string;
+  /** Inline style for the root <form> element. */
+  style?: CSSProperties;
+  /** Per-slot class overrides. */
+  classNames?: CodeEntryClassNames;
 }
 
 const DEFAULTS = {
@@ -29,106 +45,117 @@ const DEFAULTS = {
   backLabel: 'Back',
 };
 
-export function CodeEntry({
-  destination,
-  onSubmit,
-  onResend,
-  onBack,
-  labels = {},
-}: CodeEntryProps): ReactNode {
-  const L = { ...DEFAULTS, ...labels };
-  const [code, setCode] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+export const CodeEntry = forwardRef<HTMLFormElement, CodeEntryProps>(
+  function CodeEntry(
+    {
+      destination,
+      onSubmit,
+      onResend,
+      onBack,
+      labels = {},
+      className,
+      style,
+      classNames,
+    },
+    ref
+  ) {
+    const L = { ...DEFAULTS, ...labels };
+    const [code, setCode] = useState('');
+    const [submitting, setSubmitting] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
-  async function handleSubmit(e: FormEvent<HTMLFormElement>): Promise<void> {
-    e.preventDefault();
-    if (!/^\d{6}$/.test(code)) {
-      setError('Enter the 6-digit code.');
-      return;
-    }
-    setError(null);
-    setSubmitting(true);
-    try {
-      await onSubmit(code);
-    } catch (err) {
-      if (err instanceof AuthSdkError) {
-        setError(err.message);
-      } else {
-        setError('Verification failed. Try again.');
+    async function handleSubmit(e: FormEvent<HTMLFormElement>): Promise<void> {
+      e.preventDefault();
+      if (!/^\d{6}$/.test(code)) {
+        setError('Enter the 6-digit code.');
+        return;
       }
-    } finally {
-      setSubmitting(false);
+      setError(null);
+      setSubmitting(true);
+      try {
+        await onSubmit(code);
+      } catch (err) {
+        if (err instanceof AuthSdkError) {
+          setError(err.message);
+        } else {
+          setError('Verification failed. Try again.');
+        }
+      } finally {
+        setSubmitting(false);
+      }
     }
-  }
 
-  return (
-    <form
-      className="bb-auth-code-entry"
-      aria-label={L.heading}
-      onSubmit={handleSubmit}
-      noValidate
-    >
-      <h2 className="bb-auth-heading">{L.heading}</h2>
-      <p className="bb-auth-description">
-        {L.description} <strong>{destination}</strong>.
-      </p>
-
-      <label className="bb-auth-field">
-        <span className="bb-auth-field-label">{L.codeLabel}</span>
-        <input
-          type="text"
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          pattern="[0-9]{6}"
-          maxLength={6}
-          required
-          value={code}
-          onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-          aria-invalid={error !== null}
-          aria-describedby={error !== null ? 'bb-auth-code-error' : undefined}
-        />
-      </label>
-
-      {error !== null ? (
-        <div
-          id="bb-auth-code-error"
-          role="alert"
-          aria-live="assertive"
-          className="bb-auth-error"
-        >
-          {error}
-        </div>
-      ) : null}
-
-      <button
-        type="submit"
-        className="bb-auth-button bb-auth-button-primary"
-        disabled={submitting || code.length !== 6}
+    return (
+      <form
+        ref={ref}
+        className={className ?? classNames?.root ?? 'bb-auth-code-entry'}
+        style={style}
+        aria-label={L.heading}
+        onSubmit={handleSubmit}
+        noValidate
       >
-        {submitting ? '…' : L.submitLabel}
-      </button>
+        <h2 className="bb-auth-heading">{L.heading}</h2>
+        <p className="bb-auth-description">
+          {L.description} <strong>{destination}</strong>.
+        </p>
 
-      <div className="bb-auth-actions">
-        {onResend !== undefined ? (
-          <button
-            type="button"
-            className="bb-auth-button bb-auth-button-link"
-            onClick={() => void onResend()}
+        <label className={classNames?.label ?? 'bb-auth-field'}>
+          <span className="bb-auth-field-label">{L.codeLabel}</span>
+          <input
+            type="text"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            pattern="[0-9]{6}"
+            maxLength={6}
+            required
+            className={classNames?.input}
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+            aria-invalid={error !== null}
+            aria-describedby={error !== null ? 'bb-auth-code-error' : undefined}
+          />
+        </label>
+
+        {error !== null ? (
+          <div
+            id="bb-auth-code-error"
+            role="alert"
+            aria-live="assertive"
+            className={classNames?.error ?? 'bb-auth-error'}
           >
-            {L.resendLabel}
-          </button>
+            {error}
+          </div>
         ) : null}
-        {onBack !== undefined ? (
-          <button
-            type="button"
-            className="bb-auth-button bb-auth-button-link"
-            onClick={onBack}
-          >
-            {L.backLabel}
-          </button>
-        ) : null}
-      </div>
-    </form>
-  );
-}
+
+        <button
+          type="submit"
+          className={classNames?.button ?? 'bb-auth-button bb-auth-button-primary'}
+          disabled={submitting || code.length !== 6}
+        >
+          {submitting ? '…' : L.submitLabel}
+        </button>
+
+        <div className="bb-auth-actions">
+          {onResend !== undefined ? (
+            <button
+              type="button"
+              className="bb-auth-button bb-auth-button-link"
+              onClick={() => void onResend()}
+            >
+              {L.resendLabel}
+            </button>
+          ) : null}
+          {onBack !== undefined ? (
+            <button
+              type="button"
+              className="bb-auth-button bb-auth-button-link"
+              onClick={onBack}
+            >
+              {L.backLabel}
+            </button>
+          ) : null}
+        </div>
+      </form>
+    );
+  }
+);
