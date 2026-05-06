@@ -1,21 +1,29 @@
-// @samjonaidi-ship-it/universal-auth | src/react/components/GearSection.tsx | v1.0.0-rc.4 | 2026-04-30 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/GearSection.tsx | v1.1.0 | 2026-05-06 | BB
 // Crew persona personal-gear list — name + per-item photos.
 // Implements PERSONA_PCP_DESIGN.md §3.3 (resource_type='gear' is PERSONAL,
 // owned by identity, NOT BB-owned tools which stay in Bridge cal_assets) +
 // SDK_SPEC §5.4.7.
+//
+// v1.1.0 (P1-A): + className/style
 
-import { useState, type ReactNode } from 'react';
+import { useState, type CSSProperties, type ReactNode } from 'react';
 import { useIdentity } from '../useIdentity.js';
 import { MediaGallery } from './MediaGallery.js';
 
 export interface GearSectionProps {
   heading?: string;
   readonly?: boolean;
+  /** Optional class for the root <section>. */
+  className?: string;
+  /** Inline style for the root <section>. */
+  style?: CSSProperties;
 }
 
 export function GearSection({
   heading = 'Personal gear',
   readonly = false,
+  className,
+  style,
 }: GearSectionProps): ReactNode {
   const {
     resourcesOfType,
@@ -56,7 +64,11 @@ export function GearSection({
   }
 
   return (
-    <section className="bb-auth-resource-section" aria-label={heading}>
+    <section
+      className={className ?? 'bb-auth-resource-section'}
+      style={style}
+      aria-label={heading}
+    >
       <header className="bb-auth-resource-section-header">
         <h3 className="bb-auth-heading">{heading}</h3>
         {!readonly ? (

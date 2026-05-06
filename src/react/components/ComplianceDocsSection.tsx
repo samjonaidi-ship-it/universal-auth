@@ -1,11 +1,11 @@
-// @samjonaidi-ship-it/universal-auth | src/react/components/ComplianceDocsSection.tsx | v1.0.0-rc.4 | 2026-04-30 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/ComplianceDocsSection.tsx | v1.1.0 | 2026-05-06 | BB
 // Compliance documents (compliance_doc | license | insurance) — for crew,
 // subcontractor, architect personas.
 // Implements PERSONA_PCP_DESIGN.md §3.3 (resource_type compliance_doc/license/
 // insurance with effective_until expiry) + §6 persona matrix +
 // SDK_SPEC §5.4.1 (ProfileResource).
 
-import { useMemo, type ReactNode } from 'react';
+import { useMemo, type CSSProperties, type ReactNode } from 'react';
 import { useIdentity } from '../useIdentity.js';
 import type { ProfileResource, ResourceType } from '../../types/pcp.js';
 
@@ -14,6 +14,10 @@ export interface ComplianceDocsSectionProps {
   readonly?: boolean;
   /** Filter to a subset of types. Defaults to all three. */
   resourceTypes?: ReadonlyArray<'compliance_doc' | 'license' | 'insurance'>;
+  /** Optional class for the root <section>. */
+  className?: string;
+  /** Inline style for the root <section>. */
+  style?: CSSProperties;
 }
 
 const DEFAULT_TYPES: ReadonlyArray<'compliance_doc' | 'license' | 'insurance'> = [
@@ -66,6 +70,8 @@ export function ComplianceDocsSection({
   heading = 'Compliance & licenses',
   readonly = false,
   resourceTypes = DEFAULT_TYPES,
+  className,
+  style,
 }: ComplianceDocsSectionProps): ReactNode {
   const { resources, archiveResource, mediaForResource } = useIdentity();
 
@@ -77,7 +83,11 @@ export function ComplianceDocsSection({
   }, [resources, resourceTypes]);
 
   return (
-    <section className="bb-auth-resource-section" aria-label={heading}>
+    <section
+      className={className ?? 'bb-auth-resource-section'}
+      style={style}
+      aria-label={heading}
+    >
       <h3 className="bb-auth-heading">{heading}</h3>
 
       {docs.length === 0 ? (

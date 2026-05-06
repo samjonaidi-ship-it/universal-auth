@@ -63,6 +63,7 @@ import { getOrCreateKeypair } from './dpop/keypair.js';
 import { buildDpopProof } from './dpop/proof.js';
 import { recordNonce, consumeNonce } from './dpop/nonce-cache.js';
 import { emit } from './event-reporter.js';
+import { reportSoftError } from './error-hook.js';
 import type { DpopMode } from '../config.js';
 
 // ── Configuration ────────────────────────────────────────────────────────
@@ -263,11 +264,12 @@ async function requestInternal<T>(
           method,
           reason: err instanceof Error ? err.message : String(err),
         });
-        // eslint-disable-next-line no-console
-        console.warn(
-          '[@samjonaidi-ship-it/universal-auth] DPoP build failed; falling back to plain Bearer.',
-          err
+        // P1-E — route through onError hook; fall back to console.warn.
+        const fallbackErr = new Error(
+          `DPOP_FALLBACK: DPoP build failed for ${method} ${path}; falling back to plain Bearer. Cause: ${err instanceof Error ? err.message : String(err)}`,
         );
+        if (err instanceof Error) (fallbackErr as Error & { cause?: unknown }).cause = err;
+        reportSoftError(fallbackErr);
       }
     }
   }

@@ -6,6 +6,153 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
 
 > **Note on rc.3 / rc.4 entries below:** these were **internal-only milestones** between rc.2 (2026-04-28) and 1.0.0 (2026-04-30). Neither was tagged or published to the registry — public consumer path is rc.2 → 1.0.0. The rc.3 / rc.4 entries document work that landed on `main` but never shipped under those version numbers; "Recommended upgrade" wording in those sections is historical and does not apply to actual consumers.
 
+## [1.1.0-rc.2] — 2026-05-06 — Post-audit hardening (P0 + P1)
+
+**rc.2 picks up all P0 ship-blockers and P1 production-hardening items from
+the 2026-05-06 holistic audit (`audits/holistic-2026-05-06/`).** The rc.1
+shape stays — DPoP, SSE, ABAC, DelegationCenter — plus 17 surgical fixes.
+No new public-API breaking changes since rc.1; the only intentionally
+breaking change is `validatePhone` becoming async (P1-F lazy-load).
+
+### P0 — ship-blockers (closed)
+
+- **README.md quick-start fix.** Split `AuthProvider`/`useAuth` import to
+  the `/react` subpath where they actually live. New CI gate
+  (`pnpm verify:readme` via `scripts/check-readme-code.ts`) parses every
+  README import statement and asserts each named symbol is exported by
+  the matching barrel — catches this regression class for free going
+  forward.
+- **DPoP `ath` claim per RFC 9449 §4.2.** Proofs now bind to the access
+  token via `ath = base64url(SHA-256(accessToken))` — captured proof can
+  no longer be paired with a different access token bound to the same
+  client key.
+- **Closure-aware bundle budgets.** Replaced `size-limit` (entry-stub
+  brotli measurement that over-counted dynamic imports after P1-F) with
+  `scripts/size-check-closure.ts` walking the esbuild metafile. New
+  numbers (gzipped, transitive eager-only): core 23 KB / 40 KB · react
+  36 KB / 70 KB · profile 15 KB / 50 KB · passkey-flow lazy-marginal
+  0.2 KB / 12 KB · sw 0.6 KB / 5 KB.
+- **`setSession` shim deprecation announced for v1.1.0 GA.** rc.2 keeps
+  the main-barrel shim; GA deletes it. Migrate to
+  `import { setSession } from '@samjonaidi-ship-it/universal-auth/internal'`.
+
+### P1 — production hardening
+
+**Component theming (P1-A + P1-B):** all 25 React components now accept
+`className?: string` and `style?: CSSProperties`. Form-style components
+(`SignInForm`, `CodeEntry`, `ContactInfoForm`, `PersonaFieldsForm`)
+additionally accept a `classNames?: { root, label, input, error, button }`
+slot map. Six user-facing components (`SignInForm`, `CodeEntry`,
+`PasskeyPrompt`, `OfflineIndicator`, `ImpersonationBanner`, `AppChooser`)
+are wrapped in `forwardRef` so consumers can attach refs for focus
+management, analytics, and test handles.
+
+**`<SignInForm defaultDestination>` (P1-C):** new `defaultDestination?`
++ `onDestinationChange?` props. Magic-link landings can pre-fill the
+form via a query param without forking the component (resolves the
+INTEGRATION_GUIDE "fork it" workaround).
+
+**`AbortSignal` plumbing across public surface (P1-D):** every public
+async function now accepts `signal?: AbortSignal` — `requestCode`,
+`verifyCode`, `verifyEnrollmentToken`, `activateEnrollment`, `signOut`,
+`signOutEverywhere`, `listSessions`, `revokeSession`,
+`startImpersonation`, `endImpersonation`, `recordPermissionGrant`,
+`requestAndRecord`, `listPermissionGrants`, `revokePermissionGrant`,
+`getConsentDocuments`, `bulkAcceptConsents`, `recordConsent`,
+`revokeConsent`, `listConsents`, `listAllConsents`, `getPersonaRegistry`,
+`lookupPersona`, `registerPasskey`, `authenticatePasskey`, `canAccess`,
+`canAccessBulk`, `refreshEntitlements`, `flushSettingsNow`,
+`updateSettings`. TanStack Query / SWR / React 18 Strict Mode consumers
+can now cancel in-flight requests.
+
+**`config.onError` hook wired (P1-E):** three soft-fail sites in core
+(`token-manager.ts:LEGACY_REFRESH_RESPONSE`,
+`token-manager.ts:NO_NAVIGATOR_LOCKS`,
+`client.ts:DPOP_FALLBACK`) now route through a new `core/error-hook.ts`
+module that delegates to the consumer's `config.onError` when set, with
+graceful fallback to `console.warn`. Sentry / LogRocket / Datadog can
+finally intercept SDK-internal soft errors.
+
+**`libphonenumber-js` lazy-load (P1-F):** `validatePhone` is now async
+and dynamic-imports `libphonenumber-js` on first call. Eager React
+subpath dropped from 84 KB → 36 KB gzipped (-49 KB / 58% reduction).
+Eager profile subpath dropped from 65 KB → 15 KB gzipped (-50 KB / 77%).
+**Breaking change** for any consumer that called `validatePhone`
+directly — `await validatePhone(...)` now required.
+
+**`cnf.jkt` round-trip verify after refresh (P1-G):** if the issued
+access token's `cnf.jkt` claim is non-null, the SDK compares it against
+the local DPoP keypair's RFC 7638 thumbprint. Mismatch → clearSession +
+throw `CNF_JKT_MISMATCH`. Catches BFF mis-config (key rotation drift)
+one round-trip earlier.
+
+**WebAuthn UV/UP enforcement client-side (P1-H):** pre-call guard
+refuses server-issued options carrying `userVerification: 'discouraged'`
+(stops downgrade attacks at the SDK boundary). Post-call guard parses
+`authenticatorData[32]` (UV bit) on the assertion; if policy demanded
+UV and the authenticator did not perform it, the assertion is rejected
+before submitting to `/verify`. NIST SP 800-63B AAL2 conformance.
+
+**`apiBaseUrl` validation in production mode (P1-I):** new
+`assertApiBaseUrlSafety()` exported from `config.ts`. In production mode
+the SDK now requires `apiBaseUrl` to be HTTPS AND share a registrable
+domain with `cookieDomain`. Misconfigured production deploys (or
+attacker-controlled config) can no longer leak the session cookie to a
+foreign host via SSE `withCredentials`.
+
+**Entitlements localStorage HMAC tag (P1-J):** new HMAC-SHA-256 key in
+IDB (DB version 3 → 4 with auto-migration). Cached entitlements written
+as `{ data, sig }` envelopes; reads verify the signature asynchronously
+and clear the cache on tamper. Legacy unsigned blobs accepted ONCE on
+first v1.2 load and re-signed on next save (graceful migration —
+no forced re-fetch). XSS attackers can no longer plant arbitrary
+entitlements in localStorage to client-side spoof admin features.
+
+**Device-id recompute every boot (P1-K):** localStorage cache removed
+from `core/device-id.ts`. SHA-256(UA) is sub-millisecond — recomputing
+on each page load is cheaper than maintaining a tamper-vulnerable
+cache. Net source LOC: -20.
+
+### Bundle impact (gzipped, transitive eager closure)
+
+| Entry | rc.1 | rc.2 | Δ |
+|---|---|---|---|
+| core | ~22 KB | 23 KB | +1 KB (DPoP `ath` + onError hook + cnf.jkt verify) |
+| react | 84 KB | 36 KB | **-49 KB / -58%** (libphonenumber lazy + theming additive only) |
+| profile | 65 KB | 15 KB | **-50 KB / -77%** (libphonenumber lazy) |
+| passkey-flow (lazy, marginal) | 0.2 KB | 0.2 KB | unchanged |
+| sw | 0.6 KB | 0.6 KB | unchanged |
+
+### Tests
+
+**rc.1:** 693 unit. **rc.2:** 752 unit (+59) across 106 test files.
+Type strictness preserved: 0 `any`, 0 `@ts-ignore` across 10.4 KLOC.
+All 5 closure-aware budgets pass.
+
+### Migration notes (consumers upgrading from rc.1 → rc.2)
+
+- **Default behavior unchanged for the most common consumer.** New
+  optional props (className/style/classNames/forwardRef/signal/
+  defaultDestination/onDestinationChange) are additive.
+- **Breaking:** `validatePhone(...)` returns a Promise. If you imported
+  it directly, add `await`.
+- **Behavioral:** apiBaseUrl in production mode is now validated at
+  `initUniversalAuth()` call. If you misconfigured (HTTP, or a host
+  outside cookieDomain's registrable), the SDK now refuses to start.
+  Fix the config or override `cookieDomain`.
+- **Behavioral:** legacy entitlements localStorage (v1.0/v1.1 unsigned
+  format) is accepted ONCE on first rc.2 load and re-signed on next
+  refresh. No forced re-fetch.
+
+### Deprecation reminder
+
+The main-barrel `setSession` shim (deprecated since v1.0.1) **is still
+present in rc.2 and will be removed in v1.1.0 GA**. rc.2 is your last
+release window to migrate to
+`import { setSession } from '@samjonaidi-ship-it/universal-auth/internal'`.
+
+---
+
 ## [1.1.0-rc.1] — 2026-05-06 — Lane 3 release candidate
 
 **First v1.1.0 RC.** All 4 Lane 3 tracks ship together per SDK_COMPLETION_BACKLOG §15. Designs locked 2026-05-05 (`DPOP_DESIGN_v1.0.md`, `SSE_DESIGN_v1.0.md`, `ABAC_DESIGN_v1.0.md`, `DELEGATION_CENTER_DESIGN_v1.0.md`). 7-day soak target before tagging `1.1.0`.

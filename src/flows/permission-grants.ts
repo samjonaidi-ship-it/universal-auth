@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/flows/permission-grants.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/flows/permission-grants.ts | v1.1.0 | 2026-05-06 | BB
 // Browser/device permission-grant recording.
 //
 // Per spec:
@@ -34,8 +34,15 @@ export interface RecordGrantInput {
   prompted?: boolean;
 }
 
-export async function recordPermissionGrant(input: RecordGrantInput): Promise<void> {
-  await post('/identity/v1/permission-grants', input);
+export async function recordPermissionGrant(
+  input: RecordGrantInput,
+  options: { signal?: AbortSignal } = {},
+): Promise<void> {
+  await post(
+    '/identity/v1/permission-grants',
+    input,
+    options.signal !== undefined ? { signal: options.signal } : {},
+  );
 
   const eventType =
     input.state === 'granted'
@@ -56,7 +63,8 @@ export async function recordPermissionGrant(input: RecordGrantInput): Promise<vo
  * Returns the resulting state.
  */
 export async function requestAndRecord(
-  permission_key: PermissionKey
+  permission_key: PermissionKey,
+  options: { signal?: AbortSignal } = {},
 ): Promise<PermissionState> {
   let state: PermissionState = 'denied';
   let prompted = true;
@@ -80,7 +88,10 @@ export async function requestAndRecord(
     state = 'denied';
   }
 
-  await recordPermissionGrant({ permission_key, state, prompted });
+  await recordPermissionGrant(
+    { permission_key, state, prompted },
+    options.signal !== undefined ? { signal: options.signal } : {},
+  );
   return state;
 }
 
@@ -106,13 +117,17 @@ export interface ListedPermissionGrant {
  * only cares about the most recent grant per `permission_key`.
  */
 export async function listPermissionGrants(
-  filterKey?: string
+  filterKey?: string,
+  options: { signal?: AbortSignal } = {},
 ): Promise<readonly ListedPermissionGrant[]> {
   const path =
     filterKey !== undefined && filterKey !== ''
       ? `/identity/v1/permission-grants?key=${encodeURIComponent(filterKey)}`
       : '/identity/v1/permission-grants';
-  const { data } = await get<{ grants: readonly ListedPermissionGrant[] }>(path);
+  const { data } = await get<{ grants: readonly ListedPermissionGrant[] }>(
+    path,
+    options.signal !== undefined ? { signal: options.signal } : {},
+  );
   return data.grants;
 }
 
@@ -124,10 +139,13 @@ export async function listPermissionGrants(
  */
 export async function revokePermissionGrant(
   grantId: string,
-  reason?: string
+  reason?: string,
+  options: { signal?: AbortSignal } = {},
 ): Promise<void> {
-  await post(`/identity/v1/permission-grants/${encodeURIComponent(grantId)}/revoke`, {
-    revoked_reason: reason,
-  });
+  await post(
+    `/identity/v1/permission-grants/${encodeURIComponent(grantId)}/revoke`,
+    { revoked_reason: reason },
+    options.signal !== undefined ? { signal: options.signal } : {},
+  );
   void emit('permission.revoked', { grant_id: grantId });
 }

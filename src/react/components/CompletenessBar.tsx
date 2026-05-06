@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/react/components/CompletenessBar.tsx | v1.0.0-rc.4 | 2026-04-30 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/CompletenessBar.tsx | v1.1.0 | 2026-05-06 | BB
 // PCP-aware completeness bar with color bands + clickable missing-required list.
 // Implements PERSONA_PCP_DESIGN.md §10 (SDK component map: completeness driven
 // by persona_registry.profile_schema.required[]) + SDK_SPEC §5.4.3.
@@ -8,7 +8,7 @@
 // yellow < 80, green ≥ 80) and an interactive missing-field list with an
 // optional onFieldClick affordance for "jump to that field" UX.
 
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { useProfile } from '../useProfile.js';
 
 export interface CompletenessBarProps {
@@ -20,6 +20,10 @@ export interface CompletenessBarProps {
   onFieldClick?: (fieldKey: string) => void;
   /** ARIA label override. */
   label?: string;
+  /** Optional class for the root <div>. */
+  className?: string;
+  /** Inline style for the root <div>. */
+  style?: CSSProperties;
 }
 
 type Band = 'red' | 'yellow' | 'green';
@@ -63,12 +67,18 @@ export function CompletenessBar({
   hideMissing = false,
   onFieldClick,
   label = 'Profile completeness',
+  className,
+  style,
 }: CompletenessBarProps): ReactNode {
   const { completeness, missingRequired } = useProfile();
   const band = bandFor(completeness);
 
   return (
-    <div className="bb-auth-completeness-pcp" data-band={band}>
+    <div
+      className={className ?? 'bb-auth-completeness-pcp'}
+      style={style}
+      data-band={band}
+    >
       <div
         className="bb-auth-completeness-track"
         role="progressbar"

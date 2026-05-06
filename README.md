@@ -3,7 +3,7 @@
 **Bainbridge Builders universal authentication SDK.** One package; every BB consumer app uses it for login, session, enrollment, profile, offline queue, and entitlements.
 
 - **Spec:** `BB_UNIVERSAL_AUTH_SDK_SPEC.md` v1.6.1 (internal repo)
-- **Status:** **v1.1.0-rc.1 — Lane 3 release candidate** (published 2026-05-06)
+- **Status:** **v1.1.0-rc.2 — Post-audit hardening** (P0 + P1 closed; published 2026-05-06)
 - **Registry:** GitHub Packages, `@samjonaidi-ship-it` scope (restricted access)
 - **Tests:** 614/614 pass; coverage 92.67% lines / 85.32% branches / 92.09% functions
 - **Bundle:** core 11.93 KB / passkey 7.95 KB / sw 488 B (gzip-brotli)

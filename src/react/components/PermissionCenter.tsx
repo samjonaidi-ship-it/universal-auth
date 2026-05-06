@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/react/components/PermissionCenter.tsx | v1.0.0-rc.4 | 2026-04-30 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/PermissionCenter.tsx | v1.1.0 | 2026-05-06 | BB
 // Persistent UI for browser/device permissions — per PERSONA_PCP_DESIGN.md §5.1
 // (L3a) and §10 (UX/UI implications).
 //
@@ -12,7 +12,7 @@
 //     SDK enforce server-side and prompt the user to also visit browser
 //     settings if they want to fully revoke OS-level access.
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   listPermissionGrants,
   revokePermissionGrant,
@@ -34,6 +34,10 @@ export interface PermissionCenterProps {
   onRequest?: (key: string) => Promise<PermissionState>;
   /** Heading override. */
   heading?: string;
+  /** Optional class for the root <section>. */
+  className?: string;
+  /** Inline style for the root <section>. */
+  style?: CSSProperties;
 }
 
 const DEFAULT_LABELS: Record<string, string> = {
@@ -66,6 +70,8 @@ export function PermissionCenter({
   onRevoked,
   onRequest,
   heading = 'Device permissions',
+  className,
+  style,
 }: PermissionCenterProps): ReactNode {
   const [view, setView] = useState<ViewState>(INITIAL);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -145,7 +151,12 @@ export function PermissionCenter({
 
   if (view.loading) {
     return (
-      <section className="bb-auth-permission-center" aria-label={heading} aria-busy="true">
+      <section
+        className={className ?? 'bb-auth-permission-center'}
+        style={style}
+        aria-label={heading}
+        aria-busy="true"
+      >
         <h2 className="bb-auth-heading">{heading}</h2>
         <p className="bb-auth-description">Loading…</p>
       </section>
@@ -153,7 +164,11 @@ export function PermissionCenter({
   }
 
   return (
-    <section className="bb-auth-permission-center" aria-label={heading}>
+    <section
+      className={className ?? 'bb-auth-permission-center'}
+      style={style}
+      aria-label={heading}
+    >
       <h2 className="bb-auth-heading">{heading}</h2>
 
       {view.error !== null ? (

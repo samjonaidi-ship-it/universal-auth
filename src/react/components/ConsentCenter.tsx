@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/react/components/ConsentCenter.tsx | v1.0.0-rc.4 | 2026-04-30 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/ConsentCenter.tsx | v1.1.0 | 2026-05-06 | BB
 // Persistent settings UI for the user's consents — per PERSONA_PCP_DESIGN.md §10
 // (UX/UI implications) and BB_UNIVERSAL_AUTH_SDK_SPEC.md §3.4.
 //
@@ -13,7 +13,7 @@
 //
 // Re-uses flows/consent.ts helpers (no duplicated client logic).
 
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   bulkAcceptConsents,
   getConsentDocuments,
@@ -30,6 +30,10 @@ export interface ConsentCenterProps {
   onConsentChanged?: (consent: ListedConsent) => void;
   /** Heading override. */
   heading?: string;
+  /** Optional class for the root <section>. */
+  className?: string;
+  /** Inline style for the root <section>. */
+  style?: CSSProperties;
 }
 
 interface ViewState {
@@ -52,6 +56,8 @@ export function ConsentCenter({
   audience,
   onConsentChanged,
   heading = 'Consents',
+  className,
+  style,
 }: ConsentCenterProps): ReactNode {
   const [view, setView] = useState<ViewState>(INITIAL);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -134,7 +140,12 @@ export function ConsentCenter({
 
   if (view.loading) {
     return (
-      <section className="bb-auth-consent-center" aria-label={heading} aria-busy="true">
+      <section
+        className={className ?? 'bb-auth-consent-center'}
+        style={style}
+        aria-label={heading}
+        aria-busy="true"
+      >
         <h2 className="bb-auth-heading">{heading}</h2>
         <p className="bb-auth-description">Loading…</p>
       </section>
@@ -152,7 +163,11 @@ export function ConsentCenter({
   );
 
   return (
-    <section className="bb-auth-consent-center" aria-label={heading}>
+    <section
+      className={className ?? 'bb-auth-consent-center'}
+      style={style}
+      aria-label={heading}
+    >
       <h2 className="bb-auth-heading">{heading}</h2>
 
       {view.error !== null ? (

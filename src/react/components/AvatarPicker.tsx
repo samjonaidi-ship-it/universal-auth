@@ -1,9 +1,11 @@
-// @samjonaidi-ship-it/universal-auth | src/react/components/AvatarPicker.tsx | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/AvatarPicker.tsx | v1.1.0 | 2026-05-06 | BB
 // 3-tier avatar picker: upload, preset grid, or fall back to initials.
 // Per §5.4.4. Composable with <ProfileSetupScreen> or rendered standalone
 // (e.g. on a /me/profile page).
+//
+// v1.1.0 (P1-A): + className/style
 
-import { useRef, useState, type ChangeEvent, type ReactNode } from 'react';
+import { useRef, useState, type ChangeEvent, type CSSProperties, type ReactNode } from 'react';
 import { useProfile } from '../useProfile.js';
 import { PRESET_AVATARS, findPresetByKey } from '../../profile/presets.js';
 import { resolveAvatar } from '../../profile/avatar.js';
@@ -14,11 +16,17 @@ export interface AvatarPickerProps {
   heading?: string;
   /** Tab labels. */
   labels?: Partial<{ upload: string; choose: string; clear: string; size: string }>;
+  /** Optional class for the root <section>. */
+  className?: string;
+  /** Inline style for the root <section>. */
+  style?: CSSProperties;
 }
 
 export function AvatarPicker({
   heading = 'Avatar',
   labels = {},
+  className,
+  style,
 }: AvatarPickerProps): ReactNode {
   const L = {
     upload: 'Upload photo',
@@ -87,7 +95,11 @@ export function AvatarPicker({
   }
 
   return (
-    <section className="bb-auth-avatar-picker" aria-label={heading}>
+    <section
+      className={className ?? 'bb-auth-avatar-picker'}
+      style={style}
+      aria-label={heading}
+    >
       <h3 className="bb-auth-heading">{heading}</h3>
 
       <div className="bb-auth-avatar-current">

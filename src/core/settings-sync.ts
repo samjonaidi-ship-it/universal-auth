@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/core/settings-sync.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/settings-sync.ts | v1.1.0 | 2026-05-06 | BB
 // Settings sync with debounced PUT + If-Match optimistic locking.
 //
 // Invariants per spec:
@@ -55,6 +55,10 @@ const state: LocalState = {
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 let inFlightPut: Promise<void> | null = null;
+// P1-D: optional signal carried alongside the pending patch. Cleared after
+// flushWrite() consumes it (success OR error). updateSettings() may overwrite
+// it with a fresher signal between debounce ticks.
+let pendingSignal: AbortSignal | undefined = undefined;
 
 type Listener = (settings: SettingsShape) => void;
 const listeners = new Set<Listener>();
@@ -99,12 +103,21 @@ export function getSettingsVersion(): number {
 /**
  * Merge a partial patch into settings and schedule a debounced server PUT.
  * Local state updates immediately (optimistic); listeners fire right away.
+ *
+ * The optional `signal` is forwarded to the eventual debounced PUT so callers
+ * can cancel a pending write that hasn't fired yet (or abort an in-flight
+ * one). It is best-effort: if a later updateSettings() call overrides the
+ * pending patch with its own signal, the latest signal wins.
  */
-export function updateSettings(patch: SettingsShape): void {
+export function updateSettings(
+  patch: SettingsShape,
+  options: { signal?: AbortSignal } = {},
+): void {
   // Shallow merge — callers can pass nested objects; they replace wholesale.
   state.settings = { ...state.settings, ...patch };
   state.dirty = true;
   state.pendingPatch = { ...(state.pendingPatch ?? {}), ...patch };
+  pendingSignal = options.signal ?? pendingSignal;
   notify();
   scheduleWrite();
 }
@@ -157,19 +170,28 @@ function scheduleWrite(): void {
   }, debounceMs);
 }
 
-async function flushWrite(): Promise<void> {
+async function flushWrite(signalOverride?: AbortSignal): Promise<void> {
   if (inFlightPut !== null) return inFlightPut;
   if (!state.dirty) return;
 
   // Snapshot the patch we're about to PUT so a 409 can return it to the consumer.
   const patchInFlight: SettingsShape = state.pendingPatch ?? { ...state.settings };
 
+  // P1-D: capture the signal in scope, then clear module state so the next
+  // updateSettings() starts clean. Override (from flushSettingsNow) wins.
+  const effectiveSignal = signalOverride ?? pendingSignal;
+  pendingSignal = undefined;
+
   inFlightPut = (async () => {
     try {
+      const putOpts: { headers: Record<string, string>; signal?: AbortSignal } = {
+        headers: { 'If-Match': String(state.version) },
+      };
+      if (effectiveSignal !== undefined) putOpts.signal = effectiveSignal;
       const { data } = await put<GetResponse>(
         '/identity/v1/settings',
         { settings: state.settings },
-        { headers: { 'If-Match': String(state.version) } }
+        putOpts
       );
       state.version = data.version;
       state.settings = data.settings;
@@ -236,12 +258,14 @@ function notify(): void {
 /**
  * Force an immediate flush (used on logout, page hide).
  */
-export async function flushSettingsNow(): Promise<void> {
+export async function flushSettingsNow(
+  options: { signal?: AbortSignal } = {},
+): Promise<void> {
   if (debounceTimer !== null) {
     clearTimeout(debounceTimer);
     debounceTimer = null;
   }
-  await flushWrite();
+  await flushWrite(options.signal);
 }
 
 // ── Test-only ─────────────────────────────────────────────────────────────
@@ -258,5 +282,6 @@ export function __resetSettingsSyncForTests(): void {
     debounceTimer = null;
   }
   inFlightPut = null;
+  pendingSignal = undefined;
   listeners.clear();
 }

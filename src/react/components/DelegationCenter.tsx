@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/react/components/DelegationCenter.tsx | v0.2.0 | 2026-05-06 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/DelegationCenter.tsx | v1.1.0 | 2026-05-06 | BB
 // Persistent UI for delegated grants — DELEGATION_CENTER_DESIGN_v1.0.md (LOCKED 2026-05-05).
 //
 // Tabs:
@@ -29,6 +29,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
 } from 'react';
 import {
@@ -55,6 +56,10 @@ export interface DelegationCenterProps {
   /** GDPR export format. Only `'json'` is implemented client-side in v1.1. */
   exportFormat?: 'json' | 'csv';
   heading?: string;
+  /** Optional class for the root <section>. */
+  className?: string;
+  /** Inline style for the root <section>. */
+  style?: CSSProperties;
 }
 
 type TabKey = 'active' | 'granted_to_me' | 'history' | 'effective_access';
@@ -76,6 +81,8 @@ export function DelegationCenter({
   showEffectiveAccess = false,
   exportFormat = 'json',
   heading = 'Delegations',
+  className,
+  style,
 }: DelegationCenterProps): ReactNode {
   void _onGrantCreated; // D1: bare component — consumer plugs its own create flow
   void _granteeLookup;
@@ -165,7 +172,8 @@ export function DelegationCenter({
   if (loading) {
     return (
       <section
-        className="bb-delegation-center"
+        className={className ?? 'bb-delegation-center'}
+        style={style}
         aria-label={heading}
         aria-busy="true"
       >
@@ -187,7 +195,11 @@ export function DelegationCenter({
   const errMsg = error ?? localError;
 
   return (
-    <section className="bb-delegation-center" aria-label={heading}>
+    <section
+      className={className ?? 'bb-delegation-center'}
+      style={style}
+      aria-label={heading}
+    >
       <h2 className="bb-auth-heading">{heading}</h2>
 
       {errMsg !== null ? (

@@ -1,4 +1,5 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/profile/validators.test.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/profile/validators.test.ts | v1.1.0 | 2026-05-06 | BB
+// v1.1.0 (P1-F): validatePhone is now async (libphonenumber-js dynamic import).
 
 import { describe, it, expect } from 'vitest';
 import {
@@ -8,29 +9,35 @@ import {
 } from '../../../src/profile/validators.js';
 
 describe('profile/validators — validatePhone (§5.4.5)', () => {
-  it('normalizes a US number to E.164', () => {
-    const r = validatePhone('(206) 555-0123');
+  it('normalizes a US number to E.164', async () => {
+    const r = await validatePhone('(206) 555-0123');
     expect(r.ok).toBe(true);
     expect(r.e164).toBe('+12065550123');
   });
 
-  it('accepts a number already in E.164 form with explicit +', () => {
-    const r = validatePhone('+442079460958', 'GB');
+  it('accepts a number already in E.164 form with explicit +', async () => {
+    const r = await validatePhone('+442079460958', 'GB');
     expect(r.ok).toBe(true);
     expect(r.e164).toBe('+442079460958');
   });
 
-  it('rejects too-short input', () => {
-    expect(validatePhone('555').ok).toBe(false);
+  it('rejects too-short input', async () => {
+    expect((await validatePhone('555')).ok).toBe(false);
   });
 
-  it('rejects empty input', () => {
-    expect(validatePhone('').ok).toBe(false);
-    expect(validatePhone('').reason).toBe('empty');
+  it('rejects empty input', async () => {
+    expect((await validatePhone('')).ok).toBe(false);
+    expect((await validatePhone('')).reason).toBe('empty');
   });
 
-  it('rejects non-numeric garbage', () => {
-    expect(validatePhone('hello-world').ok).toBe(false);
+  it('rejects non-numeric garbage', async () => {
+    expect((await validatePhone('hello-world')).ok).toBe(false);
+  });
+
+  it('is awaitable; libphonenumber loads via dynamic import (P1-F)', async () => {
+    // Smoke: exercise the await path to confirm dynamic import resolves
+    const r = await validatePhone('(415) 555-2671');
+    expect(r.ok).toBe(true);
   });
 });
 

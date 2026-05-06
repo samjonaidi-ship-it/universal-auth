@@ -104,10 +104,22 @@ describe('flows/passkey-flow — branch coverage (v1.0.4)', () => {
       }
       return Promise.resolve(jsonResp(200, { ok: true }));
     });
+    // P1-H: 37-byte authenticatorData with UV bit set (UP=0x01 | UV=0x04 = 0x05).
+    // The pre-P1-H literal "ad" string was too short for the new client-side
+    // UV check to read flags out of, so it failed the UV-required gate.
+    const authData = (() => {
+      const bytes = new Uint8Array(37);
+      bytes[32] = 0x05;
+      let bin = '';
+      for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]!);
+      const b64 = typeof btoa === 'function' ? btoa(bin) : Buffer.from(bin, 'binary').toString('base64');
+      return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    })();
+
     vi.mocked(startAuthentication).mockResolvedValueOnce({
       id: 'cred-x',
       rawId: 'cred-x',
-      response: { authenticatorData: 'ad', clientDataJSON: 'cd', signature: 'sig' },
+      response: { authenticatorData: authData, clientDataJSON: 'cd', signature: 'sig' },
       type: 'public-key',
       clientExtensionResults: {},
     } as unknown as Awaited<ReturnType<typeof startAuthentication>>);

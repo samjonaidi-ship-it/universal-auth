@@ -47,7 +47,8 @@ async function emitEvent(eventType: string, payload: Record<string, unknown>): P
 const DB_NAME = 'bb-universal-auth';
 // v1.0.1: bumped to 2 to add `master_key` store.
 // v1.1.0-rc.1 (L3.1): bumped to 3 to add `dpop_keypair` store.
-const DB_VERSION = 3;
+// v1.2.0 (P1-J): bumped to 4 to add `hmac_key` store.
+const DB_VERSION = 4;
 
 export const STORE_REFRESH_TOKENS = 'refresh_tokens';
 export const STORE_OFFLINE_QUEUE = 'offline_queue';
@@ -55,6 +56,7 @@ export const STORE_EVENT_QUEUE = 'event_queue';
 export const STORE_DEAD_LETTER_QUEUE = 'dead_letter_queue';
 export const STORE_MASTER_KEY = 'master_key';
 export const STORE_DPOP_KEYPAIR = 'dpop_keypair';
+export const STORE_HMAC_KEY = 'hmac_key';
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -101,6 +103,11 @@ function getDb(): Promise<IDBPDatabase> {
       // v1.1.0-rc.1 (L3.1) — DPoP keypair store
       if (!db.objectStoreNames.contains(STORE_DPOP_KEYPAIR)) {
         db.createObjectStore(STORE_DPOP_KEYPAIR, { keyPath: 'key' });
+      }
+      // v1.2.0 (P1-J) — HMAC-SHA-256 key store for tamper-detection
+      // (entitlements localStorage cache + any future MAC'd blobs).
+      if (!db.objectStoreNames.contains(STORE_HMAC_KEY)) {
+        db.createObjectStore(STORE_HMAC_KEY, { keyPath: 'key' });
       }
     },
   });
@@ -173,6 +180,69 @@ export function getOrCreateMasterKey(): Promise<CryptoKey> {
     return newKey;
   })();
   return cachedMasterKeyPromise;
+}
+
+// ── HMAC key (v1.2.0 P1-J) ────────────────────────────────────────────────
+
+const HMAC_KEY_ROW_KEY = 'current';
+
+interface HmacKeyRow {
+  key: string;          // static 'current' — one row
+  cryptoKey: CryptoKey; // structured-cloned by IDB; non-extractable HMAC-SHA-256
+  createdAt: number;
+}
+
+let cachedHmacKey: CryptoKey | null = null;
+let cachedHmacKeyPromise: Promise<CryptoKey> | null = null;
+
+/**
+ * Fetch (or generate-and-persist) the SDK's at-rest HMAC-SHA-256 key.
+ *
+ * Used to tamper-detect the localStorage-cached entitlements blob (P1-J)
+ * and any future MAC'd payloads. Separate key from the AES-GCM master
+ * because WebCrypto algorithm-locks each key to its declared usage set —
+ * an `AES-GCM` key with `['encrypt','decrypt']` cannot be passed to
+ * `crypto.subtle.sign('HMAC', ...)`.
+ *
+ * Same persistence pattern as the master key: structured-clone the
+ * non-extractable CryptoKey handle into IDB. Older browsers that reject
+ * this fall back to in-memory caching for the tab — entitlements writes
+ * still get a signature; the next page load just regenerates the key
+ * (which invalidates the previous signature → silent re-fetch).
+ */
+export function getOrCreateHmacKey(): Promise<CryptoKey> {
+  if (cachedHmacKey !== null) return Promise.resolve(cachedHmacKey);
+  if (cachedHmacKeyPromise !== null) return cachedHmacKeyPromise;
+  cachedHmacKeyPromise = (async () => {
+    const db = await getDb();
+    const existing = (await db.get(STORE_HMAC_KEY, HMAC_KEY_ROW_KEY)) as
+      | HmacKeyRow
+      | undefined;
+    if (existing && typeof CryptoKey !== 'undefined' && existing.cryptoKey instanceof CryptoKey) {
+      cachedHmacKey = existing.cryptoKey;
+      return existing.cryptoKey;
+    }
+    const newKey = await crypto.subtle.generateKey(
+      { name: 'HMAC', hash: 'SHA-256' },
+      false, // non-extractable
+      ['sign', 'verify'],
+    );
+    const row: HmacKeyRow = {
+      key: HMAC_KEY_ROW_KEY,
+      cryptoKey: newKey,
+      createdAt: Date.now(),
+    };
+    try {
+      await db.put(STORE_HMAC_KEY, row);
+    } catch {
+      // Older browsers / test envs may reject CryptoKey structured-clone.
+      // Cache in-memory; next page load will regenerate (which silently
+      // invalidates any pre-existing localStorage signature).
+    }
+    cachedHmacKey = newKey;
+    return newKey;
+  })();
+  return cachedHmacKeyPromise;
 }
 
 /**
@@ -329,6 +399,8 @@ export async function __resetDbForTests(): Promise<void> {
   }
   cachedMasterKey = null;
   cachedMasterKeyPromise = null;
+  cachedHmacKey = null;
+  cachedHmacKeyPromise = null;
   legacyWipeChecked = false;
   // Fully delete to guarantee test isolation — the upgrade callback runs
   // fresh on the next open() and no rows survive between tests.

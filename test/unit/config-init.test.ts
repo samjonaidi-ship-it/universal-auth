@@ -1,10 +1,18 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/config-init.test.ts | v1.0.1 | 2026-05-02 | BB
-// Coverage push for src/config.ts initUniversalAuth flow (lines 97-134).
+// @samjonaidi-ship-it/universal-auth | test/unit/config-init.test.ts | v1.1.0 | 2026-05-06 | BB
+// Coverage push for src/config.ts initUniversalAuth flow.
 // v1.0.1: vi.mock stubs for dynamically-imported modules prevent DNS hangs
-// when the full suite runs in parallel and client singleton is already armed.
+//   when the full suite runs in parallel and client singleton is already armed.
+// v1.1.0 (P1-I): + assertApiBaseUrlSafety coverage. baseConfig.apiBaseUrl
+//   bumped from `https://ct-bff.test` to a domain matching the default
+//   cookieDomain (`.buildwithbainbridge.com`) so production-mode init no
+//   longer trips the new validation.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { initUniversalAuth, type UniversalAuthConfig } from '../../src/config.js';
+import {
+  initUniversalAuth,
+  assertApiBaseUrlSafety,
+  type UniversalAuthConfig,
+} from '../../src/config.js';
 
 vi.mock('../../src/core/client.js', () => ({ configureClient: vi.fn(), get: vi.fn(), put: vi.fn(), patch: vi.fn(), post: vi.fn(), del: vi.fn() }));
 vi.mock('../../src/core/event-reporter.js', () => ({ configureEventReporter: vi.fn(), emit: vi.fn() }));
@@ -12,7 +20,7 @@ vi.mock('../../src/core/settings-sync.js', () => ({ configureSettingsSync: vi.fn
 vi.mock('../../src/offline/queue.js', () => ({ setMaxQueueSize: vi.fn() }));
 
 const baseConfig: UniversalAuthConfig = {
-  apiBaseUrl: 'https://ct-bff.test',
+  apiBaseUrl: 'https://api.buildwithbainbridge.com',
   appId: 'bb_init_test',
 };
 
@@ -142,5 +150,75 @@ describe('initUniversalAuth', () => {
     await expect(
       initUniversalAuth({ ...baseConfig, offline: {} })
     ).resolves.toBeUndefined();
+  });
+});
+
+describe('assertApiBaseUrlSafety (P1-I)', () => {
+  it('skips all checks in development mode', () => {
+    expect(() => assertApiBaseUrlSafety('development', 'http://localhost:3300')).not.toThrow();
+    expect(() => assertApiBaseUrlSafety('development', 'https://anything.example.com')).not.toThrow();
+  });
+
+  it('skips all checks in test/e2e mode', () => {
+    expect(() => assertApiBaseUrlSafety('test', 'http://localhost:3300')).not.toThrow();
+    expect(() => assertApiBaseUrlSafety('e2e', 'http://localhost:3300')).not.toThrow();
+  });
+
+  it('throws in production when apiBaseUrl is not HTTPS', () => {
+    expect(() =>
+      assertApiBaseUrlSafety('production', 'http://api.buildwithbainbridge.com'),
+    ).toThrow(/must use HTTPS in production/);
+  });
+
+  it('throws in production when apiBaseUrl is not a valid URL', () => {
+    expect(() =>
+      assertApiBaseUrlSafety('production', 'not a url'),
+    ).toThrow(/not a valid URL/);
+  });
+
+  it('throws in production when apiBaseUrl host does not share registrable domain with cookieDomain', () => {
+    expect(() =>
+      assertApiBaseUrlSafety(
+        'production',
+        'https://attacker.example.com',
+        '.buildwithbainbridge.com',
+      ),
+    ).toThrow(/does not share a registrable domain/);
+  });
+
+  it('accepts production apiBaseUrl that matches the default cookieDomain', () => {
+    expect(() =>
+      assertApiBaseUrlSafety('production', 'https://api.buildwithbainbridge.com'),
+    ).not.toThrow();
+  });
+
+  it('accepts production apiBaseUrl on a subdomain of cookieDomain', () => {
+    expect(() =>
+      assertApiBaseUrlSafety(
+        'production',
+        'https://ct-bff.bainbridgebuilders.com',
+        '.bainbridgebuilders.com',
+      ),
+    ).not.toThrow();
+  });
+
+  it('accepts apex apiBaseUrl when cookieDomain is the bare apex', () => {
+    expect(() =>
+      assertApiBaseUrlSafety(
+        'production',
+        'https://buildwithbainbridge.com',
+        'buildwithbainbridge.com',
+      ),
+    ).not.toThrow();
+  });
+
+  it('rejects apex look-alike (notbuildwithbainbridge.com) per non-substring match', () => {
+    expect(() =>
+      assertApiBaseUrlSafety(
+        'production',
+        'https://notbuildwithbainbridge.com',
+        '.buildwithbainbridge.com',
+      ),
+    ).toThrow(/does not share a registrable domain/);
   });
 });

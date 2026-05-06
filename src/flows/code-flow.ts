@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/flows/code-flow.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | src/flows/code-flow.ts | v1.1.0 | 2026-05-06 | BB
 // Code-first sign-in flow — §3.1:
 //   POST /auth/v1/code/request  (rate-limited 3/hr/destination)
 //   POST /auth/v1/code/verify   (rate-limited 10/min/IP)
@@ -51,7 +51,10 @@ interface VerifyResponse {
  * Request a one-time code. Always returns ok (server returns generic success
  * to prevent account enumeration per §3.1 "enumeration-safe").
  */
-export async function requestCode(input: RequestCodeInput): Promise<void> {
+export async function requestCode(
+  input: RequestCodeInput,
+  options: { signal?: AbortSignal } = {},
+): Promise<void> {
   const cfg = getClientConfig();
   const body: Record<string, unknown> = {
     destination: input.destination,
@@ -59,7 +62,10 @@ export async function requestCode(input: RequestCodeInput): Promise<void> {
   };
   if (input.channel !== undefined) body.channel = input.channel;
 
-  await post<{ ok: true }>('/auth/v1/code/request', body, { anonymous: true });
+  await post<{ ok: true }>('/auth/v1/code/request', body, {
+    anonymous: true,
+    ...(options.signal !== undefined && { signal: options.signal }),
+  });
 
   void emit('enrollment.code_sent', {
     channel: input.channel ?? 'auto',
@@ -72,7 +78,10 @@ export async function requestCode(input: RequestCodeInput): Promise<void> {
  * token in memory + encrypted refresh token in IDB) and the returned Session
  * is ready for `useAuth()` consumers.
  */
-export async function verifyCode(input: VerifyCodeInput): Promise<VerifyCodeResult> {
+export async function verifyCode(
+  input: VerifyCodeInput,
+  options: { signal?: AbortSignal } = {},
+): Promise<VerifyCodeResult> {
   const cfg = getClientConfig();
   const device_id = await getOrCreateDeviceId();
 
@@ -84,7 +93,10 @@ export async function verifyCode(input: VerifyCodeInput): Promise<VerifyCodeResu
       app_id: cfg?.appId,
       destination: input.destination,
     },
-    { anonymous: true }
+    {
+      anonymous: true,
+      ...(options.signal !== undefined && { signal: options.signal }),
+    }
   );
 
   await setSession({

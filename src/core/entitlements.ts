@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/core/entitlements.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/entitlements.ts | v1.2.0 | 2026-05-06 | BB
 // Entitlement (feature + app_access) cache with stale-while-revalidate.
 //
 // Invariants per spec:
@@ -15,10 +15,22 @@
 //     on session change (called from useAuth hook + session-watcher)
 //   * Cache persisted to localStorage under `bb-universal-auth:entitlements` so
 //     it survives page reload; hydrated on first read
+//
+// v1.2.0 (P1-J, 2026-05-06): HMAC-SHA-256 tag over the localStorage blob.
+// Audit Finding M2: an XSS attacker could write arbitrary entitlements to
+// localStorage and client-side spoof admin features in the UI (server still
+// enforces). The MAC is keyed off a non-extractable HMAC-SHA-256 key
+// persisted in IDB (separate from the AES-GCM master key — algorithm
+// incompatible). On read: signature verified asynchronously after the sync
+// hot-path returns; mismatch triggers a clear + listener notification.
+// Legacy unsigned blobs are accepted ONCE on first v1.2 load and rewritten
+// with a signature on the next save (graceful migration — no forced
+// re-fetch). Wire format: `{ data: CacheShape, sig: base64url }`.
 
 import { get } from './client.js';
 import type { Entitlements } from '../types/api.js';
 import { AuthSessionRevoked } from '../errors.js';
+import { getOrCreateHmacKey } from './storage.js';
 
 // ── Constants ─────────────────────────────────────────────────────────────
 
@@ -74,31 +86,143 @@ function notifyEntitlementsChange(): void {
 
 // ── Persistence (localStorage) ────────────────────────────────────────────
 
+// v1.2.0 (P1-J): MAC'd wire format. Old format is a bare CacheShape; new
+// format is { data: CacheShape, sig: base64url(HMAC-SHA-256(data)) }.
+interface SignedEnvelope {
+  data: CacheShape;
+  sig: string;
+}
+
+function isSignedEnvelope(o: unknown): o is SignedEnvelope {
+  return (
+    o !== null &&
+    typeof o === 'object' &&
+    'data' in o &&
+    'sig' in o &&
+    typeof (o as { sig: unknown }).sig === 'string'
+  );
+}
+
+function isValidCacheShape(o: unknown): o is CacheShape {
+  if (o === null || typeof o !== 'object') return false;
+  const c = o as Partial<CacheShape>;
+  return Array.isArray(c.features) && Array.isArray(c.app_access);
+}
+
+// Track whether the on-disk blob's signature has been verified for the
+// current page load. Sync `loadFromDisk` returns instantly on the cached
+// memory; an async verifier (kicked off by hydrate-then-verify) decides
+// whether to keep or clear the cache.
+let signatureVerified = false;
+let unsignedLegacyAdopted = false;
+
 function loadFromDisk(): CacheShape | null {
   if (memory !== null) return memory;
   if (typeof localStorage === 'undefined') return null;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw === null) return null;
-    const parsed = JSON.parse(raw) as CacheShape;
-    // Guard against corrupt/migrated data — both arrays must actually be arrays
-    // before we call .includes() on them in hasFeature / hasAppAccess.
-    if (!Array.isArray(parsed.features) || !Array.isArray(parsed.app_access)) {
-      localStorage.removeItem(STORAGE_KEY);
-      return null;
+    const parsed = JSON.parse(raw) as unknown;
+
+    // New (v1.2+) format: { data, sig } envelope. Adopt the data optimistically;
+    // verifyDiskSignatureAsync() will clear it asynchronously if MAC fails.
+    if (isSignedEnvelope(parsed)) {
+      if (!isValidCacheShape(parsed.data)) {
+        localStorage.removeItem(STORAGE_KEY);
+        return null;
+      }
+      memory = parsed.data;
+      // Kick off async verify (idempotent — short-circuits if already verified).
+      void verifyDiskSignatureAsync(parsed);
+      return parsed.data;
     }
-    memory = parsed;
-    return parsed;
+
+    // Legacy (v1.0/v1.1) format: bare CacheShape. Accept ONCE; re-sign on next save.
+    if (isValidCacheShape(parsed)) {
+      memory = parsed;
+      unsignedLegacyAdopted = true;
+      signatureVerified = true; // legacy is "trusted" once for graceful migration
+      return parsed;
+    }
+
+    // Unrecognized shape — purge.
+    localStorage.removeItem(STORAGE_KEY);
+    return null;
   } catch {
     return null;
   }
 }
 
-function saveToDisk(snap: CacheShape): void {
+/**
+ * P1-J: async signature verification of the on-disk blob. Runs once per
+ * page load after the sync hot-path has already returned the cached data.
+ * On mismatch (XSS-tampered or HMAC-key rotation), clears the cache and
+ * notifies subscribers — consumers re-read null and a refresh kicks in.
+ */
+async function verifyDiskSignatureAsync(envelope: SignedEnvelope): Promise<void> {
+  if (signatureVerified) return;
+  try {
+    const hmacKey = await getOrCreateHmacKey();
+    const expectedSig = await computeSignature(envelope.data, hmacKey);
+    if (expectedSig === envelope.sig) {
+      signatureVerified = true;
+      return;
+    }
+    // Tamper detected — clear the cache.
+    clearDisk();
+  } catch {
+    // Crypto unavailable / IDB unavailable / algorithm rejection — leave the
+    // cache in place; server enforcement is the ultimate gate.
+    signatureVerified = true;
+  }
+}
+
+async function computeSignature(data: CacheShape, hmacKey: CryptoKey): Promise<string> {
+  // Use a stable JSON form: keys in insertion order from a fresh literal.
+  // CacheShape has 4 fields; serialize them in a deterministic order.
+  const stable = JSON.stringify({
+    features: data.features,
+    app_access: data.app_access,
+    fetched_at: data.fetched_at,
+    identity_id: data.identity_id,
+  });
+  const sig = await crypto.subtle.sign('HMAC', hmacKey, new TextEncoder().encode(stable));
+  return base64UrlEncode(new Uint8Array(sig));
+}
+
+function base64UrlEncode(bytes: Uint8Array): string {
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]!);
+  const b64 = typeof btoa === 'function'
+    ? btoa(bin)
+    : Buffer.from(bin, 'binary').toString('base64');
+  return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+async function saveToDisk(snap: CacheShape): Promise<void> {
   memory = snap;
   if (typeof localStorage !== 'undefined') {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(snap));
+      // P1-J: sign the payload before write. Best-effort — if HMAC key
+      // generation fails (e.g., crypto.subtle unavailable in some test env),
+      // fall back to writing the legacy bare-CacheShape format. Reads will
+      // accept it as legacy.
+      let envelope: SignedEnvelope | null = null;
+      try {
+        const hmacKey = await getOrCreateHmacKey();
+        const sig = await computeSignature(snap, hmacKey);
+        envelope = { data: snap, sig };
+      } catch {
+        envelope = null;
+      }
+      const wire = envelope !== null ? JSON.stringify(envelope) : JSON.stringify(snap);
+      localStorage.setItem(STORAGE_KEY, wire);
+      // After a fresh signed write, the on-disk signature matches the new
+      // memory state — no need to re-verify on next load (until a tab refresh).
+      if (envelope !== null) {
+        signatureVerified = true;
+        unsignedLegacyAdopted = false;
+      }
     } catch {
       // Quota exceeded or storage disabled — in-memory only
     }
@@ -182,14 +306,23 @@ interface MeResponse {
  * the previous cache stays readable via `hasFeature` for the duration of the
  * call; on success it's swapped atomically.
  *
- * Concurrent callers coalesce on the in-flight request.
+ * Concurrent callers coalesce on the in-flight request — only the first
+ * caller's `signal` reaches the underlying fetch. Subsequent callers receive
+ * the same in-flight promise; aborting their signal does NOT cancel the
+ * shared fetch (it would also abort other callers). Callers needing
+ * independent cancellation should not coalesce here.
  */
-export async function refreshEntitlements(): Promise<CacheShape | null> {
+export async function refreshEntitlements(
+  options: { signal?: AbortSignal } = {},
+): Promise<CacheShape | null> {
   if (inFlightRefresh !== null) return inFlightRefresh;
 
   inFlightRefresh = (async () => {
     try {
-      const { data } = await get<MeResponse>('/auth/v1/me');
+      const { data } = await get<MeResponse>(
+        '/auth/v1/me',
+        options.signal !== undefined ? { signal: options.signal } : {},
+      );
       const features = data.aggregate?.features ?? [];
       const app_access = data.aggregate?.app_access ?? [];
       const next: CacheShape = {
@@ -198,7 +331,7 @@ export async function refreshEntitlements(): Promise<CacheShape | null> {
         fetched_at: Date.now(),
         identity_id: data.identity?.identity_id ?? null,
       };
-      saveToDisk(next);
+      await saveToDisk(next); // v1.2.0 (P1-J) — async to compute HMAC signature.
       return next;
     } catch (err) {
       // v1.0.1 (D2): re-throw session-revoked so the session-watcher / useAuth
@@ -239,6 +372,8 @@ function isBeyondGrace(snap: CacheShape): boolean {
 export function __resetEntitlementsForTests(): void {
   memory = null;
   inFlightRefresh = null;
+  signatureVerified = false;
+  unsignedLegacyAdopted = false;
   listeners.clear();
   if (typeof localStorage !== 'undefined') {
     try {

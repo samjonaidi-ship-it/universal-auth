@@ -1,6 +1,6 @@
 {
   "name": "@samjonaidi-ship-it/universal-auth",
-  "version": "1.1.0-rc.1",
+  "version": "1.1.0-rc.2",
   "description": "Bainbridge Builders universal authentication SDK — one package, every consumer app (BB_Express, ControlTower, future Customer Portal, Buddy Console).",
   "license": "UNLICENSED",
   "type": "module",
@@ -60,7 +60,7 @@
     "test:chaos": "vitest run --config vitest.chaos.config.ts",
     "test:security": "vitest run --config vitest.security.config.ts",
     "test:memory": "vitest run --config vitest.memory.config.ts",
-    "size-check": "size-limit && tsx scripts/size-check-closure.ts",
+    "size-check": "tsx scripts/size-check-closure.ts",
     "verify:bundle": "tsx scripts/verify-bundle.ts",
     "verify:watermarks": "tsx scripts/verify-watermarks.ts",
     "verify:no-jose": "tsx scripts/verify-no-jose.ts",
@@ -110,33 +110,7 @@
     "react": ">=18.0.0",
     "react-dom": ">=18.0.0"
   },
-  "size-limit": [
-    {
-      "name": "core (§12.1 L1199 budget 40 KB)",
-      "path": "dist/esm/index.js",
-      "limit": "40 KB"
-    },
-    {
-      "name": "passkey lazy (§12.1 L1202 was 10 KB; v1.1 raised to 12 KB — DPoP shares WebCrypto)",
-      "path": "dist/esm/flows/passkey-flow.js",
-      "limit": "12 KB"
-    },
-    {
-      "name": "sw lazy (§12.1 L1203 budget 5 KB)",
-      "path": "dist/esm/sw/index.js",
-      "limit": "5 KB"
-    },
-    {
-      "name": "react subpath (v1.0.2 lookback C4 — was unbudgeted; 60 KB ceiling pending Block 4 calibration)",
-      "path": "dist/esm/react/index.js",
-      "limit": "60 KB"
-    },
-    {
-      "name": "profile subpath (v1.0.2 lookback C4 — calibrated to current 35.6 KB + ~12% headroom)",
-      "path": "dist/esm/profile/index.js",
-      "limit": "40 KB"
-    }
-  ],
+  "_comment-size-limit": "v1.1.0-rc.2 (P1-F): replaced by scripts/size-check-closure.ts. The size-limit package measures brotli of entry+all-imports (including dynamic imports), which over-counts after libphonenumber-js was lazy-loaded. Closure-aware walker is now the authoritative budget gate.",
   "engines": {
     "node": ">=20.0.0"
   },

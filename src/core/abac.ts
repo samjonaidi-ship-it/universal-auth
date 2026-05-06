@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/core/abac.ts | v0.1.0 | 2026-05-06 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/abac.ts | v1.1.0 | 2026-05-06 | BB
 // ABAC client cache + imperative canAccess() / canAccessBulk(). Per
 // ABAC_DESIGN_v1.0.md §5.1 + §8.2 (LOCKED 2026-05-05).
 //
@@ -99,7 +99,8 @@ function writeCache(key: string, allowed: boolean): void {
  */
 export async function canAccess(
   resource: ResourceDescriptor,
-  action: string
+  action: string,
+  options: { signal?: AbortSignal } = {},
 ): Promise<boolean> {
   const stamp = currentIdentityStamp();
   const key = cacheKey(stamp, resource.resource_type, resource.id, action);
@@ -112,7 +113,8 @@ export async function canAccess(
     action,
   });
   const { data } = await get<AccessDecision>(
-    `/access/v1/check?${params.toString()}`
+    `/access/v1/check?${params.toString()}`,
+    options.signal !== undefined ? { signal: options.signal } : {},
   );
   writeCache(key, data.allowed);
   return data.allowed;
@@ -129,7 +131,8 @@ export async function canAccess(
  *     return array preserving input order.
  */
 export async function canAccessBulk(
-  checks: readonly AccessCheck[]
+  checks: readonly AccessCheck[],
+  options: { signal?: AbortSignal } = {},
 ): Promise<boolean[]> {
   if (checks.length === 0) return [];
   if (checks.length > 50) {
@@ -155,9 +158,11 @@ export async function canAccessBulk(
 
   if (misses.length === 0) return result;
 
-  const { data } = await post<AccessDecision[]>('/access/v1/check-bulk', {
-    checks: misses.map((m) => m.check),
-  });
+  const { data } = await post<AccessDecision[]>(
+    '/access/v1/check-bulk',
+    { checks: misses.map((m) => m.check) },
+    options.signal !== undefined ? { signal: options.signal } : {},
+  );
 
   // Server contract: response array has same length + order as request.
   // Defend against length mismatch — fail closed (default deny).

@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/flows/persona-registry-client.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | src/flows/persona-registry-client.ts | v1.1.0 | 2026-05-06 | BB
 // Client for GET /auth/v1/persona-registry with 1-hour in-memory cache.
 //
 // Source of truth is `ct_bff.persona_registry` (D6). This client caches
@@ -33,7 +33,9 @@ interface Cache {
 let cache: Cache | null = null;
 let inFlight: Promise<RegistryResponse> | null = null;
 
-export async function getPersonaRegistry(): Promise<RegistryResponse> {
+export async function getPersonaRegistry(
+  options: { signal?: AbortSignal } = {},
+): Promise<RegistryResponse> {
   if (cache !== null && Date.now() - cache.fetchedAt < CACHE_TTL_MS) {
     return cache.data;
   }
@@ -41,7 +43,10 @@ export async function getPersonaRegistry(): Promise<RegistryResponse> {
 
   inFlight = (async () => {
     try {
-      const { data } = await get<RegistryResponse>('/auth/v1/persona-registry');
+      const { data } = await get<RegistryResponse>(
+        '/auth/v1/persona-registry',
+        options.signal !== undefined ? { signal: options.signal } : {},
+      );
       cache = { data, fetchedAt: Date.now() };
       return data;
     } finally {
@@ -56,9 +61,10 @@ export async function getPersonaRegistry(): Promise<RegistryResponse> {
  * Find one entry by persona_type, or null if unknown.
  */
 export async function lookupPersona(
-  personaType: string
+  personaType: string,
+  options: { signal?: AbortSignal } = {},
 ): Promise<PersonaRegistryEntry | null> {
-  const reg = await getPersonaRegistry();
+  const reg = await getPersonaRegistry(options);
   return reg.entries.find((e) => e.persona_type === personaType) ?? null;
 }
 

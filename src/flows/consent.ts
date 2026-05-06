@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/flows/consent.ts | v1.0.0-rc.4 | 2026-04-30 | BB
+// @samjonaidi-ship-it/universal-auth | src/flows/consent.ts | v1.1.0 | 2026-05-06 | BB
 // Consent endpoint client (§3.4 + §D2.6).
 //
 // Wired by <ConsentScreen> at enrollment time + the Wizard's audit-replay UI.
@@ -27,11 +27,15 @@ export interface ConsentRecord {
  * Used by `<ConsentScreen>` at enrollment to render the right checkboxes.
  */
 export async function getConsentDocuments(
-  audience: 'crew' | 'supplier' | 'subcontractor' | 'client' | 'architect' | 'admin' | string
+  audience: 'crew' | 'supplier' | 'subcontractor' | 'client' | 'architect' | 'admin' | string,
+  options: { signal?: AbortSignal } = {},
 ): Promise<readonly ConsentDocumentRef[]> {
   const { data } = await get<ConsentDocumentsResponse>(
     `/identity/v1/consent-documents?audience=${encodeURIComponent(audience)}`,
-    { anonymous: true }
+    {
+      anonymous: true,
+      ...(options.signal !== undefined && { signal: options.signal }),
+    }
   );
   return data.documents;
 }
@@ -40,25 +44,44 @@ export async function getConsentDocuments(
  * Atomic bulk accept (§3.4). All-or-nothing — server rejects with
  * CONSENT_REQUIRED if any required consent for the audience is missing.
  */
-export async function bulkAcceptConsents(consents: readonly ConsentRecord[]): Promise<void> {
-  await post('/identity/v1/consents/bulk', { consents });
+export async function bulkAcceptConsents(
+  consents: readonly ConsentRecord[],
+  options: { signal?: AbortSignal } = {},
+): Promise<void> {
+  await post(
+    '/identity/v1/consents/bulk',
+    { consents },
+    options.signal !== undefined ? { signal: options.signal } : {},
+  );
   void emit('enrollment.consent_recorded', { count: consents.length });
 }
 
 /** Record a single consent (post-enrollment, e.g., adding optional consents). */
 export async function recordConsent(
   consentType: string,
-  policyVersion: string
+  policyVersion: string,
+  options: { signal?: AbortSignal } = {},
 ): Promise<void> {
-  await post('/identity/v1/consents', {
-    consent_type: consentType,
-    policy_version: policyVersion,
-  });
+  await post(
+    '/identity/v1/consents',
+    {
+      consent_type: consentType,
+      policy_version: policyVersion,
+    },
+    options.signal !== undefined ? { signal: options.signal } : {},
+  );
 }
 
 /** Revoke a previously-granted consent. */
-export async function revokeConsent(consentId: string): Promise<void> {
-  await post(`/identity/v1/consents/${encodeURIComponent(consentId)}/revoke`, {});
+export async function revokeConsent(
+  consentId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<void> {
+  await post(
+    `/identity/v1/consents/${encodeURIComponent(consentId)}/revoke`,
+    {},
+    options.signal !== undefined ? { signal: options.signal } : {},
+  );
 }
 
 export interface ListedConsent {
@@ -70,8 +93,13 @@ export interface ListedConsent {
 }
 
 /** List active consents for the current identity (used by /me/consent UI). */
-export async function listConsents(): Promise<readonly ListedConsent[]> {
-  const { data } = await get<{ consents: readonly ListedConsent[] }>('/identity/v1/consents');
+export async function listConsents(
+  options: { signal?: AbortSignal } = {},
+): Promise<readonly ListedConsent[]> {
+  const { data } = await get<{ consents: readonly ListedConsent[] }>(
+    '/identity/v1/consents',
+    options.signal !== undefined ? { signal: options.signal } : {},
+  );
   return data.consents;
 }
 
@@ -82,7 +110,9 @@ export async function listConsents(): Promise<readonly ListedConsent[]> {
  * NOTE: CT BFF `/consents/all` returns `accepted_at` instead of `granted_at`.
  * We normalize to `granted_at` here so the UI types stay consistent.
  */
-export async function listAllConsents(): Promise<readonly ListedConsent[]> {
+export async function listAllConsents(
+  options: { signal?: AbortSignal } = {},
+): Promise<readonly ListedConsent[]> {
   interface RawAllResponse {
     consents: readonly {
       id: string;
@@ -93,7 +123,10 @@ export async function listAllConsents(): Promise<readonly ListedConsent[]> {
       revoked_at: string | null;
     }[];
   }
-  const { data } = await get<RawAllResponse>('/identity/v1/consents/all');
+  const { data } = await get<RawAllResponse>(
+    '/identity/v1/consents/all',
+    options.signal !== undefined ? { signal: options.signal } : {},
+  );
   return data.consents.map((c) => ({
     id: c.id,
     consent_type: c.consent_type,

@@ -1,9 +1,11 @@
-// @samjonaidi-ship-it/universal-auth | src/react/components/ProfileSetupScreen.tsx | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/ProfileSetupScreen.tsx | v1.1.0 | 2026-05-06 | BB
 // Drop-in profile setup per §5.5.1 — three render modes (automatic / guided /
 // deferred). Composes <AvatarPicker>, <ContactInfoForm>, <PersonaFieldsForm>,
 // <ProfileCompletenessBar>.
+//
+// v1.1.0 (P1-A): + className/style
 
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
 import { useAuth } from '../useAuth.js';
 import { useProfile } from '../useProfile.js';
 import { AvatarPicker } from './AvatarPicker.js';
@@ -26,6 +28,10 @@ export interface ProfileSetupScreenProps {
   onComplete?: () => void;
   /** Optional consumer override children (used by 'guided' mode). */
   children?: ReactNode;
+  /** Optional class for the root element. */
+  className?: string;
+  /** Inline style for the root element. */
+  style?: CSSProperties;
 }
 
 export function ProfileSetupScreen({
@@ -33,6 +39,8 @@ export function ProfileSetupScreen({
   heading = 'Complete your profile',
   onComplete,
   children,
+  className,
+  style,
 }: ProfileSetupScreenProps): ReactNode {
   const { activePersona } = useAuth();
   const { profile, completeness, needsSetup, state } = useProfile();
@@ -54,7 +62,12 @@ export function ProfileSetupScreen({
   if (mode === 'deferred') return null;
   if (state === 'loading' || profile === null) {
     return (
-      <div role="status" aria-live="polite" className="bb-auth-skeleton">
+      <div
+        role="status"
+        aria-live="polite"
+        className={className ?? 'bb-auth-skeleton'}
+        style={style}
+      >
         Loading…
       </div>
     );
@@ -64,7 +77,11 @@ export function ProfileSetupScreen({
 
   if (mode === 'guided') {
     return (
-      <section className="bb-auth-profile-setup" aria-label={heading}>
+      <section
+        className={className ?? 'bb-auth-profile-setup'}
+        style={style}
+        aria-label={heading}
+      >
         <h2 className="bb-auth-heading">{heading}</h2>
         <ProfileCompletenessBar />
         {children}
@@ -74,7 +91,11 @@ export function ProfileSetupScreen({
 
   // automatic
   return (
-    <section className="bb-auth-profile-setup" aria-label={heading}>
+    <section
+      className={className ?? 'bb-auth-profile-setup'}
+      style={style}
+      aria-label={heading}
+    >
       <h2 className="bb-auth-heading">{heading}</h2>
       <ProfileCompletenessBar />
       <AvatarPicker />

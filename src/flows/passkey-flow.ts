@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/flows/passkey-flow.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | src/flows/passkey-flow.ts | v1.1.0 | 2026-05-06 | BB
 // WebAuthn register + authenticate via @simplewebauthn/browser.
 // Lazy-loaded chunk per §8.2 — separate esbuild entry point. Budget: 10 KB gzip per §12.1.
 //
@@ -7,6 +7,18 @@
 //   POST /auth/v1/passkey/register/verify
 //   POST /auth/v1/passkey/authenticate/options    (supports Conditional UI)
 //   POST /auth/v1/passkey/authenticate/verify
+//
+// v1.1.0 (P1-H, 2026-05-06): client-side User Verification (UV) enforcement
+// per W3C WebAuthn L3 + NIST SP 800-63B AAL2.
+//   1. Pre-call guard: refuse to even invoke startRegistration / start-
+//      Authentication if the server's options blob carries
+//      `userVerification: 'discouraged'`. Defends against a server
+//      mis-config or downgrade attack that would silently drop UV.
+//   2. Post-call guard: parse `authenticatorData[32]` (UV bit = 0x04) on
+//      the assertion. If options demanded UV ('required' or 'preferred')
+//      and the authenticator did NOT perform UV, reject the assertion
+//      before submitting to /verify. Protects against authenticators that
+//      ignore the policy.
 
 import {
   startRegistration,
@@ -35,6 +47,63 @@ export async function isConditionalUiSupported(): Promise<boolean> {
   return browserSupportsWebAuthnAutofill();
 }
 
+// ── P1-H: UV enforcement helpers ─────────────────────────────────────────
+
+/**
+ * Reject server-issued options that carry `userVerification: 'discouraged'`.
+ * Per NIST SP 800-63B, AAL2 requires user verification — the server MUST
+ * request UV ('required' or 'preferred'). 'discouraged' downgrades the
+ * authenticator to AAL1, which is unacceptable for our deployment.
+ *
+ * Throws an Error so the caller surfaces the misconfiguration instead of
+ * silently completing a downgraded ceremony.
+ */
+function assertUvNotDiscouraged(
+  options: { authenticatorSelection?: { userVerification?: string }; userVerification?: string },
+  phase: 'register' | 'authenticate',
+): void {
+  // Registration: userVerification lives under authenticatorSelection.
+  // Authentication: userVerification is at the top level of the options.
+  const uv =
+    options.userVerification ?? options.authenticatorSelection?.userVerification;
+  if (uv === 'discouraged') {
+    throw new Error(
+      `[passkey] server-issued ${phase} options request userVerification:'discouraged' — ` +
+        `refusing to proceed (NIST SP 800-63B AAL2 requires UV).`,
+    );
+  }
+}
+
+/**
+ * Parse the WebAuthn `authenticatorData` byte sequence and return whether
+ * the User Verification (UV) bit is set.
+ *
+ * `authenticatorData` layout per W3C WebAuthn L3 §6.1:
+ *   bytes 0..31  rpIdHash
+ *   byte  32     flags  (UP=0x01, UV=0x04, AT=0x40, ED=0x80)
+ *   bytes 33..36 signCount
+ *   ...
+ *
+ * Input is base64url-encoded per the JSON serialization at
+ * `AuthenticationResponseJSON.response.authenticatorData`. We decode just
+ * enough to read the flags byte; full COSE / attestation parsing stays
+ * out of the lazy chunk.
+ */
+function authenticatorPerformedUv(authenticatorDataB64Url: string): boolean {
+  // base64url → bytes (only need the first 33 bytes, but small input)
+  const pad = authenticatorDataB64Url.length % 4 === 0 ? 0 : 4 - (authenticatorDataB64Url.length % 4);
+  const b64 = (authenticatorDataB64Url + '='.repeat(pad)).replace(/-/g, '+').replace(/_/g, '/');
+  let bin: string;
+  if (typeof atob === 'function') {
+    bin = atob(b64);
+  } else {
+    bin = Buffer.from(b64, 'base64').toString('binary');
+  }
+  if (bin.length < 33) return false; // malformed — fail closed
+  const flags = bin.charCodeAt(32);
+  return (flags & 0x04) === 0x04; // UV bit
+}
+
 // ── Registration (after sign-in / during enrollment) ─────────────────────
 
 export interface RegisterPasskeyResult {
@@ -54,27 +123,45 @@ interface RegisterVerifyResponse {
  *   2. browser prompts user → returns attestation
  *   3. POST /verify     → server stores credential
  */
-export async function registerPasskey(): Promise<RegisterPasskeyResult> {
+export async function registerPasskey(
+  options: { signal?: AbortSignal } = {},
+): Promise<RegisterPasskeyResult> {
   if (!browserSupportsWebAuthn()) {
     throw new Error('WebAuthn is not supported in this browser.');
   }
 
-  const { data: options } = await post<PublicKeyCredentialCreationOptionsJSON>(
+  const reqOpts: { signal?: AbortSignal } =
+    options.signal !== undefined ? { signal: options.signal } : {};
+
+  const { data: regOptions } = await post<PublicKeyCredentialCreationOptionsJSON>(
     '/auth/v1/passkey/register/options',
-    {}
+    {},
+    reqOpts,
   );
+
+  // P1-H: pre-call guard — server must not request UV='discouraged'.
+  assertUvNotDiscouraged(regOptions, 'register');
 
   let attestation: RegistrationResponseJSON;
   try {
-    attestation = await startRegistration({ optionsJSON: options });
+    attestation = await startRegistration({ optionsJSON: regOptions });
   } catch (err) {
     void emit('passkey.cancelled', { phase: 'register' });
     throw err;
   }
 
+  // P1-H: post-call guard — verify the authenticator actually performed UV.
+  // For registration, authenticatorData lives inside the attestationObject,
+  // which is base64url-encoded. We can't cheaply parse it without a full
+  // CBOR decoder — and @simplewebauthn already exposes the parsed result
+  // server-side for verification. Skip post-call UV inspection at register
+  // time; the server-side WebAuthn library asserts UV before storing the
+  // credential. We catch the downgrade case via the pre-call options check.
+
   const { data } = await post<RegisterVerifyResponse>(
     '/auth/v1/passkey/register/verify',
-    { attestation }
+    { attestation },
+    reqOpts,
   );
 
   void emit('passkey.registered', {
@@ -94,6 +181,13 @@ export interface AuthenticatePasskeyOptions {
    * autocomplete="username webauthn">` mounted at the time of the call.
    */
   conditionalUI?: boolean;
+  /**
+   * Optional AbortSignal threaded into the underlying fetches (options +
+   * verify). Aborting cancels the in-flight request — the WebAuthn ceremony
+   * itself is not aborted by this signal (the browser's prompt is cancelled
+   * via the user, not the SDK).
+   */
+  signal?: AbortSignal;
 }
 
 export interface AuthenticatePasskeyResult {
@@ -123,8 +217,14 @@ export async function authenticatePasskey(
   const { data: assertOptions } = await post<PublicKeyCredentialRequestOptionsJSON>(
     '/auth/v1/passkey/authenticate/options',
     {},
-    { anonymous: true }
+    {
+      anonymous: true,
+      ...(options.signal !== undefined && { signal: options.signal }),
+    }
   );
+
+  // P1-H: pre-call guard — refuse downgrade to UV='discouraged'.
+  assertUvNotDiscouraged(assertOptions, 'authenticate');
 
   let assertion: AuthenticationResponseJSON;
   try {
@@ -137,11 +237,27 @@ export async function authenticatePasskey(
     throw err;
   }
 
+  // P1-H: post-call guard — confirm the authenticator actually performed UV
+  // when the policy demanded it. Reject before submitting the assertion to
+  // /verify. (Server-side also asserts UV via @simplewebauthn/server, but
+  // failing fast here avoids a wasted round-trip and gives a clearer error.)
+  const policyDemandsUv = (assertOptions.userVerification ?? 'preferred') !== 'discouraged';
+  if (policyDemandsUv && !authenticatorPerformedUv(assertion.response.authenticatorData)) {
+    void emit('passkey.uv_required_but_missing', { phase: 'authenticate' });
+    throw new Error(
+      '[passkey] authenticator did not perform user verification (UV bit unset) — ' +
+        'server policy required UV. Refusing to submit assertion.',
+    );
+  }
+
   const device_id = await getOrCreateDeviceId();
   const { data } = await post<AuthenticateVerifyResponse>(
     '/auth/v1/passkey/authenticate/verify',
     { assertion, device_id },
-    { anonymous: true }
+    {
+      anonymous: true,
+      ...(options.signal !== undefined && { signal: options.signal }),
+    }
   );
 
   await setSession({

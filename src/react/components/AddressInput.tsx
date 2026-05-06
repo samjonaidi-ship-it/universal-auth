@@ -1,12 +1,14 @@
-// @samjonaidi-ship-it/universal-auth | src/react/components/AddressInput.tsx | v1.0.0-rc.4 | 2026-04-30 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/AddressInput.tsx | v1.1.0 | 2026-05-06 | BB
 // Structured address input — schema.org PostalAddress fields.
 // Implements PERSONA_PCP_DESIGN.md §3.2 + SDK_SPEC §5.4.1 (Address).
 //
 // Validates postal_code per country (US: 5 or 9 digit). Returns the full
 // Address shape on every change so the caller can persist via
 // useIdentity().addAddress / updateAddress.
+//
+// v1.1.0 (P1-A): + className/style
 
-import { useId, useState, type ReactNode } from 'react';
+import { useId, useState, type CSSProperties, type ReactNode } from 'react';
 import type { Address, AddressType } from '../../types/pcp.js';
 
 export interface AddressInputProps {
@@ -22,6 +24,10 @@ export interface AddressInputProps {
   required?: boolean;
   /** Heading override. */
   heading?: string;
+  /** Optional class for the root element. */
+  className?: string;
+  /** Inline style for the root element. */
+  style?: CSSProperties;
 }
 
 /** US ZIP: 5 digits OR 5+4 ('12345' / '12345-6789'). */
@@ -44,6 +50,8 @@ export function AddressInput({
   readonly = false,
   required = false,
   heading,
+  className,
+  style,
 }: AddressInputProps): ReactNode {
   const baseId = useId();
   const [postalError, setPostalError] = useState<string | null>(null);
@@ -78,7 +86,11 @@ export function AddressInput({
 
   if (readonly) {
     return (
-      <address className="bb-auth-address-readonly" aria-label={heading}>
+      <address
+        className={className ?? 'bb-auth-address-readonly'}
+        style={style}
+        aria-label={heading}
+      >
         <div>{value.line1}</div>
         {value.line2 !== undefined && value.line2.length > 0 ? (
           <div>{value.line2}</div>
@@ -92,7 +104,7 @@ export function AddressInput({
   }
 
   return (
-    <fieldset className="bb-auth-address-input">
+    <fieldset className={className ?? 'bb-auth-address-input'} style={style}>
       <legend>{heading ?? labelForType(addressType)}</legend>
 
       <Field

@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/react/components/MediaGallery.tsx | v1.0.0-rc.4 | 2026-04-30 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/MediaGallery.tsx | v1.1.0 | 2026-05-06 | BB
 // 3-column R2-backed media grid with upload tile + per-item delete.
 // Implements PERSONA_PCP_DESIGN.md §10 (SDK component map) +
 // SDK_SPEC §5.4.1 (ProfileMedia) + §5.4.2 (POST/DELETE /identity/v1/profile/media).

@@ -1,5 +1,6 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/core/token-manager.test.ts | v1.0.0-rc.1 | 2026-04-24 | BB
-// A1 gate #4 (mutex-coalesced refresh) + #10 (coverage) for src/core/token-manager.ts
+// @samjonaidi-ship-it/universal-auth | test/unit/core/token-manager.test.ts | v1.1.0 | 2026-05-06 | BB
+// A1 gate #4 (mutex-coalesced refresh) + #10 (coverage) for src/core/token-manager.ts.
+// v1.1.0 (P1-G): + cnf.jkt round-trip verify after refresh.
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
@@ -183,6 +184,105 @@ describe('token-manager', () => {
         throw new Error('should not be called');
       });
       expect(await getAccessToken()).toBeNull();
+    });
+  });
+
+  describe('P1-G — cnf.jkt round-trip verify (RFC 9449 §6.1)', () => {
+    // Helper: build a JWT-like access token with a `cnf.jkt` claim baked in.
+    // Signature is gibberish — verifyAccessTokenJktBinding only inspects the payload.
+    function makeAccessTokenWithJkt(jkt: string | null): string {
+      const header = { alg: 'ES256', typ: 'JWT' };
+      const payload: Record<string, unknown> = { sub: 'test-id', iat: Date.now() / 1000 };
+      if (jkt !== null) payload.cnf = { jkt };
+      const b64url = (s: string): string =>
+        btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      return `${b64url(JSON.stringify(header))}.${b64url(JSON.stringify(payload))}.sig`;
+    }
+
+    it('accepts an access token with no cnf.jkt claim (legacy / opaque tokens)', async () => {
+      await setSession({
+        accessToken: 'stale',
+        refreshToken: 'rt-legacy',
+        expiresAt: Date.now() - 1000,
+        sessionId: 'sess-legacy',
+      });
+      registerRefreshCallback(async () => ({
+        access_token: makeAccessTokenWithJkt(null),
+        expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
+        session_id: 'sess-new',
+      }));
+      const tok = await getAccessToken();
+      expect(tok).not.toBeNull();
+      expect(hasLiveAccessToken()).toBe(true);
+    });
+
+    it('accepts an opaque token (not a JWT) as unbound', async () => {
+      await setSession({
+        accessToken: 'stale',
+        refreshToken: 'rt-opaque',
+        expiresAt: Date.now() - 1000,
+        sessionId: 'sess-opaque',
+      });
+      registerRefreshCallback(async () => ({
+        access_token: 'opaque-token-no-dots',
+        expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
+        session_id: 'sess-new',
+      }));
+      const tok = await getAccessToken();
+      expect(tok).toBe('opaque-token-no-dots');
+    });
+
+    it('clears session when access token is bound to a different DPoP key', async () => {
+      await setSession({
+        accessToken: 'stale',
+        refreshToken: 'rt-mismatch',
+        expiresAt: Date.now() - 1000,
+        sessionId: 'sess-mismatch',
+      });
+      // Trigger DPoP keypair generation by having one in storage. We seed via
+      // getOrCreateKeypair() — its thumbprint will not match our forged jkt.
+      const { getOrCreateKeypair } = await import('../../../src/core/dpop/keypair.js');
+      const { jwkThumbprint } = await import('../../../src/core/dpop/thumbprint.js');
+      const pair = await getOrCreateKeypair();
+      const localJwk = await crypto.subtle.exportKey('jwk', pair.publicKey);
+      const localJkt = await jwkThumbprint(localJwk);
+
+      // Server claims the token is bound to a DIFFERENT key (forged thumbprint)
+      const fakeJkt = localJkt.split('').reverse().join(''); // guaranteed different
+      registerRefreshCallback(async () => ({
+        access_token: makeAccessTokenWithJkt(fakeJkt),
+        expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
+        session_id: 'sess-mismatch-new',
+      }));
+
+      await expect(getAccessToken()).rejects.toThrow(/CNF_JKT_MISMATCH/);
+      expect(hasLiveAccessToken()).toBe(false);
+      expect(getCurrentSessionId()).toBeNull();
+    });
+
+    it('accepts access token bound to the matching local keypair', async () => {
+      await setSession({
+        accessToken: 'stale',
+        refreshToken: 'rt-match',
+        expiresAt: Date.now() - 1000,
+        sessionId: 'sess-match',
+      });
+      const { getOrCreateKeypair } = await import('../../../src/core/dpop/keypair.js');
+      const { jwkThumbprint } = await import('../../../src/core/dpop/thumbprint.js');
+      const pair = await getOrCreateKeypair();
+      const localJwk = await crypto.subtle.exportKey('jwk', pair.publicKey);
+      const localJkt = await jwkThumbprint(localJwk);
+
+      registerRefreshCallback(async () => ({
+        access_token: makeAccessTokenWithJkt(localJkt),
+        expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
+        session_id: 'sess-match-new',
+      }));
+
+      const tok = await getAccessToken();
+      expect(tok).not.toBeNull();
+      expect(hasLiveAccessToken()).toBe(true);
+      expect(getCurrentSessionId()).toBe('sess-match-new');
     });
   });
 });
