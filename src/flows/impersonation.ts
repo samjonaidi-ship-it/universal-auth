@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/flows/impersonation.ts | v1.0.4 | 2026-05-04 | BB
+// @samjonaidi-ship-it/universal-auth | src/flows/impersonation.ts | v1.1.0 | 2026-05-06 | BB
 // Admin impersonation — "act as" another identity for support/debugging.
 //
 // Invariants per spec:
@@ -128,12 +128,19 @@ function fireDrift(event: ImpersonationDriftEvent): void {
 
 // ── Public flow API ──────────────────────────────────────────────────────
 
-export async function startImpersonation(input: StartImpersonationInput): Promise<StartResponse> {
-  const { data } = await post<StartResponse>('/auth/v1/impersonation/start', {
-    target_identity_id: input.target_identity_id,
-    reason: input.reason,
-    max_duration_minutes: input.max_duration_minutes,
-  });
+export async function startImpersonation(
+  input: StartImpersonationInput,
+  options: { signal?: AbortSignal } = {},
+): Promise<StartResponse> {
+  const { data } = await post<StartResponse>(
+    '/auth/v1/impersonation/start',
+    {
+      target_identity_id: input.target_identity_id,
+      reason: input.reason,
+      max_duration_minutes: input.max_duration_minutes,
+    },
+    options.signal !== undefined ? { signal: options.signal } : {},
+  );
 
   await setSession({
     accessToken: data.access_token,
@@ -153,10 +160,16 @@ export async function startImpersonation(input: StartImpersonationInput): Promis
   return data;
 }
 
-export async function endImpersonation(): Promise<void> {
+export async function endImpersonation(
+  options: { signal?: AbortSignal } = {},
+): Promise<void> {
   let serverError: unknown = null;
   try {
-    await post('/auth/v1/impersonation/end', {});
+    await post(
+      '/auth/v1/impersonation/end',
+      {},
+      options.signal !== undefined ? { signal: options.signal } : {},
+    );
   } catch (err) {
     // v1.0.1 C9 — capture for the drift event below; do NOT rethrow. UI
     // reverts to admin view immediately; audit log catches the drift.
