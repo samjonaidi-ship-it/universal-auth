@@ -1,8 +1,9 @@
-/* @samjonaidi-ship-it/universal-auth | src/react/components/styles.css | v1.0.0-rc.4 | 2026-04-30 | BB
+/* @samjonaidi-ship-it/universal-auth | src/react/components/styles.css | v1.0.0-rc.5 | 2026-05-06 | BB
  * CSS custom properties only (§8.5). Consumer apps override --bb-* vars to theme.
  * No inline styles in any component (verified by scripts/verify-bundle.ts).
  *
  * v1.0.0-rc.4: + ConsentCenter, PermissionCenter, ConsentVersionWatcher overlay.
+ * v1.0.0-rc.5: + DelegationCenter (L3.4 — DELEGATION_CENTER_DESIGN_v1.0.md).
  */
 
 :where(.bb-auth-signin-form,
@@ -16,7 +17,8 @@
        .bb-auth-consent-screen,
        .bb-auth-consent-center,
        .bb-auth-permission-center,
-       .bb-auth-consent-version-overlay) {
+       .bb-auth-consent-version-overlay,
+       .bb-delegation-center) {
   --bb-color-primary: #c8102e;
   --bb-color-text: #1a1a1a;
   --bb-color-bg: #ffffff;
@@ -381,4 +383,249 @@
   max-height: 90vh;
   overflow-y: auto;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+/* ── DelegationCenter (L3.4) ─────────────────────────────────────────────── */
+
+.bb-delegation-center {
+  display: block;
+}
+
+.bb-delegation-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border-bottom: 1px solid var(--bb-color-border);
+  margin-bottom: var(--bb-spacing);
+}
+
+.bb-delegation-tab {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 10px var(--bb-spacing);
+  cursor: pointer;
+  font: inherit;
+  color: var(--bb-color-text);
+  min-height: var(--bb-touch-target-min);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bb-delegation-tab:focus-visible {
+  outline: 2px solid var(--bb-color-focus);
+  outline-offset: 2px;
+}
+
+.bb-delegation-tab-active {
+  border-bottom-color: var(--bb-color-primary);
+  font-weight: 600;
+}
+
+.bb-delegation-tab-count {
+  background: var(--bb-color-bg-subtle);
+  border: 1px solid var(--bb-color-border);
+  border-radius: 999px;
+  padding: 0 8px;
+  font-size: 0.75rem;
+  min-width: 22px;
+  text-align: center;
+}
+
+.bb-delegation-panel {
+  display: block;
+}
+
+.bb-delegation-history-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--bb-spacing);
+}
+
+.bb-delegation-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--bb-spacing);
+}
+
+.bb-delegation-card {
+  border: 1px solid var(--bb-color-border);
+  border-radius: var(--bb-radius);
+  padding: var(--bb-spacing);
+  background: var(--bb-color-bg);
+  display: grid;
+  gap: 8px;
+}
+
+.bb-delegation-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.bb-delegation-grantee-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.bb-delegation-card-title-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.bb-delegation-card-title {
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.bb-delegation-card-subtitle {
+  font-size: 0.85rem;
+  color: var(--bb-color-disabled);
+}
+
+.bb-delegation-scopes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.bb-delegation-scope {
+  background: var(--bb-color-bg-subtle);
+  border: 1px solid var(--bb-color-border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 0.85rem;
+}
+
+.bb-delegation-scope-danger {
+  background: #fff1f2;
+  border-color: var(--bb-color-error);
+  color: var(--bb-color-error);
+}
+
+.bb-delegation-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.bb-delegation-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.bb-delegation-pill-active {
+  background: var(--bb-color-success);
+  color: #fff;
+}
+
+.bb-delegation-pill-revoked {
+  background: #6b6b6b;
+  color: #fff;
+}
+
+.bb-delegation-pill-expired {
+  background: var(--bb-color-bg-subtle);
+  color: var(--bb-color-text);
+  border: 1px solid var(--bb-color-border);
+}
+
+.bb-delegation-card-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.bb-delegation-empty-state {
+  padding: calc(var(--bb-spacing) * 2);
+  text-align: center;
+  color: var(--bb-color-disabled);
+  border: 1px dashed var(--bb-color-border);
+  border-radius: var(--bb-radius);
+}
+
+/* Confirm dialog (D5 — button + confirm, NOT swipe) */
+
+.bb-delegation-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: var(--bb-spacing);
+  z-index: 1000;
+}
+
+.bb-delegation-confirm-dialog {
+  background: var(--bb-color-bg);
+  color: var(--bb-color-text);
+  border-radius: var(--bb-radius);
+  padding: calc(var(--bb-spacing) * 2);
+  max-width: 480px;
+  width: 100%;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+.bb-delegation-confirm-dialog-danger {
+  border: 2px solid var(--bb-color-error);
+}
+
+.bb-delegation-confirm-title {
+  margin: 0 0 var(--bb-spacing);
+  font-size: 1.15rem;
+}
+
+.bb-delegation-confirm-body {
+  margin: 0 0 var(--bb-spacing);
+}
+
+.bb-delegation-confirm-actions {
+  display: flex;
+  gap: var(--bb-spacing);
+  justify-content: flex-end;
+}
+
+.bb-delegation-confirm-danger-action {
+  background: var(--bb-color-error);
+  border-color: var(--bb-color-error);
+}
+
+/* Mobile-first cards → desktop table-ish layout at ≥ 768px */
+@media (min-width: 768px) {
+  .bb-delegation-card {
+    grid-template-columns: minmax(200px, 1fr) 2fr auto auto;
+    grid-template-areas:
+      'header scopes meta actions';
+    align-items: center;
+    gap: var(--bb-spacing);
+  }
+
+  .bb-delegation-card-header {
+    grid-area: header;
+  }
+
+  .bb-delegation-scopes {
+    grid-area: scopes;
+  }
+
+  .bb-delegation-card-meta {
+    grid-area: meta;
+  }
+
+  .bb-delegation-card-actions {
+    grid-area: actions;
+  }
 }
