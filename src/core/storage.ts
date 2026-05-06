@@ -23,6 +23,12 @@
 //
 // v1.0.1 (D3): decrypt failure now emits `device.key_mismatch` BEFORE wiping
 // the row, preserving an audit trail of legitimate UA rotations vs tampers.
+//
+// v1.1.0-rc.1 (L3.1, 2026-05-06): added `dpop_keypair` store for the DPoP
+// (RFC 9449) SDK-side foundation. The store holds at most one row carrying
+// structured-cloned CryptoKey handles (extractable=false) — same pattern as
+// `master_key`. DB_VERSION bumped 2 → 3; upgrade callback creates the new
+// store without touching existing rows.
 
 import { openDB, deleteDB, type IDBPDatabase } from 'idb';
 import { encryptString, decryptString } from './crypto-client.js';
@@ -40,13 +46,15 @@ async function emitEvent(eventType: string, payload: Record<string, unknown>): P
 
 const DB_NAME = 'bb-universal-auth';
 // v1.0.1: bumped to 2 to add `master_key` store.
-const DB_VERSION = 2;
+// v1.1.0-rc.1 (L3.1): bumped to 3 to add `dpop_keypair` store.
+const DB_VERSION = 3;
 
 export const STORE_REFRESH_TOKENS = 'refresh_tokens';
 export const STORE_OFFLINE_QUEUE = 'offline_queue';
 export const STORE_EVENT_QUEUE = 'event_queue';
 export const STORE_DEAD_LETTER_QUEUE = 'dead_letter_queue';
 export const STORE_MASTER_KEY = 'master_key';
+export const STORE_DPOP_KEYPAIR = 'dpop_keypair';
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -89,6 +97,10 @@ function getDb(): Promise<IDBPDatabase> {
       // v1.0.1 — master key store
       if (!db.objectStoreNames.contains(STORE_MASTER_KEY)) {
         db.createObjectStore(STORE_MASTER_KEY, { keyPath: 'key' });
+      }
+      // v1.1.0-rc.1 (L3.1) — DPoP keypair store
+      if (!db.objectStoreNames.contains(STORE_DPOP_KEYPAIR)) {
+        db.createObjectStore(STORE_DPOP_KEYPAIR, { keyPath: 'key' });
       }
     },
   });
