@@ -1,10 +1,12 @@
-// @samjonaidi-ship-it/universal-auth | src/react/components/VehicleSection.tsx | v1.0.0-rc.4 | 2026-04-30 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/VehicleSection.tsx | v1.1.0 | 2026-05-06 | BB
 // Crew persona vehicle list — name/make/model/year/plate + per-vehicle media.
 // Implements PERSONA_PCP_DESIGN.md §3.3 + §6 (crew persona resources) +
 // SDK_SPEC §5.4.7 (resource_type='vehicle' lives in profile_resources, NOT
 // cal_assets — those are BB-owned tools).
+//
+// v1.1.0 (P1-A): + className/style
 
-import { useState, type ReactNode } from 'react';
+import { useState, type CSSProperties, type ReactNode } from 'react';
 import { useIdentity } from '../useIdentity.js';
 import { MediaGallery } from './MediaGallery.js';
 import type { ProfileResource } from '../../types/pcp.js';
@@ -14,6 +16,10 @@ export interface VehicleSectionProps {
   heading?: string;
   /** Hide add/edit/delete affordances. */
   readonly?: boolean;
+  /** Optional class for the root <section>. */
+  className?: string;
+  /** Inline style for the root <section>. */
+  style?: CSSProperties;
 }
 
 interface VehicleAttrs {
@@ -38,6 +44,8 @@ function readAttrs(r: ProfileResource): VehicleAttrs {
 export function VehicleSection({
   heading = 'Vehicles',
   readonly = false,
+  className,
+  style,
 }: VehicleSectionProps): ReactNode {
   const {
     resourcesOfType,
@@ -71,7 +79,11 @@ export function VehicleSection({
   }
 
   return (
-    <section className="bb-auth-resource-section" aria-label={heading}>
+    <section
+      className={className ?? 'bb-auth-resource-section'}
+      style={style}
+      aria-label={heading}
+    >
       <header className="bb-auth-resource-section-header">
         <h3 className="bb-auth-heading">{heading}</h3>
         {!readonly ? (

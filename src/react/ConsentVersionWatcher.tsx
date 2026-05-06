@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/react/ConsentVersionWatcher.tsx | v1.0.0-rc.4 | 2026-04-30 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/ConsentVersionWatcher.tsx | v1.1.0 | 2026-05-06 | BB
 // Policy version-bump re-prompt logic — per BB_UNIVERSAL_AUTH_SDK_SPEC.md §3.4
 // "Versioning + re-prompt flow" + PERSONA_PCP_DESIGN.md §4.5.
 //
@@ -26,6 +26,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type CSSProperties,
   type KeyboardEvent,
   type ReactNode,
 } from 'react';
@@ -50,6 +51,10 @@ export interface ConsentVersionWatcherProps {
   heading?: string;
   /** Children render normally; the watcher overlays only when re-prompt needed. */
   children?: ReactNode;
+  /** Optional class for the overlay <div> (only applied when re-prompt is shown). */
+  className?: string;
+  /** Inline style for the overlay <div> (only applied when re-prompt is shown). */
+  style?: CSSProperties;
 }
 
 interface ReprompState {
@@ -64,6 +69,8 @@ export function ConsentVersionWatcher({
   audience,
   heading = 'Updated consents',
   children,
+  className,
+  style,
 }: ConsentVersionWatcherProps): ReactNode {
   const { activePersona, status } = useAuth();
   const [state, setState] = useState<ReprompState>(INITIAL);
@@ -150,7 +157,8 @@ export function ConsentVersionWatcher({
     return (
       <div
         ref={dialogRef}
-        className="bb-auth-consent-version-overlay"
+        className={className ?? 'bb-auth-consent-version-overlay'}
+        style={style}
         role="dialog"
         aria-modal="true"
         aria-labelledby="bb-auth-consent-version-heading"

@@ -1,10 +1,12 @@
-// @samjonaidi-ship-it/universal-auth | src/react/components/PropertySection.tsx | v1.0.0-rc.4 | 2026-04-30 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/PropertySection.tsx | v1.1.0 | 2026-05-06 | BB
 // Homeowner persona property list — address + type/year/sqft + photos +
 // nested property_assets (HVAC, roof, etc., per property) with their own photos.
 // Implements PERSONA_PCP_DESIGN.md §3.3 (multi-property) +
 // SDK_SPEC §5.4.8 (property is a SCOPE ANCHOR; assets hang off each property).
+//
+// v1.1.0 (P1-A): + className/style
 
-import { useState, type ReactNode } from 'react';
+import { useState, type CSSProperties, type ReactNode } from 'react';
 import { useIdentity } from '../useIdentity.js';
 import { MediaGallery } from './MediaGallery.js';
 import { AddressInput } from './AddressInput.js';
@@ -18,6 +20,10 @@ import type {
 export interface PropertySectionProps {
   heading?: string;
   readonly?: boolean;
+  /** Optional class for the root <section>. */
+  className?: string;
+  /** Inline style for the root <section>. */
+  style?: CSSProperties;
 }
 
 interface PropertyAttrs {
@@ -52,6 +58,8 @@ function readAddressFromAttrs(a: ProfileResource['attributes']): Partial<Address
 export function PropertySection({
   heading = 'Properties',
   readonly = false,
+  className,
+  style,
 }: PropertySectionProps): ReactNode {
   const {
     resourcesOfType,
@@ -97,7 +105,11 @@ export function PropertySection({
   }
 
   return (
-    <section className="bb-auth-resource-section" aria-label={heading}>
+    <section
+      className={className ?? 'bb-auth-resource-section'}
+      style={style}
+      aria-label={heading}
+    >
       <header className="bb-auth-resource-section-header">
         <h3 className="bb-auth-heading">{heading}</h3>
         {!readonly ? (

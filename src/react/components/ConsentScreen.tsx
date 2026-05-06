@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/react/components/ConsentScreen.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/ConsentScreen.tsx | v1.1.0 | 2026-05-06 | BB
 // Per §D2.5 / §3.4 / Wizard §20 — consent collection screen.
 //
 // HARD-GATE behavior (§3.4):
@@ -12,7 +12,7 @@
 //         agent_buddy_crew, agent_data_processing, agent_memory_retention
 //   (9 total — Legal 3 + Device 3 + AI 3)
 
-import { useState, type ReactNode, type FormEvent } from 'react';
+import { useState, type CSSProperties, type ReactNode, type FormEvent } from 'react';
 import type { ConsentDocumentRef } from '../../flows/enroll-flow.js';
 
 export type ConsentAudience = 'crew' | 'supplier' | 'subcontractor' | 'client' | 'architect' | 'admin';
@@ -57,6 +57,10 @@ export interface ConsentScreenProps {
   heading?: string;
   /** Submit-button label. */
   submitLabel?: string;
+  /** Optional class for the root <form>. */
+  className?: string;
+  /** Inline style for the root <form>. */
+  style?: CSSProperties;
 }
 
 export function ConsentScreen({
@@ -67,6 +71,8 @@ export function ConsentScreen({
   onCancel,
   heading = 'Review and accept',
   submitLabel = 'Accept and continue',
+  className,
+  style,
 }: ConsentScreenProps): ReactNode {
   // Resolve required list — server-provided takes priority over audience defaults
   const requiredDocs: readonly ConsentDocumentRef[] =
@@ -130,7 +136,8 @@ export function ConsentScreen({
 
   return (
     <form
-      className="bb-auth-consent-screen"
+      className={className ?? 'bb-auth-consent-screen'}
+      style={style}
       aria-label={heading}
       onSubmit={handleSubmit}
       noValidate
