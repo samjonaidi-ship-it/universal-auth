@@ -64,6 +64,31 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
 
 To opt OUT of DPoP for emergency: `useDpop: 'never'`. To opt out of SSE: `useSSE: 'never'`. Both retire in v1.2 once a soak window confirms zero issues.
 
+### Deprecation — `setSession` removed from main barrel in v1.1.0 GA
+
+The deprecation shim at `import { setSession } from '@samjonaidi-ship-it/universal-auth'` has been live since **v1.0.1** (2026-05-01) and emits a one-time `console.warn` on first call. **It will be deleted in v1.1.0 GA** — `rc.1` is your last release window to migrate.
+
+Migrate to the canonical home on the `/internal` subpath:
+
+```ts
+// Before (deprecated)
+import { setSession } from '@samjonaidi-ship-it/universal-auth';
+
+// After
+import { setSession } from '@samjonaidi-ship-it/universal-auth/internal';
+```
+
+The `/internal` subpath is documented as unstable (subject to change between minor versions) — by design. `setSession` bypasses the canonical sign-in flows (`requestCode`/`verifyCode`/`registerPasskey`/`activateEnrollment`) and exists only for non-SDK token sources (e.g. CalExp5 PIN-based sign-in via `POST /auth/v1/pin/verify`). Everyone else should use the flow APIs.
+
+Verified zero internal callers reference the main-barrel export today; this is a documentation-and-cleanup deletion, not a behavioral change.
+
+### Hardening landed in rc.1 (P0 batch, 2026-05-06)
+
+- **DPoP `ath` claim** — proofs now include `ath = base64url(SHA-256(accessToken))` per RFC 9449 §4.2 when an access token is presented (`src/core/dpop/proof.ts`). Closes the only meaningful RFC-9449 conformance gap; binds proofs to the specific token in use, not just the client key.
+- **README quick-start fix** — `import { AuthProvider, useAuth } from '@samjonaidi-ship-it/universal-auth/react'` (was incorrectly on the main barrel). Copy-paste from README now compiles.
+- **CI gate `pnpm verify:readme`** — `scripts/check-readme-code.ts` validates every `import` claim in the README against the actual barrel exports; CI fails on any drift.
+- **Closure-aware bundle budgets** — `pnpm size-check` now runs `size-limit` (entry-stub fast feedback) AND `scripts/size-check-closure.ts` (transitive closure ground truth via the esbuild metafile). Previously the budgets reflected entry-stub bytes only — the React subpath silently overshot the 60 KB budget by including libphonenumber metadata transitively. New numbers (gzipped, transitive): core 23 KB / 40 KB · react 67 KB / 70 KB · profile 49 KB / 50 KB · passkey-flow lazy-marginal 0.2 KB / 12 KB · sw 0.6 KB / 5 KB.
+
 ### What's NOT in 1.1.0-rc.1 (deferred to 1.2 or later)
 
 - **OPA/Rego WASM ABAC engine** — JSONB matchers ship in v1.1; Rego is Phase 2 per `ABAC_DESIGN_v1.0.md` §11.
