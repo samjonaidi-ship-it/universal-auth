@@ -1,7 +1,12 @@
-// @samjonaidi-ship-it/universal-auth | src/config.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/config.ts | v1.0.2 | 2026-05-05 | BB
 // SDK initialization config + mode-safety assertion (§10.6).
 // Day 3-4: wires core modules (client, token-manager) via configureClient().
 // v1.0.1: assertModeSafety now consumes config.cookieDomain (no hardcoded domain).
+// v1.0.2 (L3.1, DPOP_DESIGN_v1.0.md §5.3 + §7): + useDpop flag. Default 'auto':
+//   the SDK lazily generates a DPoP keypair on first protected-endpoint call,
+//   attaches Authorization: DPoP + DPoP: <jws>, soft-falls-back to plain Bearer
+//   if the DPoP path errors (per §10 Q3). 'always' hard-fails on any DPoP
+//   error; 'never' is the legacy-crew opt-out.
 
 /**
  * Operating modes per §10.
@@ -37,6 +42,19 @@ export interface ProfileConfig {
   blockAppUntilComplete?: boolean;
 }
 
+/**
+ * DPoP enforcement mode per DPOP_DESIGN_v1.0.md §5.3 + §10 Q3.
+ * - `auto`     (default v1.1.0-rc.1): attach DPoP on protected endpoints when
+ *              available; on any DPoP-build error fall back to plain Bearer
+ *              and emit `dpop.fallback_used`.
+ * - `always`:  hard-fail if a DPoP proof can't be built. Use only after the
+ *              server-side enforcement window opens.
+ * - `never`:   emergency opt-out — plain Bearer everywhere, no keypair work.
+ */
+export type DpopMode = 'auto' | 'always' | 'never';
+
+const DPOP_MODES: ReadonlySet<DpopMode> = new Set<DpopMode>(['auto', 'always', 'never']);
+
 export interface UniversalAuthConfig {
   /** CT BFF base URL, e.g. `https://api.buildwithbainbridge.com` */
   apiBaseUrl: string;
@@ -44,6 +62,8 @@ export interface UniversalAuthConfig {
   appId: string;
   /** Operating mode (§10). Default `production`. */
   mode?: SdkMode;
+  /** DPoP enforcement (DPOP_DESIGN_v1.0.md §5.3). Default `auto`. */
+  useDpop?: DpopMode;
 
   // Cross-subdomain cookie per D10 + SDK §5.0 v1.4.0 locked
   /** Cookie domain for shared session across subdomains. Default `.buildwithbainbridge.com` (post-D20 cutover 2026-05-03). */
@@ -120,6 +140,18 @@ export async function initUniversalAuth(config: UniversalAuthConfig): Promise<vo
   const requested: SdkMode = config.mode ?? 'production';
   const mode: SdkMode = requested === 'simulate' ? 'test' : requested;
 
+  // v1.0.2 (L3.1): validate `useDpop` early — fail loud on a typo'd value
+  // rather than silently falling through to default. Mirrors the spec §5.3
+  // contract: only the three documented strings are accepted.
+  const useDpop: DpopMode = config.useDpop ?? 'auto';
+  if (!DPOP_MODES.has(useDpop)) {
+    throw new Error(
+      `[@samjonaidi-ship-it/universal-auth] Invalid useDpop value '${String(
+        config.useDpop
+      )}'. Must be one of: 'auto' | 'always' | 'never'.`
+    );
+  }
+
   // Browser-context safety check (skipped in Node test harness)
   if (typeof window !== 'undefined' && typeof window.location !== 'undefined') {
     assertModeSafety(mode, window.location.hostname, config.cookieDomain);
@@ -131,6 +163,7 @@ export async function initUniversalAuth(config: UniversalAuthConfig): Promise<vo
     apiBaseUrl: config.apiBaseUrl,
     appId: config.appId,
     sdkVersion: SDK_VERSION,
+    useDpop,
   });
 
   // Wire event reporter (batched ingestion per §3.2 + §8.1)

@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/core/client.ts | v1.0.4 | 2026-05-04 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/client.ts | v1.0.5 | 2026-05-05 | BB
 // HTTP client for CT BFF. Owns:
 //
 //   §3   Every endpoint at `https://api.buildwithbainbridge.com/auth/v1/*`
@@ -33,6 +33,17 @@
 //     header — they are pre-identity by definition. Header value is sourced
 //     from getOrCreateDeviceId() which is memoized; the per-request await is
 //     a no-op after the first resolution.
+//
+// v1.0.5 (L3.1, DPOP_DESIGN_v1.0.md §5.3 + §7):
+//   * DPoP-aware fetch — for the 6 server-protected endpoints, swap
+//     `Authorization: Bearer <token>` → `Authorization: DPoP <token>` and
+//     attach `DPoP: <jws>` (RFC 9449 §7.1).
+//   * Soft-fallback (`useDpop: 'auto'`): any DPoP-build error → emit
+//     `dpop.fallback_used` + proceed with plain Bearer (per §10 Q3).
+//     `useDpop: 'always'` re-throws. `useDpop: 'never'` skips DPoP entirely.
+//   * Nonce-challenge retry: on 401 + `DPoP-Nonce` header + body code
+//     `USE_DPOP_NONCE`, record the nonce + retry once with it in the proof.
+//     The retry happens BEFORE the existing AUTH_SESSION_EXPIRED refresh path.
 
 import { nanoid } from 'nanoid';
 import {
@@ -48,6 +59,11 @@ import {
   invalidateAccessToken,
 } from './token-manager.js';
 import { getOrCreateDeviceId } from './device-id.js';
+import { getOrCreateKeypair } from './dpop/keypair.js';
+import { buildDpopProof } from './dpop/proof.js';
+import { recordNonce, consumeNonce } from './dpop/nonce-cache.js';
+import { emit } from './event-reporter.js';
+import type { DpopMode } from '../config.js';
 
 // ── Configuration ────────────────────────────────────────────────────────
 
@@ -58,6 +74,45 @@ export interface ClientConfig {
   appId: string;
   /** SDK version for envelope stamping */
   sdkVersion: string;
+  /**
+   * DPoP enforcement (DPOP_DESIGN_v1.0.md §5.3). Default `'auto'` — generate
+   * keypair lazily, attach DPoP on protected endpoints, fall back to plain
+   * Bearer on any DPoP error. `'always'` hard-fails on DPoP errors.
+   * `'never'` opts out entirely (legacy crew sessions).
+   */
+  useDpop?: DpopMode;
+}
+
+/**
+ * Server endpoints that REQUIRE DPoP-bound credentials per the spec §3 +
+ * DPOP_DESIGN_v1.0.md §5.3. Path-suffix match (`endsWith`) so the SDK doesn't
+ * trip on alternate base URLs (api.example.com vs api.staging.example.com).
+ */
+const DPOP_PROTECTED_ENDPOINTS: ReadonlySet<string> = new Set([
+  '/auth/v1/code/verify',
+  '/auth/v1/passkey/authenticate/verify',
+  '/auth/v1/enroll/activate',
+  '/auth/v1/session/refresh',
+  '/auth/v1/session/revoke',
+  '/auth/v1/session/revoke-all',
+]);
+
+/**
+ * Returns true if the (path, method) tuple targets one of the 6 DPoP-protected
+ * endpoints. All six are POSTs in v1; we still gate on method so future GET
+ * endpoints can be added without back-compat surprises.
+ */
+export function isDpopRequiredFor(path: string, method: string): boolean {
+  if (method.toUpperCase() !== 'POST') return false;
+  // Strip query string for the suffix match — prod paths don't use query
+  // params on these endpoints, but a stray `?foo=bar` shouldn't defeat the
+  // match.
+  const queryIdx = path.indexOf('?');
+  const cleanPath = queryIdx === -1 ? path : path.slice(0, queryIdx);
+  for (const protectedPath of DPOP_PROTECTED_ENDPOINTS) {
+    if (cleanPath.endsWith(protectedPath)) return true;
+  }
+  return false;
 }
 
 const PROTOCOL_VERSION = 'v1';
@@ -112,13 +167,20 @@ const MUTATION_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
  * Attempts one silent refresh on 401 before surfacing the session-expired error.
  */
 export async function request<T>(path: string, opts: RequestOptions = {}): Promise<RequestResult<T>> {
-  return requestInternal<T>(path, opts, { refreshed: false });
+  return requestInternal<T>(path, opts, { refreshed: false, dpopRetried: false });
+}
+
+interface RequestContext {
+  /** Whether we've already retried after a silent refresh (caps at 1). */
+  refreshed: boolean;
+  /** Whether we've already retried after a DPoP-Nonce challenge (caps at 1). */
+  dpopRetried: boolean;
 }
 
 async function requestInternal<T>(
   path: string,
   opts: RequestOptions,
-  ctx: { refreshed: boolean }
+  ctx: RequestContext
 ): Promise<RequestResult<T>> {
   const cfg = requireConfig();
   const method = opts.method ?? 'GET';
@@ -163,6 +225,51 @@ async function requestInternal<T>(
     // JSON bodies. Anon endpoints are skipped — they are pre-identity by
     // definition and the header would be noise.
     headers['X-Device-Id'] = await getOrCreateDeviceId();
+
+    // v1.0.5 (L3.1, DPOP_DESIGN_v1.0.md §5.3): attach DPoP for the 6 protected
+    // endpoints unless the consumer has opted out. Soft-fallback per §10 Q3:
+    // any error in 'auto' mode logs + emits + proceeds with plain Bearer; in
+    // 'always' mode we re-throw so the caller learns about it.
+    const dpopMode: DpopMode = cfg.useDpop ?? 'auto';
+    if (
+      token !== null &&
+      dpopMode !== 'never' &&
+      isDpopRequiredFor(path, method)
+    ) {
+      try {
+        await getOrCreateKeypair(); // lazy — first call generates + persists
+        const cachedNonce = consumeNonce(path);
+        const proofInput: Parameters<typeof buildDpopProof>[0] = {
+          url,
+          method,
+          accessToken: token,
+        };
+        if (cachedNonce !== null) proofInput.nonce = cachedNonce;
+        const proof = await buildDpopProof(proofInput);
+        // RFC 9449 §7.1: with DPoP-bound credentials, the Authorization scheme
+        // is the literal string `DPoP` (case-sensitive in the header value).
+        headers.Authorization = `DPoP ${token}`;
+        headers.DPoP = proof;
+      } catch (err) {
+        if (dpopMode === 'always') {
+          // Hard-fail surface — caller asked for strict DPoP.
+          throw err;
+        }
+        // Soft-fallback: keep the existing `Authorization: Bearer <token>`
+        // header and let the request proceed. The server still sees a valid
+        // session token; only the proof-of-possession binding is absent.
+        void emit('dpop.fallback_used', {
+          endpoint: path,
+          method,
+          reason: err instanceof Error ? err.message : String(err),
+        });
+        // eslint-disable-next-line no-console
+        console.warn(
+          '[@samjonaidi-ship-it/universal-auth] DPoP build failed; falling back to plain Bearer.',
+          err
+        );
+      }
+    }
   }
 
   const init: RequestInit = {
@@ -210,6 +317,36 @@ async function requestInternal<T>(
     };
   }
 
+  // v1.0.5 (L3.1): DPoP-Nonce challenge retry (RFC 9449 §8). Server returns
+  // 401 with `DPoP-Nonce` header + envelope `{ error: { code: 'USE_DPOP_NONCE' } }`.
+  // Cache the nonce and re-issue the request once with it baked into the proof.
+  // Capped at one retry per request to avoid infinite loops on a server that
+  // keeps returning USE_DPOP_NONCE.
+  const dpopNonceHeader = response.headers.get('dpop-nonce');
+  if (
+    response.status === 401 &&
+    dpopNonceHeader !== null &&
+    !ctx.dpopRetried &&
+    opts.anonymous !== true &&
+    (cfg.useDpop ?? 'auto') !== 'never' &&
+    isDpopRequiredFor(path, method)
+  ) {
+    // Need to peek at the body to confirm it's a USE_DPOP_NONCE challenge —
+    // a stray DPoP-Nonce header on a session-expired 401 must NOT trigger
+    // a DPoP retry path.
+    const peekText = await response.text();
+    if (isUseDpopNonceEnvelope(peekText)) {
+      recordNonce(path, dpopNonceHeader);
+      return requestInternal<T>(path, opts, {
+        refreshed: ctx.refreshed,
+        dpopRetried: true,
+      });
+    }
+    // Not a USE_DPOP_NONCE envelope — surface the error using the buffered
+    // body. Reuses the same error-envelope path as the bottom of this fn.
+    return finalizeFailedResponse<T>(response, peekText);
+  }
+
   // 401 → attempt one silent refresh and retry
   if (response.status === 401 && !ctx.refreshed && opts.anonymous !== true) {
     // Don't refresh-loop on /session/refresh itself
@@ -219,7 +356,10 @@ async function requestInternal<T>(
       } catch {
         throw new AuthSessionExpired();
       }
-      return requestInternal<T>(path, opts, { refreshed: true });
+      return requestInternal<T>(path, opts, {
+        refreshed: true,
+        dpopRetried: ctx.dpopRetried,
+      });
     }
   }
 
@@ -369,6 +509,40 @@ function joinUrl(base: string, path: string): string {
   const b = base.endsWith('/') ? base.slice(0, -1) : base;
   const p = path.startsWith('/') ? path : `/${path}`;
   return `${b}${p}`;
+}
+
+/**
+ * v1.0.5 (L3.1): is the response body a `USE_DPOP_NONCE` challenge envelope?
+ * Server shape: `{ error: { code: 'USE_DPOP_NONCE', message: '...' } }`.
+ * Anything else means the 401's `DPoP-Nonce` header is informational and
+ * should not be treated as a retry trigger.
+ */
+function isUseDpopNonceEnvelope(bodyText: string): boolean {
+  if (bodyText.length === 0) return false;
+  try {
+    const parsed = JSON.parse(bodyText) as { error?: { code?: unknown } };
+    return parsed?.error?.code === 'USE_DPOP_NONCE';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * v1.0.5 (L3.1): consume a non-OK response when we already buffered the body
+ * during the DPoP-nonce peek. Mirrors the tail of `requestInternal`'s error
+ * path so the two branches stay consistent.
+ */
+function finalizeFailedResponse<T>(response: Response, bodyText: string): Promise<RequestResult<T>> {
+  let envelope: AuthErrorEnvelope;
+  try {
+    envelope = JSON.parse(bodyText) as AuthErrorEnvelope;
+  } catch {
+    throw new AuthSdkError(
+      `HTTP_${response.status}`,
+      `Request failed: HTTP ${response.status} ${response.statusText}`
+    );
+  }
+  throw errorFromEnvelope(envelope);
 }
 
 // Re-export setSession for direct use by flow modules that bypass the
