@@ -1,8 +1,10 @@
-// @samjonaidi-ship-it/universal-auth | src/react/components/PersonaFieldsForm.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/PersonaFieldsForm.tsx | v1.1.0 | 2026-05-06 | BB
 // Renders persona-specific fields from the server-driven registry per §5.4.6.
 // Reads the registry via getPersonaFieldsRegistry (1h cache).
+//
+// v1.1.0 (P1-A): + className/style/classNames slot map
 
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { useProfile } from '../useProfile.js';
 import {
   getPersonaRoster,
@@ -11,12 +13,26 @@ import {
 } from '../../profile/persona-fields.js';
 import type { UniversalProfile } from '../../types/profile.js';
 
+export interface PersonaFieldsFormClassNames {
+  root?: string;
+  label?: string;
+  input?: string;
+  error?: string;
+  button?: string;
+}
+
 export interface PersonaFieldsFormProps {
   persona: string;
   heading?: string;
   submitLabel?: string;
   /** When true, only render required + recommended fields. */
   hideOptional?: boolean;
+  /** Optional class for the root <form> element (overrides default). */
+  className?: string;
+  /** Inline style for the root <form> element. */
+  style?: CSSProperties;
+  /** Per-slot class overrides. */
+  classNames?: PersonaFieldsFormClassNames;
 }
 
 export function PersonaFieldsForm({
@@ -24,6 +40,9 @@ export function PersonaFieldsForm({
   heading,
   submitLabel = 'Save',
   hideOptional = false,
+  className,
+  style,
+  classNames,
 }: PersonaFieldsFormProps): ReactNode {
   const { profile, save } = useProfile();
   const [roster, setRoster] = useState<PersonaFieldRosterFromServer | null>(null);
@@ -75,7 +94,8 @@ export function PersonaFieldsForm({
 
   return (
     <form
-      className="bb-auth-persona-fields-form"
+      className={className ?? classNames?.root ?? 'bb-auth-persona-fields-form'}
+      style={style}
       aria-label={heading ?? `${persona} details`}
       onSubmit={handleSubmit}
       noValidate
@@ -89,6 +109,7 @@ export function PersonaFieldsForm({
         values={values}
         onChange={(k, v) => setValues({ ...values, [k]: v })}
         required
+        classNames={classNames}
       />
       <RenderGroup
         title="Recommended"
@@ -96,6 +117,7 @@ export function PersonaFieldsForm({
         roster={roster}
         values={values}
         onChange={(k, v) => setValues({ ...values, [k]: v })}
+        classNames={classNames}
       />
       {optionalKeys.length > 0 ? (
         <RenderGroup
@@ -104,18 +126,23 @@ export function PersonaFieldsForm({
           roster={roster}
           values={values}
           onChange={(k, v) => setValues({ ...values, [k]: v })}
+          classNames={classNames}
         />
       ) : null}
 
       {error !== null ? (
-        <div role="alert" aria-live="assertive" className="bb-auth-error">
+        <div
+          role="alert"
+          aria-live="assertive"
+          className={classNames?.error ?? 'bb-auth-error'}
+        >
           {error}
         </div>
       ) : null}
 
       <button
         type="submit"
-        className="bb-auth-button bb-auth-button-primary"
+        className={classNames?.button ?? 'bb-auth-button bb-auth-button-primary'}
         disabled={submitting}
       >
         {submitting ? '…' : submitLabel}
@@ -131,6 +158,7 @@ function RenderGroup({
   values,
   onChange,
   required = false,
+  classNames,
 }: {
   title: string;
   keys: readonly string[];
@@ -138,6 +166,7 @@ function RenderGroup({
   values: Record<string, string>;
   onChange: (key: string, value: string) => void;
   required?: boolean;
+  classNames?: PersonaFieldsFormClassNames | undefined;
 }): ReactNode {
   if (keys.length === 0) return null;
   return (
@@ -148,9 +177,9 @@ function RenderGroup({
         if (def === undefined) return null;
         const id = `bb-auth-${key.replace(/\./g, '-')}`;
         return (
-          <label key={key} className="bb-auth-field" htmlFor={id}>
+          <label key={key} className={classNames?.label ?? 'bb-auth-field'} htmlFor={id}>
             <span className="bb-auth-field-label">{def.label ?? humanize(key)}</span>
-            {renderInput(id, def, values[key] ?? '', (v) => onChange(key, v), required)}
+            {renderInput(id, def, values[key] ?? '', (v) => onChange(key, v), required, classNames?.input)}
             {def.hint !== undefined ? (
               <span className="bb-auth-field-hint">{def.hint}</span>
             ) : null}
@@ -166,7 +195,8 @@ function renderInput(
   def: FieldDefinition,
   value: string,
   onChange: (v: string) => void,
-  required: boolean
+  required: boolean,
+  inputClassName?: string
 ): ReactNode {
   switch (def.type) {
     case 'multiselect': {
@@ -176,6 +206,7 @@ function renderInput(
           id={id}
           multiple
           value={selected}
+          className={inputClassName}
           onChange={(e) => {
             const picked = Array.from(e.target.selectedOptions, (o) => o.value);
             onChange(picked.join(','));
@@ -196,6 +227,7 @@ function renderInput(
         <select
           id={id}
           value={value}
+          className={inputClassName}
           onChange={(e) => onChange(e.target.value)}
           required={required}
         >
@@ -212,6 +244,7 @@ function renderInput(
         <textarea
           id={id}
           value={value}
+          className={inputClassName}
           onChange={(e) => onChange(e.target.value)}
           required={required}
         />
@@ -222,6 +255,7 @@ function renderInput(
           id={id}
           type={def.type === 'phone' ? 'tel' : def.type === 'email' ? 'email' : 'text'}
           value={value}
+          className={inputClassName}
           onChange={(e) => onChange(e.target.value)}
           required={required}
         />

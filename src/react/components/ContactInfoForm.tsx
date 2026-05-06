@@ -1,19 +1,35 @@
-// @samjonaidi-ship-it/universal-auth | src/react/components/ContactInfoForm.tsx | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/ContactInfoForm.tsx | v1.1.0 | 2026-05-06 | BB
 // Contact-info form: display_name, email, phone (E.164 normalized), emergency_contact.
 // Persona-aware: shows emergency_contact only for personas where it's required
 // per §5.4.3.
+//
+// v1.1.0 (P1-A): + className/style/classNames slot map
 
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { useAuth } from '../useAuth.js';
 import { useProfile } from '../useProfile.js';
 import { validateEmail, validatePhone } from '../../profile/validators.js';
 import type { UniversalProfile, EmergencyContact } from '../../types/profile.js';
+
+export interface ContactInfoFormClassNames {
+  root?: string;
+  label?: string;
+  input?: string;
+  error?: string;
+  button?: string;
+}
 
 export interface ContactInfoFormProps {
   /** Save handler override (defaults to useProfile().save). */
   onSubmit?: (patch: Partial<UniversalProfile>) => Promise<void>;
   heading?: string;
   submitLabel?: string;
+  /** Optional class for the root <form> element (overrides default). */
+  className?: string;
+  /** Inline style for the root <form> element. */
+  style?: CSSProperties;
+  /** Per-slot class overrides. */
+  classNames?: ContactInfoFormClassNames;
 }
 
 const PERSONAS_REQUIRING_EMERGENCY_CONTACT: ReadonlySet<string> = new Set([
@@ -26,6 +42,9 @@ export function ContactInfoForm({
   onSubmit,
   heading = 'Contact info',
   submitLabel = 'Save',
+  className,
+  style,
+  classNames,
 }: ContactInfoFormProps): ReactNode {
   const { activePersona } = useAuth();
   const { profile, save } = useProfile();
@@ -116,7 +135,8 @@ export function ContactInfoForm({
 
   return (
     <form
-      className="bb-auth-contact-info-form"
+      className={className ?? classNames?.root ?? 'bb-auth-contact-info-form'}
+      style={style}
       aria-label={heading}
       onSubmit={handleSubmit}
       noValidate
@@ -131,6 +151,7 @@ export function ContactInfoForm({
         required
         {...errorOf(errors.display_name)}
         autoComplete="name"
+        classNames={classNames}
       />
 
       <Field
@@ -142,6 +163,7 @@ export function ContactInfoForm({
         {...errorOf(errors.email)}
         type="email"
         autoComplete="email"
+        classNames={classNames}
       />
 
       <Field
@@ -153,6 +175,7 @@ export function ContactInfoForm({
         {...errorOf(errors.phone)}
         type="tel"
         autoComplete="tel"
+        classNames={classNames}
       />
 
       {showEmergency ? (
@@ -165,6 +188,7 @@ export function ContactInfoForm({
             onChange={(v) => setEc({ ...ec, name: v })}
             required
             {...errorOf(errors['emergency_contact.name'])}
+            classNames={classNames}
           />
           <Field
             label="Phone"
@@ -174,6 +198,7 @@ export function ContactInfoForm({
             required
             {...errorOf(errors['emergency_contact.phone_e164'])}
             type="tel"
+            classNames={classNames}
           />
           <Field
             label="Relationship"
@@ -182,19 +207,24 @@ export function ContactInfoForm({
             onChange={(v) => setEc({ ...ec, relationship: v })}
             required
             {...errorOf(errors['emergency_contact.relationship'])}
+            classNames={classNames}
           />
         </fieldset>
       ) : null}
 
       {errors._form !== undefined ? (
-        <div role="alert" aria-live="assertive" className="bb-auth-error">
+        <div
+          role="alert"
+          aria-live="assertive"
+          className={classNames?.error ?? 'bb-auth-error'}
+        >
           {errors._form}
         </div>
       ) : null}
 
       <button
         type="submit"
-        className="bb-auth-button bb-auth-button-primary"
+        className={classNames?.button ?? 'bb-auth-button bb-auth-button-primary'}
         disabled={submitting}
       >
         {submitting ? '…' : submitLabel}
@@ -217,6 +247,7 @@ interface FieldProps {
   error?: string;
   type?: 'text' | 'email' | 'tel';
   autoComplete?: string;
+  classNames?: ContactInfoFormClassNames | undefined;
 }
 
 function Field({
@@ -228,22 +259,28 @@ function Field({
   error,
   type = 'text',
   autoComplete,
+  classNames,
 }: FieldProps): ReactNode {
   return (
-    <label className="bb-auth-field" htmlFor={id}>
+    <label className={classNames?.label ?? 'bb-auth-field'} htmlFor={id}>
       <span className="bb-auth-field-label">{label}</span>
       <input
         id={id}
         type={type}
         value={value}
         autoComplete={autoComplete}
+        className={classNames?.input}
         onChange={(e) => onChange(e.target.value)}
         aria-required={required}
         aria-invalid={error !== undefined}
         aria-describedby={error !== undefined ? `${id}-error` : undefined}
       />
       {error !== undefined ? (
-        <span id={`${id}-error`} className="bb-auth-field-error" role="alert">
+        <span
+          id={`${id}-error`}
+          className={classNames?.error ?? 'bb-auth-field-error'}
+          role="alert"
+        >
           {error}
         </span>
       ) : null}
