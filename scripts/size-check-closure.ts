@@ -82,9 +82,18 @@ const meta = JSON.parse(readFileSync(METAFILE, 'utf8')) as Metafile;
 const outputs = meta.outputs ?? {};
 
 /**
- * Walk the import graph from `entry`, returning the set of all reachable
- * output files. Excludes `.map` outputs (sourcemaps don't ship to clients).
- * Excludes external imports (e.g. `react`, peer deps).
+ * Walk the EAGER import graph from `entry`, returning the set of all
+ * statically-imported reachable output files. Excludes:
+ *   - `.map` outputs (sourcemaps don't ship to clients)
+ *   - External imports (peer deps like `react`)
+ *   - Dynamic imports (`await import(...)`) — those are lazy chunks that
+ *     load on demand, not part of the entry's initial download. Lazy
+ *     chunks should have their own budget entry if we care.
+ *
+ * P1-F (2026-05-06): switched from including dynamic-import edges to
+ * eager-only. Without this fix, lazy-loading libphonenumber-js inside
+ * validatePhone() didn't reduce the React closure measurement — the
+ * walker still followed the dynamic-import edge into the metadata chunk.
  */
 function reachableOutputs(entry: string): Set<string> {
   const visited = new Set<string>();
@@ -99,9 +108,10 @@ function reachableOutputs(entry: string): Set<string> {
     if (!out) continue; // unresolved (external or filtered)
     for (const imp of out.imports ?? []) {
       if (imp.external) continue;
-      // imp.kind can be 'import-statement', 'dynamic-import', 'require-call', etc.
-      // We count import-statement and dynamic-import — both ship as separate JS files.
-      if (imp.kind !== 'import-statement' && imp.kind !== 'dynamic-import') continue;
+      // EAGER imports only. dynamic-import edges represent code that loads
+      // on demand and shouldn't count against the entry's initial-download
+      // budget. (Add a separate budget entry for the lazy chunk if needed.)
+      if (imp.kind !== 'import-statement') continue;
       queue.push(imp.path);
     }
   }

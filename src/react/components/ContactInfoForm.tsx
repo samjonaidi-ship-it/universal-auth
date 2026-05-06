@@ -73,12 +73,13 @@ export function ContactInfoForm({
     const emailV = validateEmail(email);
     if (!emailV.ok) errs.email = 'Enter a valid email address.';
 
-    const phoneV = validatePhone(phone);
+    const phoneV = await validatePhone(phone);
     if (!phoneV.ok) errs.phone = 'Enter a valid phone number.';
 
+    let ecPhoneV: Awaited<ReturnType<typeof validatePhone>> | null = null;
     if (showEmergency) {
       if (ec.name.trim().length === 0) errs['emergency_contact.name'] = 'Required';
-      const ecPhoneV = validatePhone(ec.phone_e164);
+      ecPhoneV = await validatePhone(ec.phone_e164);
       if (!ecPhoneV.ok) errs['emergency_contact.phone_e164'] = 'Enter a valid phone';
       if (ec.relationship.trim().length === 0) errs['emergency_contact.relationship'] = 'Required';
     }
@@ -91,10 +92,10 @@ export function ContactInfoForm({
       email: emailV.email!,
       phone_e164: phoneV.e164!,
     };
-    if (showEmergency) {
+    if (showEmergency && ecPhoneV !== null) {
       patch.emergency_contact = {
         name: ec.name.trim(),
-        phone_e164: validatePhone(ec.phone_e164).e164!,
+        phone_e164: ecPhoneV.e164!,
         relationship: ec.relationship.trim(),
       };
     }

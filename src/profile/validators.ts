@@ -1,14 +1,24 @@
-// @samjonaidi-ship-it/universal-auth | src/profile/validators.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | src/profile/validators.ts | v1.1.0 | 2026-05-06 | BB
 // Profile field validators per §5.4.5.
 //
-// Phone:  libphonenumber-js (~4 KB) → E.164 normalization client-side.
-//         Server canonicalizes via full Google libphonenumber via Bridge;
-//         mismatches return VALIDATION_PHONE_UNREACHABLE.
+// Phone:  libphonenumber-js (~34 KB gzip with metadata) → E.164 normalization
+//         client-side. Server canonicalizes via full Google libphonenumber via
+//         Bridge; mismatches return VALIDATION_PHONE_UNREACHABLE.
 // Email:  RFC 5322 pragmatic regex client-side. Server-side deliverability
 //         check (Resend) is async + non-blocking.
 // Required-field: per-persona check using completeness rules.
-
-import { parsePhoneNumberFromString, isValidNumberForRegion } from 'libphonenumber-js';
+//
+// v1.1.0 (P1-F, 2026-05-06): libphonenumber-js converted to dynamic import.
+// Audit Finding ARCH C1: the static `import 'libphonenumber-js'` at module
+// top transitively pulled the full 34 KB gzipped phone-metadata chunk into
+// every consumer of `src/profile/index.ts` — including the React subpath,
+// which contradicts the header at `src/profile/index.ts:2` claiming the dep
+// is "kept out of the core 40 KB budget" (true for the core entry only).
+// Lazy-loading inside `validatePhone()` defers the chunk until the consumer
+// actually validates a phone — typically only on form submit. This is a
+// **breaking signature change**: `validatePhone` now returns
+// `Promise<PhoneValidationResult>` instead of `PhoneValidationResult`.
+// Documented in CHANGELOG v1.1.0-rc.2.
 
 // ── Phone ─────────────────────────────────────────────────────────────────
 
@@ -24,18 +34,27 @@ export interface PhoneValidationResult {
  * Validate + normalize a phone number to E.164. Defaults to US if no country
  * is given and the input lacks a leading '+'.
  *
+ * **Async since v1.1.0 (P1-F):** `libphonenumber-js` is dynamically imported
+ * to keep its 34 KB gzipped metadata chunk out of the React subpath. Callers
+ * must `await` the result. The library is loaded once per page and cached by
+ * the bundler.
+ *
  * Examples:
- *   "(555) 555-1234"       → +15555551234 (US default)
- *   "+44 20 7946 0958"     → +442079460958
- *   "555"                  → ok: false, reason: 'too_short'
+ *   await validatePhone("(555) 555-1234")     // → { ok:true, e164:'+15555551234' }
+ *   await validatePhone("+44 20 7946 0958")   // → { ok:true, e164:'+442079460958' }
+ *   await validatePhone("555")                // → { ok:false, reason:'unparseable' }
  */
-export function validatePhone(
+export async function validatePhone(
   input: string,
   defaultCountry: 'US' | 'CA' | 'GB' | 'AU' | string = 'US'
-): PhoneValidationResult {
+): Promise<PhoneValidationResult> {
   const raw = (input ?? '').trim();
   if (raw.length === 0) return { ok: false, reason: 'empty' };
   try {
+    // P1-F — lazy-load on first validate. Subsequent calls hit the import cache.
+    const { parsePhoneNumberFromString, isValidNumberForRegion } = await import(
+      'libphonenumber-js'
+    );
     const parsed = parsePhoneNumberFromString(raw, defaultCountry as 'US');
     if (parsed === undefined) return { ok: false, reason: 'unparseable' };
     if (!parsed.isValid()) {
