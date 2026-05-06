@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | scripts/verify-watermarks.ts | v1.0.2 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | scripts/verify-watermarks.ts | v1.0.3 | 2026-05-08 | BB
 // Enforces BB watermark on every .ts/.tsx source file per global CLAUDE.md §10.
 // Canonical format (v1.0.1+):
 //   // @samjonaidi-ship-it/universal-auth | <path> | v<ver> | <YYYY-MM-DD> | BB
@@ -10,6 +10,12 @@
 // v1.0.2 (lookback fix C2): SCAN_DIRS widened from [src, scripts] to also
 // include test/, demo/, and root vitest/playwright configs, closing the
 // 30-file scope hole the original v1.0.1 sweep left open.
+//
+// v1.0.3 (rc.5 audit BUILD-7): also scan .github/workflows/*.yml. The
+// chaos.yml v1.0.4-vs-v1.1.0 watermark drift (BUILD-6) survived prior
+// passes because YAML files were never inspected. YAML uses # for comments,
+// so we accept either `// @samjonaidi-ship-it/universal-auth | ...` or
+// `# @samjonaidi-ship-it/universal-auth | ...` on line 1.
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve } from 'node:path';
@@ -21,13 +27,16 @@ const ROOT = resolve(__dirname, '..');
 
 // Canonical watermark — first line must match exactly. Note the explicit
 // scoped-package form `@samjonaidi-ship-it/universal-auth` (NOT `@bb/...`).
+// TypeScript files use `//` prefix; YAML workflow files use `#`.
 const WATERMARK_RX = /^\/\/ @samjonaidi-ship-it\/universal-auth \| .+ \| v\d+\.\d+\.\d+(-rc\.\d+)? \| \d{4}-\d{2}-\d{2} \| BB\s*$/;
+const WATERMARK_RX_YAML = /^# @samjonaidi-ship-it\/universal-auth \| .+ \| v\d+\.\d+\.\d+(-rc\.\d+)? \| \d{4}-\d{2}-\d{2} \| BB\s*$/;
 
 // Forbidden legacy form — ensures the old `@bb/universal-auth` watermark
 // can never sneak back in via copy-paste.
 const LEGACY_WATERMARK_RX = /^\/\/ @bb\/universal-auth \|/;
+const LEGACY_WATERMARK_RX_YAML = /^# @bb\/universal-auth \|/;
 
-const SCAN_DIRS = ['src', 'scripts', 'test', 'demo'];
+const SCAN_DIRS = ['src', 'scripts', 'test', 'demo', '.github/workflows'];
 // Root config files — flat list, not a dir scan, since each directory of the
 // repo also contains node_modules etc.
 const SCAN_ROOT_FILES = [
@@ -39,7 +48,7 @@ const SCAN_ROOT_FILES = [
   'vitest.security.config.ts',
   'playwright.config.ts',
 ];
-const VALID_EXT = new Set(['.ts', '.tsx']);
+const VALID_EXT = new Set(['.ts', '.tsx', '.yml', '.yaml']);
 
 // First-line pragmas that some test files require (Vitest env override).
 // When present, the watermark is allowed on line 2.
@@ -73,11 +82,18 @@ function checkFile(full: string, rel: string, missing: string[], legacy: string[
   const firstLine = lines[0] ?? '';
   // v1.0.2 — allow watermark on line 2 when line 1 is a Vitest/Jest pragma.
   const targetLine = PRAGMA_RX.test(firstLine) ? (lines[1] ?? '') : firstLine;
-  if (LEGACY_WATERMARK_RX.test(firstLine) || LEGACY_WATERMARK_RX.test(targetLine)) {
+
+  // v1.0.3 (BUILD-7): YAML files use `#` prefix for comments instead of `//`.
+  const ext = extname(full);
+  const isYaml = ext === '.yml' || ext === '.yaml';
+  const validRx = isYaml ? WATERMARK_RX_YAML : WATERMARK_RX;
+  const legacyRx = isYaml ? LEGACY_WATERMARK_RX_YAML : LEGACY_WATERMARK_RX;
+
+  if (legacyRx.test(firstLine) || legacyRx.test(targetLine)) {
     legacy.push(`${rel} — line: ${targetLine.slice(0, 80)}${targetLine.length > 80 ? '…' : ''}`);
     return;
   }
-  if (!WATERMARK_RX.test(targetLine)) {
+  if (!validRx.test(targetLine)) {
     missing.push(`${rel} — line: ${targetLine.slice(0, 80)}${targetLine.length > 80 ? '…' : ''}`);
   }
 }
