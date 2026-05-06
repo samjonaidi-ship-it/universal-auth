@@ -1,4 +1,4 @@
-# Integration Guide | `@samjonaidi-ship-it/universal-auth` | v1.0.4 | 2026-05-04 | BB
+# Integration Guide | `@samjonaidi-ship-it/universal-auth` | v1.1.0-rc.5 | 2026-05-08 | BB
 
 > **Read first**: [`CREW_UX_PRINCIPLES.md`](./CREW_UX_PRINCIPLES.md). BB
 > Express users wear gloves and have dirty hands. Every UX decision in
@@ -28,6 +28,77 @@ How to add `@samjonaidi-ship-it/universal-auth` to a Bainbridge Builders consume
 - New `X-Device-Id: <32-char hex>` header on authenticated requests (anonymous endpoints skip it). Sourced from memoized `getOrCreateDeviceId()`. Additive — no existing contract changes.
 - `useImpersonation()` return value gains `lastDriftEvent: ImpersonationDriftEvent | null` for surfacing `impersonation.local_clear_drift` events. New imperative `onLocalClearDrift(listener)` export.
 - 614/614 tests pass; branch coverage threshold restored to 85%.
+
+**v1.1.0-rc.5 changes affecting consumers (2026-05-08 — first publishable v1.1):**
+
+The v1.1 line is the largest API surface expansion since v1.0.0. rc.5 = rc.4 + 7 audit-debt items closed; consumers should upgrade rc.1 → rc.5 directly (rc.2/rc.3/rc.4 were unpublished internal milestones).
+
+NEW capabilities, all opt-in unless noted:
+
+1. **DPoP sender-bound tokens (RFC 9449).** Every authenticated request signs a per-request proof JWT with a non-extractable EC P-256 key. Includes `ath` claim binding the proof to the access token (rc.2 P0-3). Server-side enforcement happens transparently via `cnf.jkt` round-trip verify on every refresh (rc.2 P1-G). No consumer code change — flip default via `useDpop: 'always'` in your config when ready (currently `'auto'`).
+2. **ABAC checks: `useAccess` + `useAccessBulk` hooks + imperative `canAccess(...)`.** Per ABAC_DESIGN_v1.0.md §5.1 + §8.1. Stale-while-revalidate cache, 60s TTL, multi-tab cache invalidation via `navigator.locks`. Example:
+   ```tsx
+   import { useAccess } from '@samjonaidi-ship-it/universal-auth/react';
+   const { allowed, loading } = useAccess(
+     { resource_type: 'project', id: 'p-123' },
+     'edit'
+   );
+   ```
+3. **DelegationCenter component + `useDelegatedGrants` hook.** Per DELEGATION_CENTER_DESIGN_v1.0.md (LOCKED 2026-05-05). Four-tab UX: Active / Granted to Me / History / Effective Access. Wire it inside `<AuthProvider>`:
+   ```tsx
+   import { DelegationCenter } from '@samjonaidi-ship-it/universal-auth/react';
+   <DelegationCenter scopeCatalog={crewScopeCatalog} />
+   ```
+4. **`<SignInForm defaultDestination + onDestinationChange>`.** Pre-fill the destination field instead of forking the component (rc.2 P1-C):
+   ```tsx
+   <SignInForm
+     defaultDestination={lastUsedDestination}
+     onDestinationChange={(d) => persistDestination(d)}
+     onSubmit={...}
+   />
+   ```
+5. **Component theming surface.** All 25 React components now accept `className?: string` AND `style?: CSSProperties`. Form-style components (SignInForm, CodeEntry, ContactInfoForm, PersonaFieldsForm) also accept a `classNames?: { root, label, input, error, button }` slot map. 6 user-facing components are wrapped in `forwardRef`:
+   ```tsx
+   const formRef = useRef<HTMLFormElement>(null);
+   <SignInForm
+     ref={formRef}
+     classNames={{ button: 'tw-bg-bb-red-500 tw-rounded-full' }}
+     style={{ minWidth: 320 }}
+     onSubmit={...}
+   />
+   ```
+6. **`AbortSignal` threading on every public async function.** Every flow + ABAC + entitlements + settings-sync function now accepts an optional `signal?: AbortSignal`. Plumb it from TanStack Query, SWR, or React Strict Mode cleanups:
+   ```ts
+   await requestCode(destination, { signal: abortController.signal });
+   await listDelegatedGrants({ signal });
+   ```
+7. **`config.onError` observability hook.** Soft-fail sites (DPoP fallback, legacy refresh response, no `navigator.locks`, `cnf.jkt` mismatch, CodeEntry generic-error) route through this hook instead of raw `console.warn`. Wire it once in your `initUniversalAuth(...)` call:
+   ```ts
+   await initUniversalAuth({
+     apiBaseUrl: 'https://api.buildwithbainbridge.com',
+     appId: 'crew-calendar',
+     onError: (err) => Sentry.captureException(err),
+   });
+   ```
+8. **`hydrateSettings(signal?)` (rc.3).** Public method on `useSettingsSync()` to force a server-fetch + local hydrate. Useful for refresh-on-window-focus patterns.
+9. **Person-Centric Profile (PCP) hook + components (rc.5 — D1 fix).** `useIdentity()` hook returns the canonical PCP envelope (addresses, vehicles, gear, property, compliance docs, media gallery). Built since v1.0.0-rc.4 but only re-exported in rc.5:
+   ```tsx
+   import { useIdentity, MediaGallery, AddressInput, VehicleSection } from '@samjonaidi-ship-it/universal-auth/react';
+   const { identity, addAddress, addResource, addMedia } = useIdentity();
+   ```
+10. **`AuthErrorCode` literal union + `AuthProviderMissingError` (rc.5 — D7+D8).** `AuthSdkError.code` is now a typed literal union, enabling exhaustive `switch` over canonical codes. Hooks called outside `<AuthProvider>` throw `AuthProviderMissingError` instead of plain `Error` so consumers can `instanceof`-check.
+11. **Bundle wins (rc.2 P1-F + closure-aware budgets).** React subpath dropped 64.5 KB → 36.21 KB gzip (`libphonenumber-js` lazy-loaded). Profile subpath 44.2 KB → 15.29 KB. **Breaking change in rc.2:** `validatePhone` is now `async` because of the lazy-load; if you call it directly you must `await`.
+12. **Production-mode safety: `assertApiBaseUrlSafety` (rc.2 P1-I).** `apiBaseUrl` must be HTTPS in production; if `cookieDomain` is set, `apiBaseUrl`'s host must share its registrable domain. Throws synchronously from `initUniversalAuth(...)` on violation.
+13. **Entitlements localStorage HMAC tag (rc.2 P1-J).** Cache blob is now `{ data, sig: HMAC-SHA-256(data) }` with a non-extractable HMAC key in IDB. Tampered envelopes are detected (constant-time compare in rc.5) and the cache is cleared. Migration is automatic on first read — legacy bare-CacheShape blobs are accepted once and re-signed on next save.
+14. **Device ID recompute every boot (rc.2 P1-K).** No longer cached in localStorage. SHA-256 of `navigator.userAgent` recomputed once per page load. XSS attacker can't overwrite the cached value to evade server-side anomaly detection.
+15. **WebAuthn UV/UP enforcement (rc.2 P1-H).** Pre-call: refuses `userVerification: 'discouraged'`. Post-call: parses `authenticatorData` flags byte and verifies UV bit set when policy was preferred or required. NIST SP 800-63B AAL2 floor.
+
+Migration recipe rc.1 → rc.5 (typical consumer):
+- `npm install @samjonaidi-ship-it/universal-auth@1.1.0-rc.5` (or update the tarball reference)
+- Add `await` to any direct `validatePhone(...)` call (P1-F break)
+- Optionally wire `config.onError` for soft-fail observability
+- Optionally adopt `defaultDestination` / `classNames` / `forwardRef` / `signal?` patterns
+- No code change required for the rest of the v1.1 surface — every other addition is opt-in.
 
 **Audience:** Sam (CalExp5 cutover), future ControlTower implementer, third-party integrator.
 
