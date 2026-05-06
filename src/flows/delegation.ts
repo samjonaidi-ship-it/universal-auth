@@ -104,9 +104,17 @@ interface DeleteResponse {
  * List delegated grants for the current identity. Splits the response into
  * "from me" (where I am the grantor) and "to me" (where I am the grantee).
  * The CT BFF returns BOTH arrays in one round-trip.
+ *
+ * v1.1.0-rc.3 (P1-D fixup): accepts `signal` to align with the rest of the
+ * public surface.
  */
-export async function listDelegatedGrants(): Promise<ListDelegatedGrantsResult> {
-  const { data } = await get<ListResponse>('/identity/v1/delegated-grants');
+export async function listDelegatedGrants(
+  options: { signal?: AbortSignal } = {},
+): Promise<ListDelegatedGrantsResult> {
+  const { data } = await get<ListResponse>(
+    '/identity/v1/delegated-grants',
+    options.signal !== undefined ? { signal: options.signal } : {},
+  );
   return {
     grants_from_me: data.grants_from_me ?? [],
     grants_to_me: data.grants_to_me ?? [],
@@ -116,9 +124,12 @@ export async function listDelegatedGrants(): Promise<ListDelegatedGrantsResult> 
 /**
  * Create a new delegated grant. Returns the canonical grant row.
  * Emits `delegation.granted` event.
+ *
+ * v1.1.0-rc.3 (P1-D fixup): accepts `signal`.
  */
 export async function createDelegatedGrant(
-  input: CreateDelegatedGrantInput
+  input: CreateDelegatedGrantInput,
+  options: { signal?: AbortSignal } = {},
 ): Promise<DelegatedGrant> {
   const body: Record<string, unknown> = {
     grantee_kind: input.grantee_kind,
@@ -129,7 +140,11 @@ export async function createDelegatedGrant(
   if (input.resource_match !== undefined) body.resource_match = input.resource_match;
   if (input.effective_until !== undefined) body.effective_until = input.effective_until;
 
-  const { data } = await post<CreateResponse>('/identity/v1/delegated-grants', body);
+  const { data } = await post<CreateResponse>(
+    '/identity/v1/delegated-grants',
+    body,
+    options.signal !== undefined ? { signal: options.signal } : {},
+  );
 
   void emit('delegation.granted', {
     grant_id: data.grant.id,
@@ -143,10 +158,16 @@ export async function createDelegatedGrant(
 /**
  * Revoke a delegated grant. Server marks `revoked_at = now()`.
  * Emits `delegation.revoked` event.
+ *
+ * v1.1.0-rc.3 (P1-D fixup): accepts `signal`.
  */
-export async function revokeDelegatedGrant(id: string): Promise<void> {
+export async function revokeDelegatedGrant(
+  id: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<void> {
   await del<DeleteResponse>(
-    `/identity/v1/delegated-grants/${encodeURIComponent(id)}`
+    `/identity/v1/delegated-grants/${encodeURIComponent(id)}`,
+    options.signal !== undefined ? { signal: options.signal } : {},
   );
   void emit('delegation.revoked', { grant_id: id });
 }
@@ -156,9 +177,14 @@ export async function revokeDelegatedGrant(id: string): Promise<void> {
  * (see DELEGATION_CENTER_DESIGN_v1.0.md §4 NEW).
  *
  * Returns a JSON Blob with the full set of grants visible to the caller.
+ *
+ * v1.1.0-rc.3 (P1-D fixup): accepts `signal` (passed through to the
+ * underlying listDelegatedGrants call).
  */
-export async function exportGrantsAsJson(): Promise<Blob> {
-  const { grants_from_me, grants_to_me } = await listDelegatedGrants();
+export async function exportGrantsAsJson(
+  options: { signal?: AbortSignal } = {},
+): Promise<Blob> {
+  const { grants_from_me, grants_to_me } = await listDelegatedGrants(options);
   const payload = {
     version: '1.0',
     exported_at: new Date().toISOString(),

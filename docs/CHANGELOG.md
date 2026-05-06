@@ -6,6 +6,45 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
 
 > **Note on rc.3 / rc.4 entries below:** these were **internal-only milestones** between rc.2 (2026-04-28) and 1.0.0 (2026-04-30). Neither was tagged or published to the registry — public consumer path is rc.2 → 1.0.0. The rc.3 / rc.4 entries document work that landed on `main` but never shipped under those version numbers; "Recommended upgrade" wording in those sections is historical and does not apply to actual consumers.
 
+## [1.1.0-rc.3] — 2026-05-06 — Post-rc.2 audit fixups
+
+**rc.3 closes the residuals surfaced by the 2026-05-07 follow-up audit
+(`audits/holistic-2026-05-07/`).** Six surgical fixes; no API breaks.
+
+### Fixups
+
+- **`MediaGallery.tsx` className+style.** rc.2 CHANGELOG over-claimed
+  "all 25 components"; the audit caught that `MediaGallery` was the
+  outlier. Now also accepts `className?: string` + `style?: CSSProperties`.
+- **`setSession` deprecation route.** The shim's `console.warn` migrated
+  to `reportSoftError` so consumers wiring `config.onError` see the
+  migration signal in their telemetry.
+- **`hydrateSettings(signal?)` + `listDelegatedGrants(signal?)` +
+  `createDelegatedGrant(signal?)` + `revokeDelegatedGrant(signal?)` +
+  `exportGrantsAsJson(signal?)`.** P1-D scope expanded to settings
+  hydration and delegation flows. Every public async surface now
+  accepts `AbortSignal`.
+- **`<CodeEntry>` non-AuthSdkError piped through `onError`.** Pre-fix,
+  consumer observability stacks had no visibility into the generic
+  "Verification failed" branch. UX banner unchanged; underlying error
+  now reaches `config.onError`.
+- **`authenticatorPerformedUv` try/catch.** Malformed base64url
+  (atob `InvalidCharacterError`) used to escalate to an unhandled
+  exception; now fails-closed to `false` (UV bit unset → server-side
+  WebAuthn enforcement remains the canonical gate).
+
+### Tests
+
+752/752 unit tests pass. No new tests required — fixups exercise
+existing paths (no new branches that aren't covered by adjacent tests).
+
+### Migration notes (rc.2 → rc.3)
+
+Drop-in replacement. The five new optional `signal?: AbortSignal` params
+are additive; existing call sites compile and behave identically.
+
+---
+
 ## [1.1.0-rc.2] — 2026-05-06 — Post-audit hardening (P0 + P1)
 
 **rc.2 picks up all P0 ship-blockers and P1 production-hardening items from

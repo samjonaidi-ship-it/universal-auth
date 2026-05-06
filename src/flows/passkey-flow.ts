@@ -90,18 +90,29 @@ function assertUvNotDiscouraged(
  * out of the lazy chunk.
  */
 function authenticatorPerformedUv(authenticatorDataB64Url: string): boolean {
-  // base64url → bytes (only need the first 33 bytes, but small input)
-  const pad = authenticatorDataB64Url.length % 4 === 0 ? 0 : 4 - (authenticatorDataB64Url.length % 4);
-  const b64 = (authenticatorDataB64Url + '='.repeat(pad)).replace(/-/g, '+').replace(/_/g, '/');
-  let bin: string;
-  if (typeof atob === 'function') {
-    bin = atob(b64);
-  } else {
-    bin = Buffer.from(b64, 'base64').toString('binary');
+  // v1.1.0-rc.3 (P1-fixup): wrap the entire decode in try/catch. Pre-fix
+  // version threw on malformed base64url (atob throws InvalidCharacterError);
+  // post-fix, malformed input fails-closed to false rather than escalating to
+  // an unhandled exception. Server-side WebAuthn library catches genuine
+  // protocol errors at /verify; this is purely defense-in-depth for the
+  // SDK-side parser.
+  try {
+    // base64url → bytes (only need the first 33 bytes, but small input)
+    const pad = authenticatorDataB64Url.length % 4 === 0 ? 0 : 4 - (authenticatorDataB64Url.length % 4);
+    const b64 = (authenticatorDataB64Url + '='.repeat(pad)).replace(/-/g, '+').replace(/_/g, '/');
+    let bin: string;
+    if (typeof atob === 'function') {
+      bin = atob(b64);
+    } else {
+      bin = Buffer.from(b64, 'base64').toString('binary');
+    }
+    if (bin.length < 33) return false; // malformed — fail closed
+    const flags = bin.charCodeAt(32);
+    return (flags & 0x04) === 0x04; // UV bit
+  } catch {
+    // Malformed input (atob InvalidCharacterError, etc.) — fail closed.
+    return false;
   }
-  if (bin.length < 33) return false; // malformed — fail closed
-  const flags = bin.charCodeAt(32);
-  return (flags & 0x04) === 0x04; // UV bit
 }
 
 // ── Registration (after sign-in / during enrollment) ─────────────────────
