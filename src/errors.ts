@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/errors.ts | v1.0.2 | 2026-05-08 | BB
+// @samjonaidi-ship-it/universal-auth | src/errors.ts | v1.0.3 | 2026-05-08 | BB
 // Typed error classes for every canonical error code per §3.7.
 // Full enumeration: 15 from §3.7 + `VALIDATION_PHONE_UNREACHABLE` (§5.4.5)
 // + `CONSENT_REQUIRED` (v1.4.0 §3.4) = 17 server-canonical
@@ -32,14 +32,30 @@
  * is one of these; the trailing `(string & {})` fallback admits forward-
  * compatible unknown codes from future BFF versions without breaking the type.
  *
- * Use this for exhaustive `switch (err.code)` consumer code:
- * ```
+ * Use this for `switch (err.code)` consumer code:
+ * ```ts
  * switch (err.code) {
  *   case 'AUTH_CODE_INVALID': ...; break;
  *   case 'AUTH_CODE_EXPIRED': ...; break;
- *   // ...
+ *   // ...all other canonical codes...
+ *   default: handleUnknown(err); break;  // ← required because (string & {}) widens
  * }
  * ```
+ *
+ * **Exhaustiveness caveat (rc.7 audit D7-fu(a)):** the `(string & {})`
+ * widening fallback is intentional — without it, future server-only codes
+ * would force a major version bump on every BFF addition. The trade-off is
+ * that TypeScript cannot prove a `switch` over the union is exhaustive;
+ * consumers who want exhaustive narrowing must either:
+ *   1. Add a `default:` branch (recommended — handles forward-compat too), OR
+ *   2. Cast to `Exclude<AuthErrorCode, string & {}>` before the switch (loses
+ *      forward-compat — server changes will throw at runtime instead).
+ *
+ * The 4 SDK-internal codes (`DPOP_FALLBACK`, `LEGACY_REFRESH_RESPONSE`,
+ * `NO_NAVIGATOR_LOCKS`, `CNF_JKT_MISMATCH`) each have a typed subclass below
+ * (`DpopFallbackError` / `LegacyRefreshResponseError` / `NoNavigatorLocksError`
+ * / `CnfJktMismatchError`) so consumers can `instanceof`-check rather than
+ * string-comparing the code.
  */
 export type AuthErrorCode =
   // §3.7 server-canonical (15)
@@ -278,9 +294,10 @@ export class ConsentRequired extends AuthSdkError {
  * earlier plain-`Error` throws so consumers can do
  * `if (e instanceof AuthProviderMissingError) ...`.
  *
- * Added rc.5 audit D8 — wired into useAuth, useEntitlements, useProfile
- * where the same pattern previously emitted three slightly-different
- * string messages.
+ * Added rc.5 audit D8 — wired into useAuth + useEntitlements (the two
+ * hooks that read from AuthProvider's three context values). useProfile
+ * uses a different bootstrap (profile-store hydrate, no provider context),
+ * so it's not in the AuthProviderMissing class.
  */
 export class AuthProviderMissingError extends AuthSdkError {
   readonly hookName: string;
@@ -291,6 +308,54 @@ export class AuthProviderMissingError extends AuthSdkError {
         `Wrap your app: <AuthProvider><App /></AuthProvider>.`
     );
     this.hookName = hookName;
+  }
+}
+
+// ── Soft-fail error classes (rc.7 audit D7-fu(b)) ─────────────────────────
+// These four codes appear in `AuthErrorCode` and are routed through
+// `config.onError` via `reportSoftError`, but were previously constructed
+// as plain `new Error('CODE: ...')`. Now they are typed so consumers can
+// `instanceof DpopFallbackError`-check + read structured `cause`.
+
+/**
+ * DPoP proof generation failed; the request fell back to plain Bearer.
+ * Server-side `cnf_jkt` enforcement is the canonical gate. Routed through
+ * `config.onError` for observability.
+ */
+export class DpopFallbackError extends AuthSdkError {
+  constructor(message: string, opts?: ConstructorParameters<typeof AuthSdkError>[2]) {
+    super('DPOP_FALLBACK', message, opts);
+  }
+}
+
+/**
+ * Refresh-response payload missing required field — server is on a legacy
+ * shape that the SDK papered over with a default. Update CT BFF to remove.
+ */
+export class LegacyRefreshResponseError extends AuthSdkError {
+  constructor(message: string, opts?: ConstructorParameters<typeof AuthSdkError>[2]) {
+    super('LEGACY_REFRESH_RESPONSE', message, opts);
+  }
+}
+
+/**
+ * `navigator.locks` API unavailable in the current runtime; cross-tab
+ * refresh coalescing is degraded to in-tab mutex only. Surface to consumer
+ * observability so deployment health can spot affected user agents.
+ */
+export class NoNavigatorLocksError extends AuthSdkError {
+  constructor(message: string, opts?: ConstructorParameters<typeof AuthSdkError>[2]) {
+    super('NO_NAVIGATOR_LOCKS', message, opts);
+  }
+}
+
+/**
+ * Refresh-response access token bound (`cnf.jkt`) to a different DPoP
+ * keypair than the local one. SDK clears the session as a fail-safe.
+ */
+export class CnfJktMismatchError extends AuthSdkError {
+  constructor(message: string, opts?: ConstructorParameters<typeof AuthSdkError>[2]) {
+    super('CNF_JKT_MISMATCH', message, opts);
   }
 }
 

@@ -8,6 +8,100 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
 
 > **Note on v1.1.0-rc.3 (2026-05-06):** rc.3 landed on `main` but failed CI on 3 lint errors before it could be tagged or published. v1.1.0-rc.4 is the same code with those 3 errors resolved + coverage threshold reconciled with measured coverage. Public consumer path for the v1.1 line is rc.1 → rc.4 (rc.2 and rc.3 were never published).
 
+## [1.1.0-rc.7] — 2026-05-08 — rc.6 audit-debt finish
+
+**rc.7 closes the 1 High + 9 Medium debt items surfaced by the rc.6
+lookback audit (`audits/holistic-2026-05-08-rc6/`).** Composite SDK
+score expected ~9.0 going into v1.1.0 GA.
+
+### High (BUILD-9)
+
+- **`.githooks/pre-push` git index mode** was `100644` (non-exec) despite
+  working-tree being `755`. POSIX clones (Linux/macOS CI runners + team
+  members) silently skipped the hook, defeating the entire BUILD-1 fix.
+  Fix: `git update-index --chmod=+x .githooks/pre-push` — index mode now
+  `100755`. Verified via `git ls-files --stage`.
+
+### Medium (10 items)
+
+- **D7-fu(b)** — 4 SDK-internal codes in `AuthErrorCode` (`DPOP_FALLBACK`,
+  `LEGACY_REFRESH_RESPONSE`, `NO_NAVIGATOR_LOCKS`, `CNF_JKT_MISMATCH`)
+  previously had no typed class; consumers had to string-compare. New
+  classes added at `src/errors.ts:299-355`: `DpopFallbackError`,
+  `LegacyRefreshResponseError`, `NoNavigatorLocksError`,
+  `CnfJktMismatchError`. Wired into `client.ts:269` (DPoP fallback),
+  `token-manager.ts:340` (cnf.jkt mismatch — also exported), `:368`
+  (legacy refresh), `:478` (no-navigator-locks).
+- **D7-fu(a)** — `AuthErrorCode` `(string & {})` widening JSDoc upgraded
+  with explicit "Exhaustiveness caveat" block — explains why exhaustive
+  `switch` is impossible without `default:` and points to the typed
+  subclasses for the 4 SDK-internal codes.
+- **D2-imp** — `getAuth().signOut()` now accepts
+  `(options?: { signal?: AbortSignal })` — was React-only in rc.5.
+  Underlying `recoverySignOut` already accepted signal; the imperative
+  surface was hiding it.
+- **INFO-1** — `AuthProviderMissingError` JSDoc claimed it replaced 3
+  hooks; only 2 actually migrated (useAuth + useEntitlements). Comment
+  corrected to reflect reality (useProfile uses a different bootstrap).
+- **D-rc6-banner + N1 + N8 + D6-watermark** — README banner refreshed
+  rc.5 → rc.7; bundle-size figures updated to match measured closure
+  output (react 36.21 → 42.90 KB, the +6.7 KB that the rc.5 D1 fix
+  introduced when 7 PCP component re-exports landed). INTEGRATION_GUIDE
+  watermark bumped rc.5 → rc.7.
+- **N2** — Stale `size-limit` references in `scripts/release.ts:51` and
+  `scripts/size-check-closure.ts:4-16,63` cleaned up. Comments now
+  document the rc.5 BUILD-4 removal rather than presenting size-limit as
+  a co-existing gate.
+- **N7** — `test/unit/react/components/PersonaGuard.test.tsx` renamed to
+  `PersonaGuard-branches.test.tsx` to match the convention established
+  by entitlements/validators/delegation/CodeEntry/storage/useAccess.
+- **N3** — `eslint.config.js:1-12` header explains why
+  `eslint-plugin-react-hooks` is pinned to v5 (v7's
+  `react-hooks/set-state-in-effect` flags legitimate
+  `useSyncExternalStore` patterns; rationale was previously only in
+  CHANGELOG). Inline comment + watermark bumped rc.2 → rc.3.
+- **N5** — New test in `useAuth.test.tsx`:
+  `'throws AuthProviderMissingError (instance + code) outside <AuthProvider>'`
+  proves the rc.5 D8 class is actually thrown (not just the message
+  matched). Asserts `instanceof AuthProviderMissingError`,
+  `instanceof AuthSdkError`, `code === 'AUTH_PROVIDER_MISSING'`,
+  `hookName === 'useAuth'`.
+- **token-manager.test.ts cnf.jkt assertion upgrade** — was matching the
+  old error message `/CNF_JKT_MISMATCH/` regex. Now asserts
+  `instanceof CnfJktMismatchError` + `code === 'CNF_JKT_MISMATCH'` to
+  match the new typed-class surface.
+
+### Tests + verification
+
+- 824/824 unit tests pass (rc.6 was 823; +1 from new instanceof test in
+  useAuth.test.tsx).
+- All 8 CI build-job gates green locally.
+- 5 closure-aware bundle budgets pass: core 23.70 / react 43.00 /
+  profile 15.47 / passkey-marginal 0.20 / sw 0.56 KB gzipped.
+- 0 `any`, 0 `@ts-ignore` across 16,180+ LOC.
+
+### Migration notes (rc.6 → rc.7)
+
+Drop-in replacement for consumers; all changes are additive:
+
+- 4 new error classes exported from `@samjonaidi-ship-it/universal-auth`
+  (`DpopFallbackError`, `LegacyRefreshResponseError`,
+  `NoNavigatorLocksError`, `CnfJktMismatchError`). If you currently
+  string-match `err.message` against `'DPOP_FALLBACK: ...'` etc., you
+  can now switch to `if (e instanceof DpopFallbackError)` —
+  recommended.
+- `getAuth().signOut(options?: { signal?: AbortSignal })` — opt-in
+  signal threading. Existing call sites (no args) compile and behave
+  identically.
+
+### Deferred to v1.1.0 GA
+
+Same as rc.6: COV-1 final 0.28pp, NL8 refresh-path AbortSignal,
+TEST-1 ProfileCompletenessBar flake, INTEGRATION_GUIDE deeper rewrite,
+P2 architectural refactors (per BACKLOG).
+
+---
+
 ## [1.1.0-rc.6] — 2026-05-08 — COV-1 finish + audit-followup housekeeping
 
 **rc.6 closes the remaining lookback-audit followups** from the

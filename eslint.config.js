@@ -1,5 +1,13 @@
-// @samjonaidi-ship-it/universal-auth | eslint.config.js | v1.0.0-rc.2 | 2026-05-06 | BB
+// @samjonaidi-ship-it/universal-auth | eslint.config.js | v1.0.0-rc.3 | 2026-05-08 | BB
 // ESLint 9 flat config. Strict rules per plan CI/CD step 2.
+//
+// eslint-plugin-react-hooks pinned to ^5.0.0 (NOT v7+) because v7 adds
+// `react-hooks/set-state-in-effect` which flags legitimate
+// useSyncExternalStore-style patterns in our useProfile / useImpersonation /
+// useEntitlements hooks. v5 carries `exhaustive-deps` + `rules-of-hooks`
+// (the rules our `// eslint-disable-next-line` comments referenced) without
+// the v7 strictness regression. Re-evaluate when v7 stabilizes its
+// useSyncExternalStore exemptions or our hooks are refactored.
 
 import js from '@eslint/js';
 import tsPlugin from '@typescript-eslint/eslint-plugin';

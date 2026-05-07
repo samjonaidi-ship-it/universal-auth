@@ -1,4 +1,4 @@
-# Integration Guide | `@samjonaidi-ship-it/universal-auth` | v1.1.0-rc.5 | 2026-05-08 | BB
+# Integration Guide | `@samjonaidi-ship-it/universal-auth` | v1.1.0-rc.7 | 2026-05-08 | BB
 
 > **Read first**: [`CREW_UX_PRINCIPLES.md`](./CREW_UX_PRINCIPLES.md). BB
 > Express users wear gloves and have dirty hands. Every UX decision in

@@ -47,9 +47,10 @@ if (!bump || !['patch', 'minor', 'major'].includes(bump)) {
 if (!skipPreFlight) {
   console.log('[release] running pre-flight gates (typecheck + lint + tests + verify)...');
   // BUILD-3 (rc.5 audit): added verify:readme + verify:version-sync + build +
-  // size-check + verify:bundle + test:perf — these are exactly the gates that
-  // failed on rc.2/rc.3 main pushes (lint + version-sync + size-limit script).
-  // Pre-flight now mirrors CI's `build` job step-for-step.
+  // size-check + verify:bundle + test:perf — these are the gates that failed
+  // on rc.2/rc.3 main pushes (lint, version-sync, the test:perf script that
+  // still invoked the now-removed size-limit package). Pre-flight now mirrors
+  // CI's `build` job step-for-step.
   const gates: { name: string; cmd: string }[] = [
     { name: 'typecheck',           cmd: 'pnpm typecheck' },
     { name: 'verify:readme',       cmd: 'pnpm verify:readme' },

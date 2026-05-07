@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/core/client.ts | v1.1.0-rc.1 | 2026-05-06 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/client.ts | v1.1.1 | 2026-05-08 | BB
 // HTTP client for CT BFF. Owns:
 //
 //   §3   Every endpoint at `https://api.buildwithbainbridge.com/auth/v1/*`
@@ -49,6 +49,7 @@ import { nanoid } from 'nanoid';
 import {
   AuthSdkError,
   AuthSessionExpired,
+  DpopFallbackError,
   errorFromEnvelope,
   type AuthErrorEnvelope,
 } from '../errors.js';
@@ -265,10 +266,12 @@ async function requestInternal<T>(
           reason: err instanceof Error ? err.message : String(err),
         });
         // P1-E — route through onError hook; fall back to console.warn.
-        const fallbackErr = new Error(
-          `DPOP_FALLBACK: DPoP build failed for ${method} ${path}; falling back to plain Bearer. Cause: ${err instanceof Error ? err.message : String(err)}`,
+        // rc.7 D7-fu(b): typed AuthSdkError subclass so consumers can
+        // `instanceof DpopFallbackError`-check.
+        const fallbackErr = new DpopFallbackError(
+          `DPoP build failed for ${method} ${path}; falling back to plain Bearer. Cause: ${err instanceof Error ? err.message : String(err)}`,
+          err instanceof Error ? { cause: err } : undefined,
         );
-        if (err instanceof Error) (fallbackErr as Error & { cause?: unknown }).cause = err;
         reportSoftError(fallbackErr);
       }
     }

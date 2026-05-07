@@ -1,21 +1,22 @@
-// @samjonaidi-ship-it/universal-auth | scripts/size-check-closure.ts | v1.0.0 | 2026-05-06 | BB
+// @samjonaidi-ship-it/universal-auth | scripts/size-check-closure.ts | v1.0.1 | 2026-05-08 | BB
 // P0-4 — closure-aware bundle budget enforcement.
 //
-// `size-limit` (the existing CI gate at `pnpm size-check`) measures the
-// gzipped byte size of each entry-point STUB ONLY. esbuild ships our entries
-// with `splitting: true`, so most code lives in shared `chunk-*.js` files
-// imported by the entry. The size-limit numbers therefore underreport the
-// actual deployed byte cost — by 3-5× for the React subpath, where
-// libphonenumber-js metadata sits in a shared chunk.
+// **History (rc.2 P0-4):** the original `size-limit` package was the CI gate
+// at `pnpm size-check`. It measured the gzipped byte size of each entry-
+// point STUB ONLY. esbuild ships our entries with `splitting: true`, so most
+// code lives in shared `chunk-*.js` files imported by the entry. The
+// size-limit numbers therefore underreported the actual deployed byte cost —
+// by 3-5× for the React subpath where libphonenumber-js metadata sat in a
+// shared chunk. This script replaced size-limit entirely; the package was
+// removed from devDeps in rc.5 (BUILD-4).
 //
 // This script reads the esbuild metafile written by `scripts/build.ts`
 // (`.build-meta/esbuild-meta.json`), walks the transitive import graph from
 // each declared entry, gzips each reachable chunk's source, and asserts the
 // closure total against the budget. Run AFTER `pnpm build`.
 //
-// CI flow: `pnpm size-check` runs `size-limit` (entry-stub fast feedback)
-// then this script (closure ground-truth). Fail the build if either gate
-// fails.
+// CI flow: `pnpm size-check` invokes this script directly; it is the sole
+// bundle-budget gate.
 
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
@@ -60,8 +61,10 @@ interface Budget {
   lazyAfterCore?: boolean;
 }
 
-// Mirrors `package.json:size-limit` paths but adds closure semantics.
-// React budget intentionally raised to absorb libphonenumber until P1-F lazy-loads it.
+// Closure-aware budget table. Replaces the historical `package.json:size-limit`
+// block (removed in rc.5 BUILD-4). React budget was raised in rc.2 to absorb
+// libphonenumber metadata; that dep is now lazy-loaded via P1-F so the budget
+// has comfortable headroom.
 const BUDGETS: Budget[] = [
   { label: 'core', entry: 'dist/esm/index.js', limit: 40 * 1024 },
   { label: 'react', entry: 'dist/esm/react/index.js', limit: 70 * 1024 },

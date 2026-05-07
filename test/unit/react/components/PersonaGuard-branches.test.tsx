@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/react/components/PersonaGuard.test.tsx | v1.0.0 | 2026-05-08 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/react/components/PersonaGuard-branches.test.tsx | v1.0.1 | 2026-05-08 | BB
 // COV-1 finish (rc.5+ → GA): coverage tests for PersonaGuard.
 //
 // Targeted branches (per `pnpm test:unit` rc.5: 77.77% on this file):
