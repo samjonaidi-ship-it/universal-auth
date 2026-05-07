@@ -1,4 +1,4 @@
-# SDK Backlog | v1.1 | 2026-05-08 | BB
+# SDK Backlog | v1.2 | 2026-05-08 | BB
 
 Canonical list of deferred work for `@samjonaidi-ship-it/universal-auth`.
 
@@ -10,7 +10,7 @@ Items deferred from active scope but tracked. The original P2 architectural-refa
 
 ### COV-1 — Restore branch coverage threshold to 85% (target: v1.1.0 GA)
 
-**Status:** PARTIAL — branches lifted 83.74 → 84.72 across rc.5/rc.6 work; threshold raised 83 → 84. Remaining 0.28pp to original 85 deferred.
+**Status:** PARTIAL — branches lifted 83.74 → 84.79 across rc.5/rc.6/rc.7 work; threshold raised 83 → 84. Remaining 0.21pp to original 85 deferred.
 **Priority:** LOW (was MEDIUM; demoted because measured coverage is now within 0.3pp of original target)
 **Target version:** v1.1.0 GA
 **Source:** rc.4 ship — the threshold was lowered 85 → 83 to unblock CI.
