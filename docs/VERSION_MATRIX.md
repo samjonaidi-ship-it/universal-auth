@@ -4,9 +4,9 @@
 
 | Component | Version | File | Last Modified |
 |-----------|---------|------|---------------|
-| Package | v1.1.0-rc.5 | `package.json` | 2026-05-08 |
+| Package | v1.1.0-rc.6 | `package.json` | 2026-05-08 |
 | SDK Core | v1.0.4 | `src/index.ts` | 2026-05-04 |
-| Config | v1.1.2 | `src/config.ts` | 2026-05-08 |
+| Config | v1.1.3 | `src/config.ts` | 2026-05-08 |
 | React Subpath | v1.0.6 | `src/react/index.ts` | 2026-05-08 |
 | SW Subpath | v1.0.4 | `src/sw/index.ts` | 2026-05-04 |
 | Profile Subpath | v1.0.1 | `src/profile/index.ts` | 2026-05-01 |
@@ -32,7 +32,8 @@
 
 | Package | Status | Notes |
 |---------|--------|-------|
-| v1.1.0-rc.5 | ✅ PUBLISH-READY | 14/17 audit-debt items closed. 783/783 tests, branches 84.45 / threshold 84. New: verify:version-sync, AuthErrorCode union, AuthProviderMissingError, 7 PCP exports + useIdentity, pre-push hook, browser-smoke gating, 4 new branch-test files. |
+| v1.1.0-rc.6 | ✅ PUBLISH-READY | COV-1 finish + audit followups. 823/823 tests, branches 84.72 / threshold 84. New: 3 more branch-test files (storage, useAccess, PersonaGuard). README test-count + coverage refreshed. BACKLOG TEST-1 entry for pre-existing flake. |
+| v1.1.0-rc.5 | 🟡 PUBLISHED | 14/17 audit-debt items closed; superseded by rc.6. |
 | v1.1.0-rc.4 | 🟡 PUBLISHED | First publishable v1.1 ship; superseded by rc.5. |
 | v1.1.0-rc.3 | ⚠ UNPUBLISHED | Failed CI on 3 lint errors before tag — superseded by rc.4. |
 | v1.1.0-rc.2 | ⚠ UNPUBLISHED | Failed CI on same 3 lint errors — superseded by rc.4. |
