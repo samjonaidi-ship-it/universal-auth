@@ -1,12 +1,18 @@
-# VERSION MATRIX | BB_Universal_Auth | v1.6 | 2026-05-08 | BB
+# VERSION MATRIX | BB_Universal_Auth | v1.7 | 2026-05-08 | BB
 
 ## Current Active Versions
 
 | Component | Version | File | Last Modified |
 |-----------|---------|------|---------------|
-| Package | v1.1.0-rc.6 | `package.json` | 2026-05-08 |
+| Package | v1.1.0-rc.7 | `package.json` | 2026-05-08 |
 | SDK Core | v1.0.4 | `src/index.ts` | 2026-05-04 |
-| Config | v1.1.3 | `src/config.ts` | 2026-05-08 |
+| Config | v1.1.4 | `src/config.ts` | 2026-05-08 |
+| Errors | v1.0.3 | `src/errors.ts` | 2026-05-08 |
+| Client | v1.1.1 | `src/core/client.ts` | 2026-05-08 |
+| Token Manager | v1.1.3 | `src/core/token-manager.ts` | 2026-05-08 |
+| Imperative API | v1.0.2 | `src/imperative/getAuth.ts` | 2026-05-08 |
+| ESLint config | v1.0.0-rc.3 | `eslint.config.js` | 2026-05-08 |
+| size-check-closure | v1.0.1 | `scripts/size-check-closure.ts` | 2026-05-08 |
 | React Subpath | v1.0.6 | `src/react/index.ts` | 2026-05-08 |
 | SW Subpath | v1.0.4 | `src/sw/index.ts` | 2026-05-04 |
 | Profile Subpath | v1.0.1 | `src/profile/index.ts` | 2026-05-01 |
@@ -32,7 +38,8 @@
 
 | Package | Status | Notes |
 |---------|--------|-------|
-| v1.1.0-rc.6 | ✅ PUBLISH-READY | COV-1 finish + audit followups. 823/823 tests, branches 84.72 / threshold 84. New: 3 more branch-test files (storage, useAccess, PersonaGuard). README test-count + coverage refreshed. BACKLOG TEST-1 entry for pre-existing flake. |
+| v1.1.0-rc.7 | ✅ PUBLISH-READY | rc.6 audit-debt finish: BUILD-9 git index exec bit, 4 new typed soft-error classes (DpopFallbackError, LegacyRefreshResponseError, NoNavigatorLocksError, CnfJktMismatchError), getAuth().signOut(signal), AuthErrorCode JSDoc clarification, + 9 doc/test/comment items. 824/824 tests, branches 84.79 / threshold 84. |
+| v1.1.0-rc.6 | 🟡 PUBLISHED | COV-1 finish + audit followups; superseded by rc.7. |
 | v1.1.0-rc.5 | 🟡 PUBLISHED | 14/17 audit-debt items closed; superseded by rc.6. |
 | v1.1.0-rc.4 | 🟡 PUBLISHED | First publishable v1.1 ship; superseded by rc.5. |
 | v1.1.0-rc.3 | ⚠ UNPUBLISHED | Failed CI on 3 lint errors before tag — superseded by rc.4. |

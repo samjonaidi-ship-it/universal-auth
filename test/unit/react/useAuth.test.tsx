@@ -116,6 +116,34 @@ describe('react/useAuth', () => {
     }
   });
 
+  // rc.7 audit N5 — proves the rc.5 D8 class is actually thrown (not just
+  // the message). Consumers can `instanceof AuthProviderMissingError`-check.
+  it('throws AuthProviderMissingError (instance + code) outside <AuthProvider>', async () => {
+    const { AuthProviderMissingError, AuthSdkError } = await import(
+      '../../../src/errors.js'
+    );
+    function NoProvider(): ReactNode {
+      useAuth();
+      return null;
+    }
+    const orig = console.error;
+    console.error = (): void => {};
+    try {
+      let caught: unknown = null;
+      try {
+        render(<NoProvider />);
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeInstanceOf(AuthProviderMissingError);
+      expect(caught).toBeInstanceOf(AuthSdkError);
+      expect((caught as { code: string }).code).toBe('AUTH_PROVIDER_MISSING');
+      expect((caught as { hookName: string }).hookName).toBe('useAuth');
+    } finally {
+      console.error = orig;
+    }
+  });
+
   it('exposes agent context when identity_kind is agent', () => {
     let captured: ReturnType<typeof useAuth> | null = null;
     const agentSession: Session = {

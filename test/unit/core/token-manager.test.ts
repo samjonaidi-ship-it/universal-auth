@@ -255,7 +255,17 @@ describe('token-manager', () => {
         session_id: 'sess-mismatch-new',
       }));
 
-      await expect(getAccessToken()).rejects.toThrow(/CNF_JKT_MISMATCH/);
+      // rc.7 D7-fu(b): error is now a typed CnfJktMismatchError class.
+      // Check code property (forward-compat) AND instanceof (consumer pattern).
+      const { CnfJktMismatchError } = await import('../../../src/errors.js');
+      let caught: unknown = null;
+      try {
+        await getAccessToken();
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeInstanceOf(CnfJktMismatchError);
+      expect((caught as { code: string }).code).toBe('CNF_JKT_MISMATCH');
       expect(hasLiveAccessToken()).toBe(false);
       expect(getCurrentSessionId()).toBeNull();
     });

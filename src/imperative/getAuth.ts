@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/imperative/getAuth.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/imperative/getAuth.ts | v1.0.2 | 2026-05-08 | BB
 // Non-React imperative entry per spec §5.3. Returns a small client wrapping
 // the token-manager + flow surfaces so consumers (e.g. CalExp5's api-base.js
 // wrapper) can read the current access token, observe session changes, and
@@ -86,8 +86,12 @@ export interface AuthClient {
   /**
    * Sign out: revoke the server-side session + clear local refresh token.
    * After this resolves, `getSession()` returns the anonymous snapshot.
+   *
+   * v1.0.2 (rc.7 audit D2-imp): accepts `{ signal? }` to align with the
+   * React `useAuth().signOut` boundary. Aborting the signal cancels the
+   * server revoke RPC; local cleanup still runs in the `finally` block.
    */
-  signOut(): Promise<void>;
+  signOut(options?: { signal?: AbortSignal }): Promise<void>;
 }
 
 let cachedClient: AuthClient | null = null;
@@ -144,8 +148,8 @@ export function getAuth(): AuthClient {
       });
     },
 
-    async signOut(): Promise<void> {
-      await recoverySignOut();
+    async signOut(options?: { signal?: AbortSignal }): Promise<void> {
+      await recoverySignOut(options);
     },
   };
 

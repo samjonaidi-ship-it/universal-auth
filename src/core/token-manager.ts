@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.1.2 | 2026-05-06 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.1.3 | 2026-05-08 | BB
 // Access + refresh token lifecycle. Enforces spec invariants:
 //
 //   §15.1  Access token in memory only, never disk
@@ -30,6 +30,11 @@ import {
 import { deleteKeypair, loadKeypair } from './dpop/keypair.js';
 import { jwkThumbprint } from './dpop/thumbprint.js';
 import { reportSoftError } from './error-hook.js';
+import {
+  CnfJktMismatchError,
+  LegacyRefreshResponseError,
+  NoNavigatorLocksError,
+} from '../errors.js';
 
 // ── Public types ──────────────────────────────────────────────────────────
 
@@ -327,8 +332,12 @@ async function performRefresh(): Promise<string | null> {
         state.sessionId = null;
         broadcast({ type: 'session_cleared' });
         notifyListeners();
-        throw new Error(
-          'CNF_JKT_MISMATCH: refresh issued an access token bound to a different DPoP key',
+        // rc.7 D7-fu(b): typed error class so consumers can
+        // `instanceof CnfJktMismatchError`-check. Local DPoP keypair is
+        // intentionally retained: the next sign-in proves possession of
+        // the same key, and the server's policy may permit re-binding.
+        throw new CnfJktMismatchError(
+          'refresh issued an access token bound to a different DPoP key',
         );
       }
 
@@ -351,7 +360,9 @@ async function performRefresh(): Promise<string | null> {
         if (!warnedMissingRefreshExpiresAt) {
           warnedMissingRefreshExpiresAt = true;
           // P1-E — route through onError hook; fall back to console.warn.
-          const err = new Error('LEGACY_REFRESH_RESPONSE: refresh response missing `refresh_expires_at`; falling back to 90-day default. Update CT BFF to v1.0.1+.');
+          const err = new LegacyRefreshResponseError(
+            'refresh response missing `refresh_expires_at`; falling back to 90-day default. Update CT BFF to v1.0.1+.',
+          );
           reportSoftError(err);
         }
         refreshExpiresAt = Date.now() + DEFAULT_REFRESH_TTL_MS;
@@ -458,7 +469,9 @@ async function runUnderRefreshLock<T>(work: () => Promise<T>): Promise<T> {
       warnedNoNavigatorLocks = true;
       // P1-E — route through onError hook; fall back to console.warn.
       reportSoftError(
-        new Error('NO_NAVIGATOR_LOCKS: navigator.locks is unavailable; falling back to in-tab refresh mutex only. Cross-tab refreshes may run in parallel.'),
+        new NoNavigatorLocksError(
+          'navigator.locks is unavailable; falling back to in-tab refresh mutex only. Cross-tab refreshes may run in parallel.',
+        ),
       );
     }
     return work();
