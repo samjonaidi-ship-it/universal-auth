@@ -5,7 +5,7 @@
 - **Spec:** `BB_UNIVERSAL_AUTH_SDK_SPEC.md` v1.6.1 (internal repo)
 - **Status:** **v1.1.0-rc.5 — Post-rc.4 debt cleanup** (published 2026-05-08; composite audit score 7.9 → targeting 8.5+ at GA)
 - **Registry:** GitHub Packages, `@samjonaidi-ship-it` scope (restricted access)
-- **Tests:** 752/752 pass; coverage 90.44% lines / 83.74% branches / 92.77% functions / 90.44% statements (branch threshold backstopped at 83 with COV-1 backlog item to restore 85 by GA)
+- **Tests:** 823/823 pass; coverage 90.72% lines / 84.72% branches / 92.81% functions / 90.72% statements (branch threshold currently 84; COV-1 backlog item tracks the final 0.28pp to 85 by GA)
 - **Bundle (closure-aware, gzipped):** core 23.39 KB / react 36.21 KB / profile 15.29 KB / passkey-flow lazy-marginal 0.20 KB / sw 0.56 KB
 
 ## Install

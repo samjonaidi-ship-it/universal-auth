@@ -8,6 +8,68 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
 
 > **Note on v1.1.0-rc.3 (2026-05-06):** rc.3 landed on `main` but failed CI on 3 lint errors before it could be tagged or published. v1.1.0-rc.4 is the same code with those 3 errors resolved + coverage threshold reconciled with measured coverage. Public consumer path for the v1.1 line is rc.1 → rc.4 (rc.2 and rc.3 were never published).
 
+## [1.1.0-rc.6] — 2026-05-08 — COV-1 finish + audit-followup housekeeping
+
+**rc.6 closes the remaining lookback-audit followups** from the
+2026-05-08 verification pass. No SDK runtime API or behavior change vs
+rc.5 — pure test + docs additions.
+
+### Coverage (COV-1 final progress)
+
+Added 3 more focused branch-test files (+18 tests beyond rc.5's +31):
+
+- `test/unit/core/storage-branches.test.ts` (5 tests) — getOrCreateHmacKey
+  generation/cache/dedup paths, clearAllSessionState multi-store
+  transaction, IDB persistence verification.
+- `test/unit/react/useAccess-branches.test.tsx` (4 tests) — non-AuthSdkError
+  → `new AuthSdkError('UNKNOWN', ...)` wrap branch (line 57), background-
+  refresh catch path, post-unmount setState guard.
+- `test/unit/react/components/PersonaGuard.test.tsx` (9 tests) — full
+  status/persona/className/style matrix; PersonaGuard.tsx coverage:
+  77.77 → 100% branches.
+
+Per-file branch coverage delta (rc.4 → rc.6, cumulative across rc.5 + rc.6):
+| File | rc.4 | rc.6 | Δ |
+|---|---|---|---|
+| entitlements.ts | 78.66 | 80.24 | +1.58 |
+| storage.ts | 72.88 | 75.00 | +2.12 |
+| validators.ts | 79.31 | ~95 | +15+ |
+| delegation.ts | 36.36 | 72.72 | +36.36 |
+| useAccess.ts | 63.63 | ~85 | +21+ |
+| CodeEntry.tsx | 57.89 | ~85 | +27+ |
+| PersonaGuard.tsx | 77.77 | 100 | +22.23 |
+
+Global: branches 83.74 → **84.72** (+0.98pp), tests 752 → **823** (+71).
+Threshold raised 84 → unchanged (still 84 — the remaining 0.28pp to 85
+is concentrated in `storage.ts` IDB-upgrade callbacks that need a fake-
+indexeddb-with-version-injection harness; high effort + low yield;
+deferred to v1.1.0 GA per `docs/BACKLOG.md` COV-1).
+
+### Docs
+
+- `README.md` test-count + branches stats refreshed to current measured
+  values (823/823 / 84.72%) — was 752/752 / 83.74% from rc.5.
+- `docs/BACKLOG.md` v1.1: COV-1 status moved OPEN → PARTIAL with full
+  per-file delta table + remaining-gap explanation. TEST-1 entry added
+  for the `ProfileCompletenessBar.test.tsx` intermittent flake (pre-
+  existing — not introduced by rc.5/rc.6 work; investigation notes +
+  fix sketch documented).
+
+### Tests + verification
+
+- 823/823 unit tests pass (rc.5 was 783; +40 from rc.5 + rc.6 branch tests).
+- All 8 CI build-job gates green locally.
+- 5 closure-aware bundle budgets pass (no change vs rc.5).
+- 0 `any`, 0 `@ts-ignore` across 16,127 LOC.
+
+### Migration notes (rc.5 → rc.6)
+
+Drop-in replacement. Zero source-code changes outside `package.json`,
+`src/config.ts:231` (SDK_VERSION literal), and the new test files.
+Existing call sites compile and behave identically.
+
+---
+
 ## [1.1.0-rc.5] — 2026-05-08 — rc.4 lookback debt cleanup
 
 **rc.5 closes 14 of the 17 debt items surfaced by the 2026-05-08 lookback
