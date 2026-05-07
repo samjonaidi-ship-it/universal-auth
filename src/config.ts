@@ -228,7 +228,7 @@ export function assertApiBaseUrlSafety(
  *  of regression. `pnpm verify:version-sync` (scripts/verify-version-sync.ts)
  *  now CI-gates this constant against package.json:version on every build.
  */
-export const SDK_VERSION = '1.1.0-rc.7';
+export const SDK_VERSION = '1.1.0-rc.8';
 
 /**
  * Initialize the SDK. Called once at app startup.
