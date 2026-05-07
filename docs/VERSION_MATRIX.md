@@ -1,10 +1,11 @@
-# VERSION MATRIX | BB_Universal_Auth | v1.7 | 2026-05-08 | BB
+# VERSION MATRIX | BB_Universal_Auth | v1.8 | 2026-05-08 | BB
 
 ## Current Active Versions
 
 | Component | Version | File | Last Modified |
 |-----------|---------|------|---------------|
-| Package | v1.1.0-rc.7 | `package.json` | 2026-05-08 |
+| Package | v1.1.0-rc.8 | `package.json` | 2026-05-08 |
+| permission-grants | v1.1.1 | `src/flows/permission-grants.ts` | 2026-05-08 |
 | SDK Core | v1.0.4 | `src/index.ts` | 2026-05-04 |
 | Config | v1.1.4 | `src/config.ts` | 2026-05-08 |
 | Errors | v1.0.3 | `src/errors.ts` | 2026-05-08 |

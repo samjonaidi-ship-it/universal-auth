@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/flows/permission-grants.ts | v1.1.0 | 2026-05-06 | BB
+// @samjonaidi-ship-it/universal-auth | src/flows/permission-grants.ts | v1.1.1 | 2026-05-08 | BB
 // Browser/device permission-grant recording.
 //
 // Per spec:
@@ -21,7 +21,14 @@ export type PermissionKey =
   | 'camera'
   | 'microphone'
   | 'push'
-  | 'background_sync';
+  | 'background_sync'
+  | 'motion';     // rc.8: DeviceMotionEvent.requestPermission() on iOS Safari
+                   //       (BB-Scan capture flow). CalExp5 tracks motion locally
+                   //       in Zustand; without this union entry, server-side
+                   //       audit writes were silently dropped (4th-party finding
+                   //       2026-05-08; ct_bff.permission_grants.permission_key
+                   //       has no CHECK constraint, so server already accepts it
+                   //       — this just unblocks the SDK type system).
 
 export type PermissionState = 'granted' | 'denied' | 'revoked';
 

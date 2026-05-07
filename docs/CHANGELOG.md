@@ -8,6 +8,40 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
 
 > **Note on v1.1.0-rc.3 (2026-05-06):** rc.3 landed on `main` but failed CI on 3 lint errors before it could be tagged or published. v1.1.0-rc.4 is the same code with those 3 errors resolved + coverage threshold reconciled with measured coverage. Public consumer path for the v1.1 line is rc.1 → rc.4 (rc.2 and rc.3 were never published).
 
+## [1.1.0-rc.8] — 2026-05-08 — `'motion'` PermissionKey
+
+**Drop-in replacement for rc.7. One-line type addition; no behavior change
+to existing code.**
+
+### Added
+
+- `'motion'` to `PermissionKey` union at `src/flows/permission-grants.ts:24`.
+
+### Why
+
+A 4th-party investigation (2026-05-08) found that CalExp5's BB-Scan
+capture flow on iOS Safari calls `DeviceMotionEvent.requestPermission()`
+and tracks the result locally in Zustand. The SDK's
+`recordPermissionGrant({ permission_key: 'motion', state: 'granted' })`
+calls were silently rejected at the TS type boundary because `'motion'`
+wasn't in the `PermissionKey` literal union (rc.7 had only camera /
+microphone / geolocation / notifications / push / background_sync).
+
+The CT BFF `ct_bff.permission_grants` table has no CHECK constraint on
+`permission_key`, so the server already accepts any string. This rc.8
+unblock is purely the SDK type system; once consumers bump to rc.8,
+motion writes will compile and propagate to the audit trail.
+
+### Migration notes (rc.7 → rc.8)
+
+Drop-in replacement. Zero source-code changes outside `package.json`,
+`src/config.ts:231` (`SDK_VERSION` literal), and the one-line type
+addition. Existing `recordPermissionGrant({ permission_key: 'camera', ... })`
+call sites compile and behave identically. New consumers can now also
+emit `'motion'` without TS errors.
+
+---
+
 ## [1.1.0-rc.7] — 2026-05-08 — rc.6 audit-debt finish
 
 **rc.7 closes the 1 High + 9 Medium debt items surfaced by the rc.6
