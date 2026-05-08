@@ -1,4 +1,4 @@
-# @samjonaidi-ship-it/universal-auth | test/integration/docker-compose.test.yml | v1.0.4 | 2026-05-04 | BB
+# @samjonaidi-ship-it/universal-auth | test/integration/docker-compose.test.yml | v1.0.5 | 2026-05-08 | BB
 # Integration test stack per SDK spec §11.3 + plan Block 6 Day 18-19.
 #
 # v1.1.0 (2026-05-01): added bb_runtime_app schema bootstrap. Without it,
@@ -29,7 +29,7 @@
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: bb-integration-postgres
     environment:
       POSTGRES_USER: bb_test
