@@ -120,7 +120,20 @@ services:
       TWILIO_BASE_URL: http://twilio-mock:8080
       RESEND_BASE_URL: http://resend-mock:8080
       BB_MODE: test
+      # The CT BFF Dockerfile sets ENV NODE_ENV=production; without this
+      # override bff/lib/env-check.js treats the test container as prod
+      # and FAIL-FASTs on the missing secrets below. Make the env-check
+      # treat this as a non-prod boot (it will still loud-warn).
+      NODE_ENV: test
       PORT: "3300"
+      # Test-only dev defaults for secrets the prod env-check would
+      # otherwise demand. None of these reach the network — the test
+      # stack has mocks for Twilio/Resend and never actually hits Bridge.
+      BRIDGE_URL: http://bridge-mock:9999
+      BRIDGE_API_KEY: test-bridge-key-do-not-use-in-prod
+      BFF_ACTOR_HMAC_SECRET: test-actor-hmac-do-not-use-in-prod
+      COOKIE_SIGN_SECRET: test-cookie-sign-secret-do-not-use-in-prod
+      JWT_SECRET: test-jwt-secret-do-not-use-in-prod
       # Per spec §10 — accept TEST_MODE_KEY for header-gated test mode
       TEST_MODE_KEY: test-key-do-not-use-in-prod
       # Tighten TTLs for fast test cycles per spec §10.2

@@ -33,6 +33,13 @@ on:
     - cron: '0 4 * * *'  # 04:00 UTC daily
   workflow_dispatch:
 
+# Silence the Node-20 deprecation warning by opting into Node 24 for JS actions
+# (actions/checkout, actions/setup-node, pnpm/action-setup). Forced by default
+# 2026-06-02; opting in early keeps the runs warning-free until we upgrade the
+# action pins themselves.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 # NOTE: NEON_PROJECT_ID is the production Neon project hosting the ct_bff
 # schema. Stored as a repo secret (not env literal) so it's not in git history.
 # If the secret is unset the integration job is skipped — see job `if:` guard.
