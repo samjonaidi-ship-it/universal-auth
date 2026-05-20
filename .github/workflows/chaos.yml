@@ -290,10 +290,24 @@ jobs:
         run: |
           for i in $(seq 1 90); do
             STATE=$(docker inspect --format='{{.State.Health.Status}}' bb-integration-ct-bff 2>/dev/null || echo "missing")
-            echo "  attempt $i: ct-bff health=$STATE"
+            ALIVE=$(docker inspect --format='{{.State.Status}}' bb-integration-ct-bff 2>/dev/null || echo "missing")
+            echo "  attempt $i: ct-bff health=$STATE  status=$ALIVE"
             if [ "$STATE" = "healthy" ]; then
               echo "ct-bff is healthy"
               exit 0
+            fi
+            # Early surface: ct-bff has historically crashed silently with
+            # `docker logs --tail=200` returning empty by the time we got here
+            # (container had already been removed). Dump logs the moment it
+            # transitions to anything non-running so we actually see WHY.
+            if [ "$ALIVE" = "exited" ] || [ "$ALIVE" = "dead" ]; then
+              echo "ct-bff exited prematurely — exit code:"
+              docker inspect --format='{{.State.ExitCode}}' bb-integration-ct-bff || true
+              echo "=== ct-bff logs (all, while container still inspectable) ==="
+              docker logs bb-integration-ct-bff 2>&1 || true
+              echo "=== postgres tail ==="
+              docker logs bb-integration-postgres --tail=80 2>&1 || true
+              exit 1
             fi
             sleep 2
           done

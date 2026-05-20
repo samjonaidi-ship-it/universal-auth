@@ -21,9 +21,14 @@ export default defineConfig({
     poolOptions: {
       forks: { singleFork: true },
     },
-    // Generous timeouts — real DB writes + HTTP round trips
+    // Generous timeouts — real DB writes + HTTP round trips. hookTimeout
+    // raised 60s → 120s 2026-05-20 after tests 03/05/06/07 consistently hit
+    // the 60s ceiling on their `__resetDbForTests()` + signInSeeded()
+    // beforeEach in CI (passing locally + on faster hardware). 120s gives
+    // clear headroom without masking a true hang — anything beyond that is
+    // a real bug, not slow-runner noise.
     testTimeout: 30_000,
-    hookTimeout: 60_000,
+    hookTimeout: 120_000,
     // No coverage on integration runs — unit tests cover the same branches
     // and integration is about contract correctness, not line coverage
     coverage: { enabled: false },
