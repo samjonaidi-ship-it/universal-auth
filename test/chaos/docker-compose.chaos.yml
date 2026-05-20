@@ -29,7 +29,14 @@ services:
     networks:
       - bb-integration
     volumes:
-      - ./toxiproxy-config.json:/config/proxies.json:ro
+      # Docker Compose resolves bind-mount paths relative to the PROJECT
+      # directory, which defaults to the directory of the FIRST `-f` file
+      # (test/integration/), NOT this overlay's own directory. With
+      # `./toxiproxy-config.json` here Docker looked for
+      # test/integration/toxiproxy-config.json, didn't find it, silently
+      # created an empty directory at the mount target, and toxiproxy then
+      # logged `bad request body: read /config/proxies.json: is a directory`.
+      - ../chaos/toxiproxy-config.json:/config/proxies.json:ro
     depends_on:
       - ct-bff
     healthcheck:
