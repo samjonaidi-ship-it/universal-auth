@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | test/browser/06-memory-soak.spec.ts | v1.0.2 | 2026-05-02 | BB
+// @samjonaidi-ship-it/universal-auth | test/browser/06-memory-soak.spec.ts | v1.0.3 | 2026-05-22 | BB
 // Real-browser memory soak per spec §11.7 L1139.
 //
 // Why: the vitest harness uses fake-indexeddb which retains ~3 KB per IDB
@@ -27,9 +27,14 @@ const CYCLES = Number(process.env.BB_BROWSER_SOAK_CYCLES) || 5_000;
 const HEAP_BUDGET_BYTES = 1_048_576; // 1 MB baseline; assertion at 4× slop
 
 test.describe('Memory soak — real-browser (§11.7)', () => {
-  // Soak takes ~10ms per cycle in headless Chromium; 100k cycles ≈ 17 min.
-  // Allocate 5× the expected runtime so heap-warm-up + GC pauses don't flake.
-  test.setTimeout(Math.max(120_000, CYCLES * 50));
+  // Per-cycle cost is NOT constant — measured 2026-05-22 on local Chromium:
+  // 3 000 cycles = 1.2 min (24 ms/cycle), 9 000 cycles = 6.5 min (43 ms/cycle
+  // average). Real IndexedDB slows as the DB ages over tens of thousands of
+  // transactions. The prior `CYCLES * 50` budget assumed a flat ~10 ms/cycle
+  // and was the reason the nightly 100k soak was cancelled mid-run every time.
+  // CYCLES * 250 gives the soak ~3× headroom over the measured worst case
+  // (~80 ms/cycle on slower CI runners) so GC pauses + IDB ageing can't flake.
+  test.setTimeout(Math.max(120_000, CYCLES * 250));
 
   test.skip(
     ({ browserName }) => browserName !== 'chromium',
