@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | test/chaos/07-sw-registration-blocked.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @samjonaidi-ship-it/universal-auth | test/chaos/07-sw-registration-blocked.test.ts | v1.0.1 | 2026-05-22 | BB
 // Spec §11.6 scenario 7 — Service Worker registration blocked.
 //
 // In some environments (incognito tabs, strict CSP, file:// URLs, certain
@@ -50,7 +50,13 @@ describe('Chaos #7 — SW registration blocked (§11.6)', () => {
       register: vi.fn(() =>
         Promise.reject(new Error('SecurityError: SW blocked by CSP'))
       ),
-      ready: Promise.reject(new Error('no controller')),
+      // Real `navigator.serviceWorker.ready` never rejects — it stays pending
+      // until a worker activates, which never happens when registration is
+      // blocked. A `Promise.reject` here was both inaccurate AND dangled as an
+      // unhandled rejection (the test only ever calls `register`), failing the
+      // chaos run on a phantom error. A never-settling promise models it
+      // correctly and never surfaces a rejection.
+      ready: new Promise<never>(() => {}),
       controller: null,
     };
 
