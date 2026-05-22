@@ -1,8 +1,8 @@
-// @samjonaidi-ship-it/universal-auth | test/memory/sign-in-out-soak.test.ts | v1.0.2 | 2026-05-02 | BB
+// @samjonaidi-ship-it/universal-auth | test/memory/sign-in-out-soak.test.ts | v1.0.3 | 2026-05-22 | BB
 // Memory-leak soak per spec §11.7 L1139 — repeated sign-in/sign-out cycles.
 //
 // Default duration: 5 min (CI gate). Override via BB_SOAK_DURATION_MS:
-//   BB_SOAK_DURATION_MS=86400000 pnpm test:memory   # 24h nightly
+//   BB_SOAK_DURATION_MS=3600000 pnpm test:memory    # 1h — the nightly CI value
 //
 // v1.0.2 (2026-05-02) — Heap-budget assertion gating
 //   Bisect (test/memory/leak-bisect — removed post-investigation) confirmed

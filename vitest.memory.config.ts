@@ -1,10 +1,10 @@
-// @samjonaidi-ship-it/universal-auth | vitest.memory.config.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @samjonaidi-ship-it/universal-auth | vitest.memory.config.ts | v1.0.0-rc.2 | 2026-05-22 | BB
 // Memory-leak soak config per spec §11.7 L1139.
 //
-// In CI we run a SHORT version (~5 min) gating regressions; the full 24h
+// In CI we run a SHORT version (~5 min) gating regressions; a longer 1h
 // soak runs nightly via .github/workflows/chaos.yml.
 //
-// Knob: BB_SOAK_DURATION_MS (default 5 min, 24h nightly)
+// Knob: BB_SOAK_DURATION_MS (default 5 min, 1h nightly)
 
 import { defineConfig } from 'vitest/config';
 
