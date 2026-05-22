@@ -1,4 +1,4 @@
-# @samjonaidi-ship-it/universal-auth | .github/workflows/chaos.yml | v1.2.1 | 2026-05-22 | BB
+# @samjonaidi-ship-it/universal-auth | .github/workflows/chaos.yml | v1.2.2 | 2026-05-22 | BB
 # Nightly chaos + 1h memory soak per spec §11.6 + §11.7.
 #
 # v1.2.1 (2026-05-22):
@@ -399,6 +399,14 @@ jobs:
 
       - name: Run chaos suite (7 scenarios)
         working-directory: universal-auth
+        env:
+          # ct-bff is brought up with TEST_MODE_KEY=test-key-do-not-use-in-prod
+          # (docker-compose.test.yml / .neon.yml). The chaos test files read
+          # process.env.TEST_MODE_KEY and otherwise fall back to a stale
+          # 'dev-test-mode-key' default — without this the test-mode header
+          # mismatches, code/verify drops to the real OTP path, and every
+          # chaos sign-in fails HTTP 401.
+          TEST_MODE_KEY: test-key-do-not-use-in-prod
         run: pnpm test:chaos
 
       - name: Capture container logs on failure (BEFORE teardown — order matters)

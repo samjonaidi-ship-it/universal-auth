@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | vitest.integration.config.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @samjonaidi-ship-it/universal-auth | vitest.integration.config.ts | v1.1.0-rc.6 | 2026-05-22 | BB
 // Vitest config for integration tests (Block 6 Day 18-19 / A5 gate #2).
 //
 // Runs against a docker-compose stack (test/integration/docker-compose.test.yml)
@@ -22,15 +22,13 @@ export default defineConfig({
       forks: { singleFork: true },
     },
     // Generous timeouts — real DB writes + HTTP round trips.
-    // NOTE 2026-05-20: tests 03/05/06/07 hit hookTimeout exactly. Bumping
-    // 60→120s confirmed it: failures stayed at exactly the new ceiling,
-    // meaning each failing beforeEach is *hanging*, not just slow. Reverted
-    // to 60s so the hang surfaces fast while diagnosis continues. Separate
-    // backlog item — needs reading each failing test's helper chain to find
-    // the await that never resolves (likely a poll loop against a service
-    // that's started but unhealthy in the chaos overlay).
-    testTimeout: 30_000,
-    hookTimeout: 60_000,
+    // The 03/05/06/07 hangs (diagnosed 2026-05-20 as the storage
+    // __resetDbForTests deleteDB await that never resolved) are fixed, so the
+    // 30s diagnostic floor is no longer needed. testTimeout is now sized to
+    // absorb one test-mode rate-limit window: signInSeeded waits out a 429
+    // (~60s fixed window) and retries — see test/integration/helpers.ts.
+    testTimeout: 90_000,
+    hookTimeout: 90_000,
     // No coverage on integration runs — unit tests cover the same branches
     // and integration is about contract correctness, not line coverage
     coverage: { enabled: false },

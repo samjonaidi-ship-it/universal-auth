@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/core/storage.ts | v1.0.2 | 2026-05-22 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/storage.ts | v1.0.3 | 2026-05-22 | BB
 // Encrypted IndexedDB storage — refresh token + event queue + offline queue backing store.
 //
 // Per spec:
@@ -397,16 +397,27 @@ export async function __resetDbForTests(): Promise<void> {
   cachedHmacKey = null;
   cachedHmacKeyPromise = null;
   legacyWipeChecked = false;
-  // Clear every object store on the live shared connection instead of
-  // close()+deleteDB(). deleteDB() fires `blocked` and waits indefinitely
-  // when any other connection to the database is still open — and under the
-  // integration runner (vitest singleFork: all 8 test files share one
-  // process + one fake-indexeddb), closing storage's own handle then racing
-  // deleteDB against a re-open from a still-settling prior test left the
-  // next `beforeEach` hanging until the 60s hookTimeout. Clearing stores
-  // wipes every row for test isolation without the close/reopen race or the
-  // deleteDatabase `blocked` wait. Schema is unchanged between tests, so the
-  // upgrade callback does not need to re-run.
+  // Two-step reset:
+  //   1. Clear every object store for data isolation.
+  //   2. close() the connection and drop the `dbPromise` singleton so the
+  //      next getDb() opens a *fresh* IDBPDatabase proxy.
+  //
+  // We deliberately do NOT call deleteDB(): it fires `blocked` and waits
+  // indefinitely when any other connection to the database is still open —
+  // under the integration runner (vitest singleFork shares one process +
+  // one fake-indexeddb across all 8 files) that wedged the next `beforeEach`
+  // until the 60s hookTimeout.
+  //
+  // A plain close()+reopen is hang-free: DB_VERSION is unchanged between
+  // tests, so reopening triggers no `upgradeneeded` and therefore no
+  // `blocked` event. The fresh proxy matters for correctness, not just
+  // cleanliness — `vi.spyOn(db, <method>)` on an idb proxy materialises the
+  // synthesized convenience method (add/put/get/…) as a real own property on
+  // the underlying IDBDatabase, and restoreAllMocks re-defines rather than
+  // deletes it. A reused connection would carry that own property into the
+  // next test, where idb's proxy then invokes the method with the raw db as
+  // `this`, yielding an unwrapped transaction (tx.store === undefined).
+  // Reopening discards the polluted raw handle entirely.
   const db = await getDb();
   const stores = [
     STORE_REFRESH_TOKENS,
@@ -419,4 +430,6 @@ export async function __resetDbForTests(): Promise<void> {
   ];
   const tx = db.transaction(stores, 'readwrite');
   await Promise.all([...stores.map((s) => tx.objectStore(s).clear()), tx.done]);
+  db.close();
+  dbPromise = null;
 }

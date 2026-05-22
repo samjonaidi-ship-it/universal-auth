@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/profile/profile-store.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/profile/profile-store.ts | v1.0.2 | 2026-05-22 | BB
 // Profile state + sync. Per §5.4.2.
 //
 // Endpoints:
@@ -200,7 +200,13 @@ export async function saveProfile(
       // Reset/logout interrupted; surface as save-aborted, NOT mutate state.
       throw err;
     }
-    if (err instanceof AuthSdkError && (err.code === 'HTTP_409' || err.code === 'SYNC_CONFLICT')) {
+    if (
+      err instanceof AuthSdkError &&
+      // CT BFF returns `VERSION_CONFLICT` for the If-Match 409 (ct-bff
+      // identity-v1.js PUT /identity/v1/profile). `HTTP_409` is client.ts's
+      // non-JSON fallback; `SYNC_CONFLICT` is kept for older BFF builds.
+      (err.code === 'VERSION_CONFLICT' || err.code === 'HTTP_409' || err.code === 'SYNC_CONFLICT')
+    ) {
       // Server has a newer version. Per Phase D1: do NOT silently drop the
       // patch. Keep it in `dirtyPatch` until the consumer rebases via
       // `applyProfilePatch`, and emit a payload-rich `sync.conflict` event

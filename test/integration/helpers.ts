@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | test/integration/helpers.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @samjonaidi-ship-it/universal-auth | test/integration/helpers.ts | v1.0.1 | 2026-05-22 | BB
 // Shared helpers for integration tests — typed fetch wrappers, seeded user
 // shortcuts, mock-server inspection.
 
@@ -66,38 +66,62 @@ export async function bff<T = unknown>(
  * cookie for use in subsequent requests.
  *
  * Per spec §10.3 — seeded users: test-crew-1, test-supplier-1, test-client-1, test-admin
+ *
+ * 429 handling: the test-mode `/code/verify` path is per-IP rate-limited
+ * (10/min, fixed 60s window — see ct-bff auth-v1.js). The integration suite
+ * shares one CI-runner IP and signs in many times; once the hang fixes landed
+ * the suite runs fast enough to spend that budget inside a single window, so
+ * later sign-ins (notably test #8's three back-to-back calls) get
+ * `HTTP 429 AUTH_RATE_LIMITED`. On a 429 we wait out the window — honoring the
+ * server's `retry_after_seconds` hint — and retry once. The window is fixed,
+ * so one wait guarantees a fresh budget. testTimeout in
+ * vitest.integration.config.ts is sized to cover this wait.
  */
 export async function signInSeeded(
   username: 'test-crew-1' | 'test-supplier-1' | 'test-client-1' | 'test-admin'
 ): Promise<{ accessToken: string; refreshToken: string; cookie: string; sessionId: string; identity: { identity_id: string } }> {
-  const r = await bff<{
-    access_token: string;
-    refresh_token: string;
-    session_id: string;
-    expires_at: string;
-    identity: { identity_id: string };
-  }>('/auth/v1/code/verify', {
-    method: 'POST',
-    testMode: true,
-    body: {
-      destination: `${username}@test.bainbridgebuilders.com`,
-      code: '000000',  // seeded users accept code 000000 in test mode
-      device_id: 'test-device-' + crypto.randomUUID().slice(0, 8),
-      app_id: 'bb_integration_test',
-    },
-  });
-  if (r.status !== 200) {
+  const MAX_ATTEMPTS = 2;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const r = await bff<{
+      access_token: string;
+      refresh_token: string;
+      session_id: string;
+      expires_at: string;
+      identity: { identity_id: string };
+      retry_after_seconds?: number;
+    }>('/auth/v1/code/verify', {
+      method: 'POST',
+      testMode: true,
+      body: {
+        destination: `${username}@test.bainbridgebuilders.com`,
+        code: '000000',  // seeded users accept code 000000 in test mode
+        device_id: 'test-device-' + crypto.randomUUID().slice(0, 8),
+        app_id: 'bb_integration_test',
+      },
+    });
+    if (r.status === 200) {
+      return {
+        accessToken: r.body.access_token,
+        refreshToken: r.body.refresh_token,
+        cookie: r.cookie ?? '',
+        sessionId: r.body.session_id,
+        identity: r.body.identity,
+      };
+    }
+    if (r.status === 429 && attempt < MAX_ATTEMPTS) {
+      const retryAfterS = typeof r.body?.retry_after_seconds === 'number'
+        ? r.body.retry_after_seconds
+        : 60;
+      // +1s buffer so the fixed window has definitely rolled over.
+      await new Promise((res) => setTimeout(res, (retryAfterS + 1) * 1000));
+      continue;
+    }
     throw new Error(
       `[helpers.signInSeeded] failed for ${username}: HTTP ${r.status} ${JSON.stringify(r.body)}`
     );
   }
-  return {
-    accessToken: r.body.access_token,
-    refreshToken: r.body.refresh_token,
-    cookie: r.cookie ?? '',
-    sessionId: r.body.session_id,
-    identity: r.body.identity,
-  };
+  // Unreachable — the loop either returns on 200 or throws.
+  throw new Error(`[helpers.signInSeeded] exhausted retries for ${username}`);
 }
 
 // ── Mock-server inspection ────────────────────────────────────────────────
