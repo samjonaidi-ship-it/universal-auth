@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/core/storage.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/storage.ts | v1.0.2 | 2026-05-22 | BB
 // Encrypted IndexedDB storage — refresh token + event queue + offline queue backing store.
 //
 // Per spec:
@@ -30,7 +30,7 @@
 // `master_key`. DB_VERSION bumped 2 → 3; upgrade callback creates the new
 // store without touching existing rows.
 
-import { openDB, deleteDB, type IDBPDatabase } from 'idb';
+import { openDB, type IDBPDatabase } from 'idb';
 import { encryptString, decryptString } from './crypto-client.js';
 import type { EncryptedBlob } from './storage-crypto.js';
 
@@ -392,21 +392,31 @@ export async function clearAllSessionState(): Promise<void> {
  * NOT part of the public SDK API.
  */
 export async function __resetDbForTests(): Promise<void> {
-  if (dbPromise !== null) {
-    const db = await dbPromise;
-    db.close();
-    dbPromise = null;
-  }
   cachedMasterKey = null;
   cachedMasterKeyPromise = null;
   cachedHmacKey = null;
   cachedHmacKeyPromise = null;
   legacyWipeChecked = false;
-  // Fully delete to guarantee test isolation — the upgrade callback runs
-  // fresh on the next open() and no rows survive between tests.
-  try {
-    await deleteDB(DB_NAME);
-  } catch {
-    // ignore — DB may not exist yet
-  }
+  // Clear every object store on the live shared connection instead of
+  // close()+deleteDB(). deleteDB() fires `blocked` and waits indefinitely
+  // when any other connection to the database is still open — and under the
+  // integration runner (vitest singleFork: all 8 test files share one
+  // process + one fake-indexeddb), closing storage's own handle then racing
+  // deleteDB against a re-open from a still-settling prior test left the
+  // next `beforeEach` hanging until the 60s hookTimeout. Clearing stores
+  // wipes every row for test isolation without the close/reopen race or the
+  // deleteDatabase `blocked` wait. Schema is unchanged between tests, so the
+  // upgrade callback does not need to re-run.
+  const db = await getDb();
+  const stores = [
+    STORE_REFRESH_TOKENS,
+    STORE_OFFLINE_QUEUE,
+    STORE_EVENT_QUEUE,
+    STORE_DEAD_LETTER_QUEUE,
+    STORE_MASTER_KEY,
+    STORE_DPOP_KEYPAIR,
+    STORE_HMAC_KEY,
+  ];
+  const tx = db.transaction(stores, 'readwrite');
+  await Promise.all([...stores.map((s) => tx.objectStore(s).clear()), tx.done]);
 }

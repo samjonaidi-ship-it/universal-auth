@@ -1,5 +1,16 @@
-# @samjonaidi-ship-it/universal-auth | .github/workflows/chaos.yml | v1.2.0 | 2026-05-22 | BB
+# @samjonaidi-ship-it/universal-auth | .github/workflows/chaos.yml | v1.2.1 | 2026-05-22 | BB
 # Nightly chaos + 1h memory soak per spec §11.6 + §11.7.
+#
+# v1.2.1 (2026-05-22):
+#   - chaos job migrated to the Neon-branch path (test + neon + chaos compose
+#     overlays). ct-bff's @neondatabase/serverless driver speaks Neon HTTP, not
+#     raw TCP, so it could never connect to the local postgres container — the
+#     job failed in ~90s every night. Now creates/seeds/tears down a per-run
+#     `ci-chaos-*` Neon branch exactly like the integration job. Gated on
+#     vars.NEON_INTEGRATION_ENABLED. Legacy docker-in-docker service removed
+#     (the integration job runs compose on the native runner Docker and works).
+#   - memory-browser timeout-minutes 30 → 50: the 100k-cycle soak (~17-20 min)
+#     plus ~10 min of setup overran the 30 min ceiling and was cancelled nightly.
 #
 # v1.2.0 (2026-05-22):
 #   - memory-24h job renamed memory-soak; BB_SOAK_DURATION_MS cut 24h → 1h.
@@ -250,10 +261,14 @@ jobs:
   chaos:
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    services:
-      docker:
-        image: docker:24-dind
-        options: --privileged
+    # Gated on the same repo variable as the integration job. The chaos suite
+    # needs ct-bff talking to a real Neon branch: ct-bff's
+    # @neondatabase/serverless driver speaks Neon's HTTP protocol, not raw TCP,
+    # so it cannot connect to the local postgres container (documented blocker
+    # in docker-compose.test.yml). v1.2.1 migrates the chaos job to the same
+    # Neon-branch path the integration job already uses. Skips green when
+    # NEON_INTEGRATION_ENABLED is unset.
+    if: ${{ vars.NEON_INTEGRATION_ENABLED == 'true' }}
     steps:
       - name: Checkout universal-auth
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -280,14 +295,77 @@ jobs:
         working-directory: universal-auth
         run: pnpm install --frozen-lockfile
 
-      - name: Bring up integration + chaos stacks
+      - name: Install neonctl
+        run: npm install -g neonctl@2
+
+      # Fork a fresh Neon branch from prod `production` (inherits live schema +
+      # migrations). Branch name `ci-chaos-<run_id>-<attempt>` so it never
+      # collides with the integration job's `ci-int-*` branch.
+      - name: Create Neon test branch
+        id: neon
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
+          NEON_PARENT_BRANCH: ${{ vars.NEON_PARENT_BRANCH }}
+          NEON_ROLE_NAME: ${{ vars.NEON_ROLE_NAME }}
+          NEON_DATABASE_NAME: ${{ vars.NEON_DATABASE_NAME }}
+        run: |
+          set -euo pipefail
+          BRANCH_NAME="ci-chaos-${{ github.run_id }}-${{ github.run_attempt }}"
+          PARENT_BRANCH="${NEON_PARENT_BRANCH:-production}"
+          echo "Creating Neon branch $BRANCH_NAME (forked from $PARENT_BRANCH)"
+          neonctl branches create \
+            --project-id "$NEON_PROJECT_ID" \
+            --name "$BRANCH_NAME" \
+            --parent "$PARENT_BRANCH" \
+            --no-color \
+            --output json 2>/tmp/branch.stderr | sed -n '/^{/,$p' > /tmp/branch.json
+          if [ ! -s /tmp/branch.json ]; then
+            echo "::error::neonctl branches create produced no JSON"
+            cat /tmp/branch.stderr || true
+            exit 1
+          fi
+          DB_URL=$(jq -r '.connection_uris[0].connection_uri // empty' /tmp/branch.json)
+          if [ -z "$DB_URL" ] || [ "$DB_URL" = "null" ]; then
+            echo "branch create did not return connection_uris (parent likely protected); fetching via connection-string"
+            DB_URL=$(neonctl connection-string \
+              --project-id "$NEON_PROJECT_ID" \
+              --branch "$BRANCH_NAME" \
+              --role-name "${NEON_ROLE_NAME:-neondb_owner}" \
+              --database-name "${NEON_DATABASE_NAME:-neondb}" \
+              --pooled 2>/tmp/connstr.stderr || true)
+          fi
+          if [ -z "$DB_URL" ] || [ "$DB_URL" = "null" ]; then
+            echo "::error::could not resolve Neon connection string for branch $BRANCH_NAME"
+            cat /tmp/branch.json
+            cat /tmp/connstr.stderr || true
+            exit 1
+          fi
+          echo "::add-mask::$DB_URL"
+          echo "DATABASE_URL=$DB_URL" >> "$GITHUB_ENV"
+          echo "branch_name=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
+          echo "Neon branch ready"
+
+      - name: Seed integration test users
         working-directory: universal-auth
         run: |
+          set -euo pipefail
+          sudo apt-get install -y --no-install-recommends postgresql-client >/dev/null 2>&1
+          psql "$DATABASE_URL" -f test/integration/seed-test-users.sql
+
+      - name: Bring up integration + chaos stacks (ct-bff → Neon branch)
+        working-directory: universal-auth
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+        run: |
+          # neon override removes the local postgres + points ct-bff at the
+          # Neon branch; chaos override layers Toxiproxy in front of ct-bff.
           docker compose \
             -f test/integration/docker-compose.test.yml \
+            -f test/integration/docker-compose.neon.yml \
             -f test/chaos/docker-compose.chaos.yml \
             up -d
-          # Wait for ct-bff health (toxiproxy depends_on ct-bff)
+          # Wait for toxiproxy admin API
           for i in $(seq 1 60); do
             if curl -sf http://localhost:8474/version >/dev/null; then
               echo "toxiproxy ready"; break
@@ -295,7 +373,7 @@ jobs:
             sleep 2
           done
 
-      - name: Wait for ct-bff to become healthy (separate from toxiproxy)
+      - name: Wait for ct-bff to become healthy
         working-directory: universal-auth
         run: |
           for i in $(seq 1 90); do
@@ -306,24 +384,17 @@ jobs:
               echo "ct-bff is healthy"
               exit 0
             fi
-            # Early surface: ct-bff has historically crashed silently with
-            # `docker logs --tail=200` returning empty by the time we got here
-            # (container had already been removed). Dump logs the moment it
-            # transitions to anything non-running so we actually see WHY.
             if [ "$ALIVE" = "exited" ] || [ "$ALIVE" = "dead" ]; then
               echo "ct-bff exited prematurely — exit code:"
               docker inspect --format='{{.State.ExitCode}}' bb-integration-ct-bff || true
               echo "=== ct-bff logs (all, while container still inspectable) ==="
               docker logs bb-integration-ct-bff 2>&1 || true
-              echo "=== postgres tail ==="
-              docker logs bb-integration-postgres --tail=80 2>&1 || true
               exit 1
             fi
             sleep 2
           done
           echo "ct-bff did not become healthy after 180s — dumping logs"
           docker logs bb-integration-ct-bff --tail=200 || true
-          docker logs bb-integration-postgres --tail=80 || true
           exit 1
 
       - name: Run chaos suite (7 scenarios)
@@ -336,12 +407,10 @@ jobs:
         run: |
           echo "=== ct-bff ==="
           docker logs bb-integration-ct-bff --tail=300 2>&1 || true
-          echo "=== postgres ==="
-          docker logs bb-integration-postgres --tail=100 2>&1 || true
           echo "=== toxiproxy ==="
           docker logs bb-chaos-toxiproxy --tail=100 2>&1 || true
           echo "=== compose ps ==="
-          docker compose -f test/integration/docker-compose.test.yml -f test/chaos/docker-compose.chaos.yml ps -a || true
+          docker compose -f test/integration/docker-compose.test.yml -f test/integration/docker-compose.neon.yml -f test/chaos/docker-compose.chaos.yml ps -a || true
 
       - name: Tear down stacks
         if: always()
@@ -349,8 +418,23 @@ jobs:
         run: |
           docker compose \
             -f test/integration/docker-compose.test.yml \
+            -f test/integration/docker-compose.neon.yml \
             -f test/chaos/docker-compose.chaos.yml \
-            down -v
+            down -v || true
+
+      # CRITICAL: run last + always — never leak a Neon branch.
+      - name: Cleanup Neon test branch
+        if: always() && steps.neon.outputs.branch_name != ''
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
+          BRANCH_NAME: ${{ steps.neon.outputs.branch_name }}
+        run: |
+          echo "Deleting Neon branch $BRANCH_NAME"
+          neonctl branches delete \
+            --project-id "$NEON_PROJECT_ID" \
+            "$BRANCH_NAME" \
+            --confirm || echo "::warning::Failed to delete Neon branch $BRANCH_NAME — manual cleanup required"
 
   memory-soak:
     runs-on: ubuntu-latest
@@ -385,7 +469,11 @@ jobs:
   # 100k cycles is within budget.
   memory-browser:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # ~10 min setup (pnpm install + playwright install --with-deps + build) +
+    # ~17-20 min for the 100k-cycle soak. The old 30 min ceiling cancelled the
+    # job mid-soak every night; 50 gives the soak room without weakening the
+    # gate by cutting cycles. (Playwright's own per-test timeout is 83 min.)
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: pnpm/action-setup@0c17529a66aca453f9227af23103ed11469b1e47 # v4.0.0
