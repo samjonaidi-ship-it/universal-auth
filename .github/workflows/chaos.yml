@@ -1,6 +1,16 @@
 # @samjonaidi-ship-it/universal-auth | .github/workflows/chaos.yml | v1.2.2 | 2026-05-22 | BB
 # Nightly chaos + 1h memory soak per spec §11.6 + §11.7.
 #
+# v1.2.2 (2026-05-22):
+#   - chaos run step now passes TEST_MODE_KEY (ct-bff is brought up with it;
+#     the chaos tests otherwise fell back to a stale default and every chaos
+#     sign-in 401'd).
+#   - memory-browser timeout-minutes 50 → 88: the 100k-cycle soak sets its own
+#     Playwright per-test timeout to 83 min, so a 50 min job ceiling cancelled
+#     it mid-soak (killed at 50:16, ~49 min in). 88 sits above the test budget
+#     so Playwright governs — a real overrun now fails with a heap report
+#     instead of a silent GitHub cancel.
+#
 # v1.2.1 (2026-05-22):
 #   - chaos job migrated to the Neon-branch path (test + neon + chaos compose
 #     overlays). ct-bff's @neondatabase/serverless driver speaks Neon HTTP, not
@@ -477,11 +487,16 @@ jobs:
   # 100k cycles is within budget.
   memory-browser:
     runs-on: ubuntu-latest
-    # ~10 min setup (pnpm install + playwright install --with-deps + build) +
-    # ~17-20 min for the 100k-cycle soak. The old 30 min ceiling cancelled the
-    # job mid-soak every night; 50 gives the soak room without weakening the
-    # gate by cutting cycles. (Playwright's own per-test timeout is 83 min.)
-    timeout-minutes: 50
+    # The 100k-cycle soak sets its OWN Playwright per-test timeout to
+    # CYCLES*50ms = 83 min (see test/browser/06-memory-soak.spec.ts). The job
+    # `timeout-minutes` MUST sit above that or GitHub cancels the job before
+    # Playwright's own timeout can govern — which is exactly what the prior
+    # 30- and 50-min ceilings did (the 2026-05-22 run was killed at 50:16,
+    # mid-soak, with the test ~49 min in and no failure report). 88 = 83 min
+    # test budget + ~5 min for checkout/install/build. If the soak genuinely
+    # exceeds 83 min, Playwright now fails the test cleanly with a heap report
+    # instead of GitHub silently cancelling the job.
+    timeout-minutes: 88
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: pnpm/action-setup@0c17529a66aca453f9227af23103ed11469b1e47 # v4.0.0
