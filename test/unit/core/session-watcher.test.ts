@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/core/session-watcher.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/session-watcher.test.ts | v1.0.1 | 2026-05-22 | BB
 // Coverage push for src/core/session-watcher.ts (was 0%).
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -9,12 +9,22 @@ import {
   __resetSessionWatcherForTests,
 } from '../../../src/core/session-watcher.js';
 import { configureClient } from '../../../src/core/client.js';
+import { getOrCreateDeviceId } from '../../../src/core/device-id.js';
 import { AuthSessionRevoked, AuthSessionExpired } from '../../../src/errors.js';
 
 describe('session-watcher', () => {
   let fetchSpy: ReturnType<typeof vi.spyOn>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    // Pre-warm the device-id cache on the REAL clock, before vi.useFakeTimers().
+    // Every authenticated request() awaits getOrCreateDeviceId(), which hashes
+    // the UA via crypto.subtle.digest() — a real-async op the fake-timer clock
+    // cannot drive. The first poll that reaches request() otherwise pays that
+    // digest *inside* vi.advanceTimersByTimeAsync(); under full-suite CPU
+    // contention it may not settle before the test asserts on fetchSpy, so
+    // fetch is never reached. See session-watcher-branches.test.ts for the
+    // full diagnosis — same flake mechanism, same fix.
+    await getOrCreateDeviceId();
     vi.useFakeTimers();
     configureClient({
       apiBaseUrl: 'https://ct-bff.test',
