@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/react/components/CompletenessBar.test.tsx | v1.0.4 | 2026-05-04 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/react/components/CompletenessBar.test.tsx | v1.0.5 | 2026-05-22 | BB
 // v1.0.4 (Lane 2a): switched from fetch-mock + waitFor (which races against
 // the v1.0.1 hydrate generation guard in jsdom/happy-dom) to deterministic
 // pre-seed via __seedProfileForTests. Tests now assert synchronously on
@@ -93,53 +93,54 @@ describe('CompletenessBar', () => {
     fetchSpy.mockRestore();
   });
 
-  it('renders without crashing + sets aria attributes', async () => {
-    fetchSpy.mockResolvedValue(jsonResp(200, profile(85, [])));
+  // v1.0.5 (2026-05-22): pre-seed; deterministic synchronous assertion.
+  // The original fetchSpy.mockResolvedValue + waitFor path races against the
+  // cold crypto.subtle.digest in getOrCreateDeviceId() that hydrate awaits —
+  // under full-suite CPU contention the digest may not settle inside waitFor's
+  // default 1 s window, so the bar's aria-valuenow stays at 0 and the test
+  // flakes. Same v1.0.4 Lane-2a fix the file's other tests already use.
+  it('renders without crashing + sets aria attributes', () => {
+    __seedProfileForTests(profile(85, []));
     render(
       <AuthProvider initialSession={SESSION}>
         <CompletenessBar />
       </AuthProvider>
     );
-    await waitFor(() => {
-      const bar = screen.getByRole('progressbar');
-      expect(bar.getAttribute('aria-valuenow')).toBe('85');
-    });
+    const bar = screen.getByRole('progressbar');
+    expect(bar.getAttribute('aria-valuenow')).toBe('85');
   });
 
-  it('uses green band for ≥80', async () => {
-    fetchSpy.mockResolvedValue(jsonResp(200, profile(82, [])));
+  // v1.0.5 (2026-05-22): pre-seed; deterministic synchronous assertion.
+  it('uses green band for ≥80', () => {
+    __seedProfileForTests(profile(82, []));
     const { container } = render(
       <AuthProvider initialSession={SESSION}>
         <CompletenessBar />
       </AuthProvider>
     );
-    await waitFor(() =>
-      expect(container.querySelector('[data-band="green"]')).not.toBeNull()
-    );
+    expect(container.querySelector('[data-band="green"]')).not.toBeNull();
   });
 
-  it('uses yellow band for 50-79', async () => {
-    fetchSpy.mockResolvedValue(jsonResp(200, profile(60, ['phone_e164'])));
+  // v1.0.5 (2026-05-22): pre-seed; deterministic synchronous assertion.
+  it('uses yellow band for 50-79', () => {
+    __seedProfileForTests(profile(60, ['phone_e164']));
     const { container } = render(
       <AuthProvider initialSession={SESSION}>
         <CompletenessBar />
       </AuthProvider>
     );
-    await waitFor(() =>
-      expect(container.querySelector('[data-band="yellow"]')).not.toBeNull()
-    );
+    expect(container.querySelector('[data-band="yellow"]')).not.toBeNull();
   });
 
-  it('uses red band for <50', async () => {
-    fetchSpy.mockResolvedValue(jsonResp(200, profile(30, ['phone_e164', 'emergency_contact'])));
+  // v1.0.5 (2026-05-22): pre-seed; deterministic synchronous assertion.
+  it('uses red band for <50', () => {
+    __seedProfileForTests(profile(30, ['phone_e164', 'emergency_contact']));
     const { container } = render(
       <AuthProvider initialSession={SESSION}>
         <CompletenessBar />
       </AuthProvider>
     );
-    await waitFor(() =>
-      expect(container.querySelector('[data-band="red"]')).not.toBeNull()
-    );
+    expect(container.querySelector('[data-band="red"]')).not.toBeNull();
   });
 
   // v1.0.4 (Lane 2a): pre-seed; deterministic synchronous assertion.
@@ -178,14 +179,15 @@ describe('CompletenessBar', () => {
     expect(screen.getByText('Custom thing')).toBeTruthy();
   });
 
-  it('hides missing list when hideMissing=true', async () => {
-    fetchSpy.mockResolvedValue(jsonResp(200, profile(40, ['phone_e164'])));
+  // v1.0.5 (2026-05-22): pre-seed; deterministic synchronous assertion.
+  it('hides missing list when hideMissing=true', () => {
+    __seedProfileForTests(profile(40, ['phone_e164']));
     render(
       <AuthProvider initialSession={SESSION}>
         <CompletenessBar hideMissing />
       </AuthProvider>
     );
-    await waitFor(() => screen.getByRole('progressbar'));
+    screen.getByRole('progressbar');
     expect(screen.queryByText('Phone number')).toBeNull();
   });
 });

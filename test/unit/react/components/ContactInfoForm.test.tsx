@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/react/components/ContactInfoForm.test.tsx | v1.0.0-rc.1 | 2026-04-25 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/react/components/ContactInfoForm.test.tsx | v1.0.1 | 2026-05-22 | BB
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
@@ -9,6 +9,7 @@ import { configureClient, __resetClientForTests } from '../../../../src/core/cli
 import { __resetTokenManagerForTests } from '../../../../src/core/token-manager.js';
 import { __resetDbForTests } from '../../../../src/core/storage.js';
 import { __resetProfileStoreForTests } from '../../../../src/profile/profile-store.js';
+import { validatePhone } from '../../../../src/profile/validators.js';
 import {
   configureEventReporter,
   __resetEventReporterForTests,
@@ -64,6 +65,15 @@ describe('ContactInfoForm', () => {
   let fetchSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(async () => {
+    // Pre-warm libphonenumber-js. ContactInfoForm.handleSubmit() awaits
+    // validatePhone() which dynamic-imports libphonenumber-js (~34 KB gzip,
+    // P1-F lazy load) on first call. Under full-suite CPU contention the
+    // cold import takes longer than waitFor's 1 s default, so the test
+    // asserts on the onSubmit spy before validatePhone resolves and the
+    // submit handler reaches onSubmit(patch). Warming here on the real
+    // module loader memoises the import so every later validatePhone() is a
+    // straight Node module-cache hit.
+    await validatePhone('+12125551234');
     __resetClientForTests();
     __resetTokenManagerForTests();
     __resetEventReporterForTests();
