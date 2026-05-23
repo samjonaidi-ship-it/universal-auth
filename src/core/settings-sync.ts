@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/core/settings-sync.ts | v1.1.0 | 2026-05-06 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/settings-sync.ts | v1.1.1 | 2026-05-22 | BB
 // Settings sync with debounced PUT + If-Match optimistic locking.
 //
 // Invariants per spec:
@@ -249,9 +249,15 @@ async function flushWrite(signalOverride?: AbortSignal): Promise<void> {
 }
 
 function isConflict(err: AuthSdkError): boolean {
-  // Client library throws typed errors; 409 surfaces as an envelope with
-  // `code: 'SYNC_CONFLICT'` or via HTTP status encoded in the code.
-  return err.code === 'SYNC_CONFLICT' || err.code === 'HTTP_409';
+  // CT BFF returns `code: 'VERSION_CONFLICT'` for a 409 on the If-Match
+  // optimistic lock (ct-bff identity-v1.js, PUT /identity/v1/settings).
+  // `HTTP_409` is client.ts's fallback when the 409 body isn't JSON;
+  // `SYNC_CONFLICT` is retained for back-compat with older BFF builds.
+  return (
+    err.code === 'VERSION_CONFLICT' ||
+    err.code === 'SYNC_CONFLICT' ||
+    err.code === 'HTTP_409'
+  );
 }
 
 function notify(): void {

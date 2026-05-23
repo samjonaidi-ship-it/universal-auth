@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/offline/sw-bridge.test.ts | v1.0.0-rc.1 | 2026-04-25 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/offline/sw-bridge.test.ts | v1.0.1 | 2026-05-22 | BB
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
@@ -8,6 +8,17 @@ import {
   __resetSwBridgeForTests,
   SYNC_TAG,
 } from '../../../src/offline/sw-bridge.js';
+// Pre-import reconciler statically so the runForegroundFlush() path inside
+// requestBackgroundFlush() (v1.0.1 lookback C8 — when serviceWorker is
+// unavailable, the function now falls back to a direct foreground flush
+// instead of literally no-op'ing) hits the module cache. Cold-loading the
+// reconciler → queue → token-manager → event-reporter → client tree via
+// `await import('./reconciler.js')` exceeded the 5 s testTimeout under
+// full-suite CPU contention. Static import here resolves at file load on
+// the real clock, so the dynamic import inside requestBackgroundFlush is
+// O(1). The named import is unused at the type level — the side-effect of
+// loading the module is what we want.
+import '../../../src/offline/reconciler.js';
 
 describe('offline/sw-bridge', () => {
   beforeEach(() => {

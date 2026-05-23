@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/core/session-watcher-branches.test.ts | v1.0.0-rc.4 | 2026-04-30 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/session-watcher-branches.test.ts | v1.0.1 | 2026-05-22 | BB
 // Branch-coverage push for src/core/session-watcher.ts.
 // Existing session-watcher.test.ts covers happy path; this file targets:
 //   - Visibility-gated polling: hidden → no poll (§8.2)
@@ -23,6 +23,7 @@ import {
   __resetSessionWatcherForTests,
 } from '../../../src/core/session-watcher.js';
 import { configureClient } from '../../../src/core/client.js';
+import { getOrCreateDeviceId } from '../../../src/core/device-id.js';
 import {
   AuthSessionRevoked,
   AuthSessionExpired,
@@ -45,7 +46,18 @@ function restoreVisibility(): void {
 describe('session-watcher — branch coverage', () => {
   let fetchSpy: ReturnType<typeof vi.spyOn>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    // Pre-warm the device-id cache on the REAL clock, before vi.useFakeTimers().
+    // Every authenticated request() awaits getOrCreateDeviceId(), which hashes
+    // the UA via crypto.subtle.digest() — a real-async op the fake-timer clock
+    // cannot drive. The first poll that reaches request() otherwise pays that
+    // digest *inside* a vi.advanceTimersByTimeAsync() window; under full-suite
+    // CPU contention it may not settle before the test asserts, so fetch is
+    // never reached (calls === 0). That cold-path race is why only the first
+    // polling test flaked — later tests reuse the memoized device id. Warming
+    // here makes every later getOrCreateDeviceId() a memoized microtask resolve
+    // that advanceTimersByTimeAsync() flushes deterministically.
+    await getOrCreateDeviceId();
     vi.useFakeTimers();
     configureClient({
       apiBaseUrl: 'https://ct-bff.test',

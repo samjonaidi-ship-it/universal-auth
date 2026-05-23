@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | test/chaos/01-connection-drop-mid-refresh.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @samjonaidi-ship-it/universal-auth | test/chaos/01-connection-drop-mid-refresh.test.ts | v1.0.1 | 2026-05-22 | BB
 // Spec §11.6 scenario 1 — connection drop mid-refresh.
 //
 // Scenario:
@@ -33,25 +33,30 @@ async function bffPost(path: string, body: unknown, headers: Record<string, stri
   return { status: r.status, body: await r.json().catch(() => null) as unknown };
 }
 
+// Sign in a fresh seeded session through the proxy (clean path) and return
+// its refresh token. Each call yields a brand-new, unused refresh token.
+async function signInFresh(): Promise<string> {
+  const r = await bffPost(
+    '/auth/v1/code/verify',
+    {
+      destination: 'test-crew-1@test.bainbridgebuilders.com',
+      code: '000000',
+      device_id: 'chaos-device-' + crypto.randomUUID().slice(0, 8),
+      app_id: 'bb_chaos_test',
+    },
+    { 'X-Test-Mode-Key': TEST_MODE_KEY }
+  );
+  if (r.status !== 200) {
+    throw new Error(`[chaos #1] sign-in failed: HTTP ${r.status}`);
+  }
+  return (r.body as { refresh_token: string }).refresh_token;
+}
+
 describe('Chaos #1 — connection drop mid-refresh (§11.6)', () => {
   let refreshToken: string;
 
   beforeAll(async () => {
-    // Get a real session through the proxy first (clean path)
-    const r = await bffPost(
-      '/auth/v1/code/verify',
-      {
-        destination: 'test-crew-1@test.bainbridgebuilders.com',
-        code: '000000',
-        device_id: 'chaos-device-1',
-        app_id: 'bb_chaos_test',
-      },
-      { 'X-Test-Mode-Key': TEST_MODE_KEY }
-    );
-    if (r.status !== 200) {
-      throw new Error(`[chaos #1] sign-in failed: HTTP ${r.status}`);
-    }
-    refreshToken = (r.body as { refresh_token: string }).refresh_token;
+    refreshToken = await signInFresh();
   });
 
   it('reset_peer during /session/refresh surfaces network error, not session-expired', async () => {
@@ -71,9 +76,18 @@ describe('Chaos #1 — connection drop mid-refresh (§11.6)', () => {
     expect(networkError).toBeInstanceOf(Error);
   }, 30_000);
 
-  it('after toxic clears, refresh succeeds with same token', async () => {
-    // beforeEach in setup.ts already cleared the toxic. Verify clean refresh.
-    const r = await bffPost('/auth/v1/session/refresh', { refresh_token: refreshToken });
+  it('after toxic clears, a fresh refresh succeeds', async () => {
+    // setup.ts beforeEach already cleared the toxic. Verify the SDK→ct-bff
+    // path recovered by doing one clean refresh.
+    //
+    // We sign in fresh rather than reuse the beforeAll token: `reset_peer`
+    // with timeout:1 still forwards the request body to ct-bff before sending
+    // the RST, so the previous test's "dropped" refresh actually reached the
+    // server and consumed that token (refresh tokens are single-use / rotated
+    // — ct-bff issues a new one each refresh). Reusing it here would 401 on a
+    // legitimately-consumed token and tell us nothing about post-toxic health.
+    const freshToken = await signInFresh();
+    const r = await bffPost('/auth/v1/session/refresh', { refresh_token: freshToken });
     expect(r.status).toBe(200);
     expect((r.body as { access_token: string }).access_token).toBeTypeOf('string');
   });

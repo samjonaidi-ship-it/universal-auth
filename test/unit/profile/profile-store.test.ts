@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/profile/profile-store.test.ts | v1.0.0-rc.1 | 2026-04-25 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/profile/profile-store.test.ts | v1.0.1 | 2026-05-22 | BB
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
@@ -111,6 +111,25 @@ describe('profile/profile-store', () => {
     await hydrateProfile();
 
     fetchSpy.mockResolvedValueOnce(jsonResp(409, { code: 'SYNC_CONFLICT', message: 'version mismatch' }));
+    fetchSpy.mockResolvedValueOnce(jsonResp(200, { ...FULL_PROFILE, profile_version: 9 }));
+
+    await expect(saveProfile({ display_name: 'X' })).rejects.toThrow();
+    expect(getProfileSnapshot().state).toBe('error');
+  });
+
+  // v1.0.2 (2026-05-22): same rehydrate path for ct-bff's real wire code.
+  // CT BFF's PUT /identity/v1/profile actually returns code:'VERSION_CONFLICT'
+  // (see bff/routes/identity-v1.js); the SYNC_CONFLICT test above pins the
+  // back-compat code, this one pins the path real consumers traverse.
+  it('saveProfile rehydrates on 409 VERSION_CONFLICT (real CT BFF wire code)', async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResp(200, FULL_PROFILE));
+    await hydrateProfile();
+
+    fetchSpy.mockResolvedValueOnce(jsonResp(409, {
+      code: 'VERSION_CONFLICT',
+      message: 'profile_version mismatch — current is 9, you sent 1',
+      current_version: 9,
+    }));
     fetchSpy.mockResolvedValueOnce(jsonResp(200, { ...FULL_PROFILE, profile_version: 9 }));
 
     await expect(saveProfile({ display_name: 'X' })).rejects.toThrow();

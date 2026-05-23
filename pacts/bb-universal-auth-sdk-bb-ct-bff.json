@@ -708,16 +708,17 @@
       },
       "response": {
         "body": {
-          "code": "SYNC_CONFLICT",
-          "error": "Profile version mismatch.",
-          "trace_id": "t_conflict_abc"
+          "code": "VERSION_CONFLICT",
+          "current_version": 9,
+          "message": "profile_version mismatch — current is 9, you sent 8",
+          "protocol_version": "v1"
         },
         "headers": {
           "Content-Type": "application/json; charset=utf-8"
         },
         "matchingRules": {
           "body": {
-            "$.error": {
+            "$.current_version": {
               "combine": "AND",
               "matchers": [
                 {
@@ -725,7 +726,7 @@
                 }
               ]
             },
-            "$.trace_id": {
+            "$.message": {
               "combine": "AND",
               "matchers": [
                 {
@@ -1513,16 +1514,17 @@
       },
       "response": {
         "body": {
-          "code": "SYNC_CONFLICT",
-          "error": "Settings version mismatch.",
-          "trace_id": "t_conflict_xyz"
+          "code": "VERSION_CONFLICT",
+          "current_version": 6,
+          "message": "settings version mismatch — current is 6, you sent 5",
+          "protocol_version": "v1"
         },
         "headers": {
           "Content-Type": "application/json; charset=utf-8"
         },
         "matchingRules": {
           "body": {
-            "$.error": {
+            "$.current_version": {
               "combine": "AND",
               "matchers": [
                 {
@@ -1530,7 +1532,7 @@
                 }
               ]
             },
-            "$.trace_id": {
+            "$.message": {
               "combine": "AND",
               "matchers": [
                 {

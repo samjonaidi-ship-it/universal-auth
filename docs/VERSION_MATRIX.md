@@ -27,7 +27,7 @@
 | ESLint config | v1.0.0-rc.2 | `eslint.config.js` | 2026-05-06 |
 | Vitest config | v1.1.0-rc.5 | `vitest.config.ts` | 2026-05-08 |
 | CI workflow | v1.1.1 | `.github/workflows/ci.yml` | 2026-05-08 |
-| Chaos workflow | v1.2.1 | `.github/workflows/chaos.yml` | 2026-05-22 |
+| Chaos workflow | v1.2.3 | `.github/workflows/chaos.yml` | 2026-05-22 |
 | Browser-matrix workflow | v1.0.6 | `.github/workflows/browser-matrix.yml` | 2026-05-22 |
 | verify-watermarks | v1.0.3 | `scripts/verify-watermarks.ts` | 2026-05-08 |
 | verify-version-sync | v1.0.0 (new) | `scripts/verify-version-sync.ts` | 2026-05-08 |

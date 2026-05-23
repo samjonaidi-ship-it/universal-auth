@@ -1,4 +1,4 @@
--- @samjonaidi-ship-it/universal-auth | test/integration/seed-test-users.sql | v1.0.0 | 2026-05-04 | BB
+-- @samjonaidi-ship-it/universal-auth | test/integration/seed-test-users.sql | v1.1.0 | 2026-05-22 | BB
 --
 -- Idempotent seed for the 4 test users the integration suite expects per spec §10.3:
 --   - test-crew-1@test.bainbridgebuilders.com         (persona: crew)
@@ -73,6 +73,22 @@ VALUES (
 )
 ON CONFLICT (id) DO NOTHING;
 
+-- ──────────────────────────────────────────────────────────────────────────
+-- Register the chaos-test app (bb_chaos_test). The chaos suite signs in with
+-- the same seeded test users but tags requests app_id='bb_chaos_test'; the
+-- 5xx-burst scenario ingests events through /events/v1/ingest, which rejects
+-- unregistered app_ids with UNKNOWN_EVENT_TYPE. Same event_types +
+-- allowed_personas surface as bb_integration_test — copied via SELECT so the
+-- two stay in sync without duplicating the literal array.
+--
+-- Idempotent: ON CONFLICT DO NOTHING on the primary key.
+-- ──────────────────────────────────────────────────────────────────────────
+
+INSERT INTO ct_bff.apps (id, display_name, app_kind, status, event_types, allowed_personas)
+SELECT 'bb_chaos_test', 'Chaos Test Harness', app_kind, status, event_types, allowed_personas
+FROM ct_bff.apps WHERE id = 'bb_integration_test'
+ON CONFLICT (id) DO NOTHING;
+
 -- Verification (will appear in CI log)
 SELECT email, persona_type, role, is_test_user FROM ct_bff.identities WHERE email LIKE 'test-%@test.bainbridgebuilders.com' ORDER BY email;
-SELECT id, app_kind, status, array_length(event_types, 1) AS n_event_types FROM ct_bff.apps WHERE id = 'bb_integration_test';
+SELECT id, app_kind, status, array_length(event_types, 1) AS n_event_types FROM ct_bff.apps WHERE id IN ('bb_integration_test', 'bb_chaos_test') ORDER BY id;

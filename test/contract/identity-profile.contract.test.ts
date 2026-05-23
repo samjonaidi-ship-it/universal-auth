@@ -1,13 +1,16 @@
-// @samjonaidi-ship-it/universal-auth | test/contract/identity-profile.contract.test.ts | v1.0.4 | 2026-05-04 | BB
+// @samjonaidi-ship-it/universal-auth | test/contract/identity-profile.contract.test.ts | v1.0.5 | 2026-05-22 | BB
 // Pact consumer contract for §3.3 identity-profile endpoints.
 //
 // Asserts the wire shapes for:
 //   * GET  /identity/v1/profile               — happy 200 with full UniversalProfile
-//   * PUT  /identity/v1/profile (If-Match)    — 409 SYNC_CONFLICT envelope
+//   * PUT  /identity/v1/profile (If-Match)    — 409 VERSION_CONFLICT envelope
 //
 // The 409 path is what trips the SDK's `sync.conflict` event + `dirtyPatch`
-// retention path (profile-store.ts §D1). The CT BFF must keep the envelope
-// `{ code: 'SYNC_CONFLICT', ... }` on 409 to avoid silent data loss.
+// retention path (profile-store.ts §D1). v1.0.5 (2026-05-22): the code pinned
+// here is `VERSION_CONFLICT` — the real CT BFF wire (bff/routes/identity-v1.js
+// PUT /identity/v1/profile), not the historical `SYNC_CONFLICT` placeholder.
+// profile-store recognises VERSION_CONFLICT, SYNC_CONFLICT and HTTP_409 so the
+// back-compat code is still tolerated, but the contract documents reality.
 
 import { describe, it } from 'vitest';
 import { PactV3, MatchersV3 } from '@pact-foundation/pact';
@@ -73,7 +76,7 @@ describe('Pact contract — identity profile (§3.3)', () => {
       });
   });
 
-  it('PUT /identity/v1/profile with stale If-Match returns 409 SYNC_CONFLICT', async () => {
+  it('PUT /identity/v1/profile with stale If-Match returns 409 VERSION_CONFLICT', async () => {
     const provider = new PactV3({
       consumer: 'bb-universal-auth-sdk',
       provider: 'bb-ct-bff',
@@ -107,9 +110,10 @@ describe('Pact contract — identity profile (§3.3)', () => {
           status: 409,
           headers: { 'Content-Type': 'application/json; charset=utf-8' },
           body: {
-            code: 'SYNC_CONFLICT',
-            error: like('Profile version mismatch.'),
-            trace_id: like('t_conflict_abc'),
+            code: 'VERSION_CONFLICT',
+            message: like('profile_version mismatch — current is 9, you sent 8'),
+            current_version: like(9),
+            protocol_version: 'v1',
           },
         },
       })
@@ -128,8 +132,8 @@ describe('Pact contract — identity profile (§3.3)', () => {
         });
         if (r.status !== 409) throw new Error(`expected 409 got ${r.status}`);
         const envelope = (await r.json()) as { code: string };
-        if (envelope.code !== 'SYNC_CONFLICT') {
-          throw new Error(`expected code SYNC_CONFLICT got ${envelope.code}`);
+        if (envelope.code !== 'VERSION_CONFLICT') {
+          throw new Error(`expected code VERSION_CONFLICT got ${envelope.code}`);
         }
       });
   });

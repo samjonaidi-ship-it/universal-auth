@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | test/integration/07-impersonation-audit.test.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @samjonaidi-ship-it/universal-auth | test/integration/07-impersonation-audit.test.ts | v1.0.1 | 2026-05-22 | BB
 // Integration test #7 per spec §11.3 — impersonation audit log integrity.
 //
 // Asserts:
@@ -24,7 +24,17 @@ import {
 } from '../../src/core/event-reporter.js';
 import { BFF_BASE_URL } from './setup.js';
 
-describe('Integration #7 — impersonation audit (§11.3, §D2.2)', () => {
+// SKIPPED 2026-05-22: this scenario exercises an impersonation feature that
+// the CT BFF has never implemented. The SDK's startImpersonation/
+// endImpersonation flows POST to `/auth/v1/impersonation/start` + `/end`, and
+// this test also calls `/admin/v1/identities/search` and
+// `/admin/v1/audit/impersonation` — none of those routes exist in
+// BB_ControlTower (verified across all bff/routes/*.js). The file was written
+// 2026-04-28 as forward scaffolding against spec §D2.2; the integration suite
+// hung until 2026-05-22 so it never actually ran. Un-skip once ct-bff ships
+// the impersonation endpoints + audit query. Tracked for Sam's decision —
+// implementing impersonation server-side is a separate cross-repo feature.
+describe.skip('Integration #7 — impersonation audit (§11.3, §D2.2)', () => {
   beforeEach(async () => {
     __resetClientForTests();
     __resetTokenManagerForTests();

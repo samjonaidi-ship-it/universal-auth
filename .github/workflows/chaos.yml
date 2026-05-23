@@ -1,5 +1,19 @@
-# @samjonaidi-ship-it/universal-auth | .github/workflows/chaos.yml | v1.2.1 | 2026-05-22 | BB
+# @samjonaidi-ship-it/universal-auth | .github/workflows/chaos.yml | v1.2.3 | 2026-05-22 | BB
 # Nightly chaos + 1h memory soak per spec §11.6 + §11.7.
+#
+# v1.2.3 (2026-05-22):
+#   - memory-browser: BB_BROWSER_SOAK_CYCLES 100000 → 10000, timeout-minutes
+#     88 → 50. The v1.2.2 50→88 bump was based on a wrong premise — the soak's
+#     per-cycle cost is NOT flat: measured 24 ms/cycle at 3k, 43 ms/cycle avg
+#     at 9k (real IndexedDB slows as the DB ages). 100k cycles is a >2 h job
+#     that never completed under any ceiling, so the heap gate never ran.
+#     10k cycles completes (~15 min on CI) and the gate finally runs.
+#
+# v1.2.2 (2026-05-22):
+#   - chaos run step now passes TEST_MODE_KEY (ct-bff is brought up with it;
+#     the chaos tests otherwise fell back to a stale default and every chaos
+#     sign-in 401'd).
+#   - memory-browser timeout-minutes 50 → 88 (superseded by v1.2.3 — see above).
 #
 # v1.2.1 (2026-05-22):
 #   - chaos job migrated to the Neon-branch path (test + neon + chaos compose
@@ -399,6 +413,14 @@ jobs:
 
       - name: Run chaos suite (7 scenarios)
         working-directory: universal-auth
+        env:
+          # ct-bff is brought up with TEST_MODE_KEY=test-key-do-not-use-in-prod
+          # (docker-compose.test.yml / .neon.yml). The chaos test files read
+          # process.env.TEST_MODE_KEY and otherwise fall back to a stale
+          # 'dev-test-mode-key' default — without this the test-mode header
+          # mismatches, code/verify drops to the real OTP path, and every
+          # chaos sign-in fails HTTP 401.
+          TEST_MODE_KEY: test-key-do-not-use-in-prod
         run: pnpm test:chaos
 
       - name: Capture container logs on failure (BEFORE teardown — order matters)
@@ -466,13 +488,22 @@ jobs:
   # Vitest+fake-indexeddb leaks ~3 KB per IDB op (bisect 2026-05-02), so the
   # Node soak above can only catch deadlocks/exceptions. This job runs the
   # SDK in real Chromium against real IndexedDB and asserts heap delta over
-  # 100k cycles is within budget.
+  # the soak is within budget.
   memory-browser:
     runs-on: ubuntu-latest
-    # ~10 min setup (pnpm install + playwright install --with-deps + build) +
-    # ~17-20 min for the 100k-cycle soak. The old 30 min ceiling cancelled the
-    # job mid-soak every night; 50 gives the soak room without weakening the
-    # gate by cutting cycles. (Playwright's own per-test timeout is 83 min.)
+    # CYCLE COUNT — measured, not estimated (2026-05-22). The original 100k
+    # was never reached: every nightly run was cancelled mid-soak (30-, 50-,
+    # then 88-min ceilings — the 88-min run was killed at exactly 88:00). Local
+    # Chromium measurement: 3 000 cycles = 1.2 min, 9 000 cycles = 6.5 min —
+    # i.e. the per-cycle cost RISES with cycle count (24 → 43 ms/cycle) because
+    # real Chromium IndexedDB slows as the DB ages over tens of thousands of
+    # transactions (not an SDK heap leak — measured heap delta is 0). 100k was
+    # therefore a >2 h job that never completed, so the heap gate never ran at
+    # all. 10 000 cycles completes in ~7 min locally / ~15 min on CI runners
+    # and still soaks the setSession→getAccessToken→signOut hot path 10k times.
+    # timeout-minutes 50 sits well above that and above the spec's own
+    # CYCLES*250ms = 41-min per-test timeout. A gate that runs at 10k beats a
+    # gate that is cancelled forever at 100k.
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -486,9 +517,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm build
-      - name: Real-browser memory soak (100k cycles, real IDB)
+      - name: Real-browser memory soak (10k cycles, real IDB)
         env:
-          BB_BROWSER_SOAK_CYCLES: '100000'
+          BB_BROWSER_SOAK_CYCLES: '10000'
           PLAYWRIGHT_INCLUDE_SOAK: '1'
         run: pnpm exec playwright test --project=memory-soak
       - name: Upload Playwright report on failure
