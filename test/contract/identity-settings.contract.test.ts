@@ -1,13 +1,17 @@
-// @samjonaidi-ship-it/universal-auth | test/contract/identity-settings.contract.test.ts | v1.0.4 | 2026-05-04 | BB
+// @samjonaidi-ship-it/universal-auth | test/contract/identity-settings.contract.test.ts | v1.0.5 | 2026-05-22 | BB
 // Pact consumer contract for §3.3 identity-settings endpoints.
 //
 // Asserts the wire shapes for:
 //   * GET /identity/v1/settings              — happy 200 with { settings, version }
-//   * PUT /identity/v1/settings (If-Match)   — 409 SYNC_CONFLICT envelope
+//   * PUT /identity/v1/settings (If-Match)   — 409 VERSION_CONFLICT envelope
 //
 // The 409 trips settings-sync's `sync.conflict` event + pendingPatch retention
 // (settings-sync.ts §C8). Wire shape MUST match what `errorFromEnvelope`
-// expects (code='SYNC_CONFLICT' or HTTP_409 fallback).
+// expects. v1.0.5 (2026-05-22): the code pinned here is `VERSION_CONFLICT` —
+// the real CT BFF wire (bff/routes/identity-v1.js PUT /identity/v1/settings),
+// not the historical `SYNC_CONFLICT` placeholder. The SDK's settings-sync
+// `isConflict()` recognises VERSION_CONFLICT, SYNC_CONFLICT and HTTP_409 so
+// the back-compat code is still tolerated, but the contract documents reality.
 
 import { describe, it } from 'vitest';
 import { PactV3, MatchersV3 } from '@pact-foundation/pact';
@@ -65,7 +69,7 @@ describe('Pact contract — identity settings (§3.3)', () => {
       });
   });
 
-  it('PUT /identity/v1/settings with stale If-Match returns 409 SYNC_CONFLICT', async () => {
+  it('PUT /identity/v1/settings with stale If-Match returns 409 VERSION_CONFLICT', async () => {
     const provider = new PactV3({
       consumer: 'bb-universal-auth-sdk',
       provider: 'bb-ct-bff',
@@ -99,9 +103,10 @@ describe('Pact contract — identity settings (§3.3)', () => {
           status: 409,
           headers: { 'Content-Type': 'application/json; charset=utf-8' },
           body: {
-            code: 'SYNC_CONFLICT',
-            error: like('Settings version mismatch.'),
-            trace_id: like('t_conflict_xyz'),
+            code: 'VERSION_CONFLICT',
+            message: like('settings version mismatch — current is 6, you sent 5'),
+            current_version: like(6),
+            protocol_version: 'v1',
           },
         },
       })
@@ -120,8 +125,8 @@ describe('Pact contract — identity settings (§3.3)', () => {
         });
         if (r.status !== 409) throw new Error(`expected 409 got ${r.status}`);
         const envelope = (await r.json()) as { code: string };
-        if (envelope.code !== 'SYNC_CONFLICT') {
-          throw new Error(`expected code SYNC_CONFLICT got ${envelope.code}`);
+        if (envelope.code !== 'VERSION_CONFLICT') {
+          throw new Error(`expected code VERSION_CONFLICT got ${envelope.code}`);
         }
       });
   });

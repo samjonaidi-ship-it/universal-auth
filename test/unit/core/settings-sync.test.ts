@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/core/settings-sync.test.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/settings-sync.test.ts | v1.0.1 | 2026-05-22 | BB
 // A2 — debounced PUT with If-Match + 409 conflict handling.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -105,6 +105,35 @@ describe('core/settings-sync', () => {
     // pendingPatch and serverState so consumers can rebase via
     // applySettingsPatch(). The version pointer DOES advance to the server's
     // value so subsequent saves carry the right If-Match.
+    expect(getSettingsVersion()).toBe(9);
+    expect(getSettings()).toEqual({ theme: 'light' });
+  });
+
+  // v1.1.1 (2026-05-22): identical rehydrate behaviour for ct-bff's real
+  // wire code. The historical SYNC_CONFLICT test above is retained for
+  // back-compat; production CT BFF actually returns VERSION_CONFLICT (see
+  // ct-bff bff/routes/identity-v1.js PUT /identity/v1/settings) so this
+  // test pins the path that integration #6 exercises end-to-end.
+  it('preserves local patch on 409 VERSION_CONFLICT (real CT BFF wire code)', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResp(200, { settings: { theme: 'dark' }, version: 1 })
+    );
+    await hydrateSettings();
+
+    fetchSpy.mockResolvedValueOnce(
+      jsonResp(409, {
+        code: 'VERSION_CONFLICT',
+        message: 'settings version mismatch — current is 9, you sent 1',
+        current_version: 9,
+      })
+    );
+    fetchSpy.mockResolvedValueOnce(
+      jsonResp(200, { settings: { theme: 'system' }, version: 9 })
+    );
+
+    updateSettings({ theme: 'light' });
+    await flushSettingsNow();
+
     expect(getSettingsVersion()).toBe(9);
     expect(getSettings()).toEqual({ theme: 'light' });
   });
