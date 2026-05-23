@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/flows/abort-signal-propagation.test.ts | v1.1.0 | 2026-05-06 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/flows/abort-signal-propagation.test.ts | v1.1.1 | 2026-05-22 | BB
 // P1-D — verify `signal?: AbortSignal` is threaded from public flow APIs all
 // the way to the underlying `fetch()` call. Each test aborts the controller
 // pre-flight, then asserts the SDK function rejects (because the underlying
@@ -31,11 +31,8 @@ import {
   listSessions,
   revokeSession,
 } from '../../../src/flows/recovery.js';
-import {
-  startImpersonation,
-  endImpersonation,
-  __resetImpersonationForTests,
-} from '../../../src/flows/impersonation.js';
+// Impersonation flow removed in v1.1.0-rc.10 — its abort-signal cases below
+// were deleted with it.
 import {
   recordPermissionGrant,
   listPermissionGrants,
@@ -74,7 +71,6 @@ describe('P1-D — AbortSignal propagation through public flow APIs', () => {
     __resetClientForTests();
     __resetTokenManagerForTests();
     __resetEventReporterForTests();
-    __resetImpersonationForTests();
     __resetPersonaRegistryForTests();
     __resetAbacForTests();
     __resetEntitlementsForTests();
@@ -186,29 +182,7 @@ describe('P1-D — AbortSignal propagation through public flow APIs', () => {
     await expect(revokeSession('sess-1', { signal: c.signal })).rejects.toThrow();
   });
 
-  // 4. impersonation.ts ────────────────────────────────────────────────────
-
-  it('threads AbortSignal through startImpersonation (P1-D)', async () => {
-    const c = abortedController();
-    await expect(
-      startImpersonation(
-        { target_identity_id: 'id-1', reason: 'support' },
-        { signal: c.signal },
-      ),
-    ).rejects.toThrow();
-  });
-
-  it('threads AbortSignal through endImpersonation (P1-D)', async () => {
-    const c = abortedController();
-    // endImpersonation swallows server errors. Verify the fetch was made with
-    // the aborted signal.
-    await endImpersonation({ signal: c.signal });
-    const endCall = fetchSpy.mock.calls.find(([url]) =>
-      String(url).endsWith('/auth/v1/impersonation/end'),
-    );
-    expect(endCall).toBeDefined();
-    expect((endCall![1] as RequestInit).signal?.aborted).toBe(true);
-  });
+  // 4. impersonation.ts ── removed in v1.1.0-rc.10 (no backend support).
 
   // 5. permission-grants.ts ────────────────────────────────────────────────
 

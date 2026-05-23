@@ -1,4 +1,4 @@
--- @samjonaidi-ship-it/universal-auth | test/integration/seed-test-users.sql | v1.1.0 | 2026-05-22 | BB
+-- @samjonaidi-ship-it/universal-auth | test/integration/seed-test-users.sql | v1.2.0 | 2026-05-22 | BB
 --
 -- Idempotent seed for the 4 test users the integration suite expects per spec §10.3:
 --   - test-crew-1@test.bainbridgebuilders.com         (persona: crew)
@@ -63,9 +63,8 @@ VALUES (
     'profile.avatar_cleared',
     'photo.uploaded',
     'permission.recorded',
-    'impersonation.started',
-    'impersonation.ended',
-    'impersonation.local_clear_drift',
+    -- impersonation.* event types removed in v1.1.0-rc.10 along with the
+    -- entire impersonation flow (no backend support).
     'identity.employee_linked',
     'wizard.step_completed'
   ]::text[],

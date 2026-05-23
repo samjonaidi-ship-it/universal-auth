@@ -4,10 +4,10 @@
 
 | Component | Version | File | Last Modified |
 |-----------|---------|------|---------------|
-| Package | v1.1.0-rc.9 | `package.json` | 2026-05-22 |
+| Package | v1.1.0-rc.10 | `package.json` | 2026-05-22 |
 | permission-grants | v1.1.1 | `src/flows/permission-grants.ts` | 2026-05-08 |
 | SDK Core | v1.0.4 | `src/index.ts` | 2026-05-04 |
-| Config | v1.1.5 | `src/config.ts` | 2026-05-22 |
+| Config | v1.1.6 | `src/config.ts` | 2026-05-22 |
 | Errors | v1.0.3 | `src/errors.ts` | 2026-05-08 |
 | Client | v1.1.1 | `src/core/client.ts` | 2026-05-08 |
 | Token Manager | v1.1.3 | `src/core/token-manager.ts` | 2026-05-08 |

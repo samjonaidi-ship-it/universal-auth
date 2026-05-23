@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/index.ts | v1.1.0-rc.1 | 2026-05-06 | BB
+// @samjonaidi-ship-it/universal-auth | src/index.ts | v1.1.0-rc.2 | 2026-05-22 | BB
 // Public barrel — named exports only (tree-shakeable per §8.2).
 //
 // v1.0.1 (Phase C6): `setSession` relocated to `/internal` subpath. The
@@ -95,14 +95,10 @@ export {
   revokeSession,
   type ActiveSession,
 } from './flows/recovery.js';
-export {
-  startImpersonation,
-  endImpersonation,
-  recordImpersonationAction,
-  onLocalClearDrift,
-  type StartImpersonationInput,
-  type ImpersonationDriftEvent,
-} from './flows/impersonation.js';
+// Impersonation surface removed in v1.1.0-rc.10 (2026-05-22). The flow
+// targeted ct-bff endpoints (/auth/v1/impersonation/{start,end}, /admin/v1/
+// identities/search, /admin/v1/audit/impersonation) that were never
+// implemented server-side, so calls 404'd at runtime. See CHANGELOG.
 export {
   getPersonaRegistry,
   lookupPersona,

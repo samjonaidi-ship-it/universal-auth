@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/react/index.ts | v1.0.6 | 2026-05-08 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/index.ts | v1.0.7 | 2026-05-22 | BB
 // React subpath barrel — `@samjonaidi-ship-it/universal-auth/react`.
 // Tree-shakeable named exports only (sideEffects: false).
 //
@@ -26,9 +26,9 @@ export {
 export { useAuth, type UseAuthReturn } from './useAuth.js';
 export { useEntitlements, type UseEntitlementsReturn } from './useEntitlements.js';
 export { useProfile, type UseProfileReturn, type ProfileState } from './useProfile.js';
-export { useImpersonation, type UseImpersonationReturn } from './useImpersonation.js';
-// v1.0.4 (L2.18) — drift event type re-exported so consumers can type their banners
-export type { ImpersonationDriftEvent } from '../flows/impersonation.js';
+// useImpersonation + ImpersonationDriftEvent removed in v1.1.0-rc.10 along
+// with the rest of the impersonation surface (ct-bff routes were never
+// implemented, calls 404'd at runtime). See CHANGELOG.
 export { useSettingsSync, type UseSettingsSyncReturn } from './useSettingsSync.js';
 export { usePermissionGrants, type UsePermissionGrantsReturn } from './usePermissionGrants.js';
 
@@ -50,10 +50,7 @@ export { SignInForm, type SignInFormProps } from './components/SignInForm.js';
 export { CodeEntry, type CodeEntryProps } from './components/CodeEntry.js';
 export { PasskeyPrompt, type PasskeyPromptProps } from './components/PasskeyPrompt.js';
 export { OfflineIndicator, type OfflineIndicatorProps } from './components/OfflineIndicator.js';
-export {
-  ImpersonationBanner,
-  type ImpersonationBannerProps,
-} from './components/ImpersonationBanner.js';
+// ImpersonationBanner removed in v1.1.0-rc.10 — see CHANGELOG.
 export { AppChooser, type AppChooserProps } from './components/AppChooser.js';
 export { PersonaChooser, type PersonaChooserProps } from './components/PersonaChooser.js';
 export { PersonaGuard, type PersonaGuardProps } from './components/PersonaGuard.js';

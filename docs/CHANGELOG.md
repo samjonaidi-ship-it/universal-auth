@@ -8,6 +8,54 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
 
 > **Note on v1.1.0-rc.3 (2026-05-06):** rc.3 landed on `main` but failed CI on 3 lint errors before it could be tagged or published. v1.1.0-rc.4 is the same code with those 3 errors resolved + coverage threshold reconciled with measured coverage. Public consumer path for the v1.1 line is rc.1 → rc.4 (rc.2 and rc.3 were never published).
 
+## [1.1.0-rc.10] — 2026-05-22 — Remove impersonation surface
+
+**Removal of dead API.** The impersonation flow targeted CT BFF endpoints
+that were never implemented server-side (`/auth/v1/impersonation/start`,
+`/auth/v1/impersonation/end`, `/admin/v1/identities/search`,
+`/admin/v1/audit/impersonation` — verified absent across `BB_ControlTower/
+bff/routes/*.js`). Every consumer call to `startImpersonation()` /
+`endImpersonation()` / `useImpersonation()` therefore 404'd at runtime.
+Rather than ship dead API surface, the entire feature is removed in
+rc.10. Integration #7 (which was `describe.skip`'d in rc.9) is deleted.
+
+### Removed
+
+- Top-level (`src/index.ts`):
+  - `startImpersonation`, `endImpersonation`, `recordImpersonationAction`,
+    `onLocalClearDrift`
+  - Types: `StartImpersonationInput`, `ImpersonationDriftEvent`
+- React subpath (`@samjonaidi-ship-it/universal-auth/react`):
+  - `useImpersonation`, `UseImpersonationReturn`
+  - `ImpersonationBanner`, `ImpersonationBannerProps`
+  - Re-exported type: `ImpersonationDriftEvent`
+- Source files deleted: `src/flows/impersonation.ts`,
+  `src/react/useImpersonation.ts`,
+  `src/react/components/ImpersonationBanner.tsx`.
+- Tests deleted: integration #7, `impersonation-drift`,
+  `ImpersonationBanner.test`, `useImpersonation.test`.
+- Event types `impersonation.started` / `impersonation.ended` /
+  `impersonation.local_clear_drift` no longer emitted — dropped from
+  `test/integration/seed-test-users.sql` event_types array too.
+
+### Migration notes (rc.9 → rc.10)
+
+If your code imports any of the symbols above, TypeScript will now error
+at the import. Delete those imports + call sites; the calls never worked
+end-to-end (would 404 on CT BFF). If admin impersonation is a real
+product requirement in the future, it will return as a fresh API once
+CT BFF ships the routes — likely under a different surface that matches
+the eventual audit schema.
+
+### Why now
+
+Surfaced by integration #7 in the agent/nightly-test-bugs work — the
+test exercised the impersonation flow against the real CT BFF and
+deterministically failed because the routes don't exist. Rather than
+keep skipped scaffolding around an aspirational backend feature, we
+remove the SDK side cleanly. Sam's call (2026-05-22) after weighing the
+three options (implement / remove / defer) in the post-merge audit.
+
 ## [1.1.0-rc.9] — 2026-05-22 — 409 conflict envelope fix
 
 **Drop-in replacement for rc.8. One behavioural fix; no API change.**
