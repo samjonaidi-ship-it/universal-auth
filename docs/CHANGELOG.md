@@ -8,6 +8,46 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
 
 > **Note on v1.1.0-rc.3 (2026-05-06):** rc.3 landed on `main` but failed CI on 3 lint errors before it could be tagged or published. v1.1.0-rc.4 is the same code with those 3 errors resolved + coverage threshold reconciled with measured coverage. Public consumer path for the v1.1 line is rc.1 → rc.4 (rc.2 and rc.3 were never published).
 
+## [1.1.0-rc.9] — 2026-05-22 — 409 conflict envelope fix
+
+**Drop-in replacement for rc.8. One behavioural fix; no API change.**
+
+### Fixed
+
+- `settings-sync.ts` (`isConflict()`) and `profile/profile-store.ts` (the 409
+  catch in `saveProfile`) now recognise CT BFF's real wire envelope
+  `code: 'VERSION_CONFLICT'` on a 409 If-Match mismatch. Prior to this fix
+  the SDK only matched `SYNC_CONFLICT` / `HTTP_409`, so the actual ct-bff
+  409 fell through as a network error: the local patch stayed dirty and
+  retried indefinitely without ever emitting `sync.conflict` (§3.7 / §C8 /
+  §D1) or rehydrating the version pointer. Consumers wiring `sync.conflict`
+  to a rebase UI now receive the event correctly.
+
+  Back-compat: `SYNC_CONFLICT` and `HTTP_409` are still recognised, so
+  older or alternate BFF builds continue to work.
+
+### Other (test + workflow only)
+
+- Pact consumer contracts (`identity-settings`, `identity-profile`)
+  updated to pin the real CT BFF 409 envelope shape (`code` + `message`
+  + `current_version` + `protocol_version`) instead of a historical
+  placeholder.
+- 7 latent test suite-load flakes stabilised: session-watcher ×2,
+  CompletenessBar ×5, ContactInfoForm ×2, sw-bridge ×1, idb-quota chaos.
+  Root causes: real-async cold paths racing fake-timer / `waitFor`
+  windows. No production code change — pre-warm + pre-seed fixes in
+  `beforeEach`.
+- Nightly chaos.yml fully repaired: integration + chaos + memory-soak +
+  memory-browser all complete + green for the first time. memory-browser
+  soak measured + right-sized 100k → 10k cycles (CI per-cycle cost rises
+  with DB age — not an SDK leak; measured heap delta = 0).
+
+### Why
+
+Integration test #6 surfaced the 409 mismatch once the nightly chaos.yml
+unblocked end-to-end (was hidden behind a `__resetDbForTests` hang and a
+chaos sign-in 401). See `main @ 0a61dfa` for the full merge trail.
+
 ## [1.1.0-rc.8] — 2026-05-08 — `'motion'` PermissionKey
 
 **Drop-in replacement for rc.7. One-line type addition; no behavior change
