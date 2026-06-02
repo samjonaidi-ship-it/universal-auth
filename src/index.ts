@@ -107,6 +107,15 @@ export {
 export {
   recordPermissionGrant,
   requestAndRecord,
+  // rc.11: surface the READ side so consumers can re-hydrate "already granted"
+  // at login (mirrors the consent readback `listConsents` below). The functions
+  // already existed for <PermissionCenter> but were not on the public barrel,
+  // so apps had no way to ask "did this user already grant X?" — forcing them
+  // onto a fragile per-device localStorage cache. CalExp5 uses this to seed its
+  // geolocation grant cache from the server source of truth.
+  listPermissionGrants,
+  revokePermissionGrant,
+  type ListedPermissionGrant,
   type PermissionKey,
   type PermissionState,
   type RecordGrantInput,
