@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/flows/recovery.ts | v1.1.0 | 2026-05-06 | BB
+// @samjonaidi-ship-it/universal-auth | src/flows/recovery.ts | v1.1.1 | 2026-06-02 | BB
 // Session/credential recovery flows — logout-all, passkey removal, device revoke.
 // Full identity-recovery (IDV) is Phase 2+ per §Out-of-scope.
 //
@@ -10,9 +10,17 @@
 // v1.0.1 (D7): signOut() flushes pending settings patches BEFORE clearSession()
 // so debounced PUTs reach the server. The flush is best-effort — a network
 // failure here must not stop the local sign-out.
+//
+// v1.1.1 (2026-06-02): signOut() now passes the current refresh_token to
+// /session/revoke. Previously it sent an empty body, so the server revoked only
+// the session row and left the refresh token VALID — a surviving client copy
+// could silently re-authenticate on reload (logout appeared to "bypass" the
+// PIN pad). Sending the token lets the server revoke it (targeted →
+// multi-device safe).
 
 import { post, get } from '../core/client.js';
 import { clearSession } from '../core/token-manager.js';
+import { getRefreshToken } from '../core/storage.js';
 import { emit } from '../core/event-reporter.js';
 import { clearEntitlements } from '../core/entitlements.js';
 import { flushSettingsNow } from '../core/settings-sync.js';
@@ -46,9 +54,18 @@ export async function signOut(
     } catch {
       // Network / 4xx — we'll lose those patches. Better than blocking sign-out.
     }
+    // Read the current refresh token so the server can revoke IT, not just the
+    // session row. Best-effort — if it's missing we still revoke the session
+    // (and clearSession() below wipes local state regardless).
+    let refreshToken: string | null = null;
+    try {
+      refreshToken = await getRefreshToken();
+    } catch {
+      // Storage read failure — fall back to a bodyless revoke.
+    }
     await post(
       '/auth/v1/session/revoke',
-      {},
+      refreshToken ? { refresh_token: refreshToken } : {},
       options.signal !== undefined ? { signal: options.signal } : {},
     );
   } catch {
