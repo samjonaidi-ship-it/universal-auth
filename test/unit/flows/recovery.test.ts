@@ -66,6 +66,16 @@ describe('flows/recovery', () => {
     expect(hasLiveAccessToken()).toBe(false);
   });
 
+  it('signOut sends the refresh_token so the server can revoke it (v1.1.1)', async () => {
+    await installSession(); // stores refreshToken 'rt'
+    fetchSpy.mockResolvedValueOnce(jsonResp(200, { ok: true }));
+    await signOut();
+    const call = fetchSpy.mock.calls[0]!;
+    expect(String(call[0])).toContain('/auth/v1/session/revoke');
+    const body = JSON.parse(String((call[1] as RequestInit)?.body ?? '{}'));
+    expect(body.refresh_token).toBe('rt');
+  });
+
   it('signOut clears local even when server fails', async () => {
     await installSession();
     fetchSpy.mockRejectedValueOnce(new Error('network'));
