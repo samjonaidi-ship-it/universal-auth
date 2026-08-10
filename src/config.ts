@@ -1,4 +1,6 @@
-// @samjonaidi-ship-it/universal-auth | src/config.ts | v1.1.6 | 2026-05-22 | BB
+// @samjonaidi-ship-it/universal-auth | src/config.ts | v1.1.7 | 2026-08-10 | BB
+// v1.1.7 (P3.1/P2.5): SDK_VERSION → 1.1.0-rc.13. Kept in lockstep with
+//   package.json by scripts/verify-version-sync.ts (CI gate).
 // SDK initialization config + mode-safety assertion (§10.6).
 // Day 3-4: wires core modules (client, token-manager) via configureClient().
 // v1.0.1: assertModeSafety now consumes config.cookieDomain (no hardcoded domain).
