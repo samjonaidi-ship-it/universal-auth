@@ -1,6 +1,8 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/core/client.test.ts | v1.0.4 | 2026-05-04 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/client.test.ts | v1.1.0 | 2026-08-10 | BB
 // A1 gate #10 coverage for src/core/client.ts
 // v1.0.4 (L2.16) — adds X-Device-Id header coverage
+// v1.1.0 (P2.5) — adds default-request-timeout coverage (attached, combined
+//   with a caller signal, and actually fires)
 
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import {
@@ -333,6 +335,54 @@ describe('core/client', () => {
       await expect(request('/test', { anonymous: true })).rejects.toThrow(
         /called before configureClient/
       );
+    });
+  });
+
+  // ── P2.5 — default request timeout ──────────────────────────────────────
+  describe('default request timeout', () => {
+    it('attaches an AbortSignal even when the caller passes none', async () => {
+      fetchSpy.mockResolvedValueOnce(jsonResp(200, { ok: true }));
+      await get('/some/path', { anonymous: true });
+
+      const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+      expect(init.signal).toBeInstanceOf(AbortSignal);
+      expect(init.signal?.aborted).toBe(false);
+    });
+
+    it('COMBINES a caller signal with the timeout rather than replacing it', async () => {
+      // The regression this guards: an earlier draft assigned the caller's
+      // signal directly, so passing `signal` silently opted the request out of
+      // the timeout entirely.
+      const controller = new AbortController();
+      fetchSpy.mockResolvedValueOnce(jsonResp(200, { ok: true }));
+      await get('/some/path', { anonymous: true, signal: controller.signal });
+
+      const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+      expect(init.signal).toBeInstanceOf(AbortSignal);
+      // A combined signal is a NEW signal, not the caller's own object.
+      expect(init.signal).not.toBe(controller.signal);
+      // ...and it still honours the caller's abort.
+      controller.abort();
+      expect(init.signal?.aborted).toBe(true);
+    });
+
+    it('aborts the request when the timeout elapses', async () => {
+      // Real timers on purpose: AbortSignal.timeout() is host-implemented and
+      // does not route through the globalThis.setTimeout that vi.useFakeTimers
+      // patches, so fake timers cannot drive it. A 20 ms budget keeps this
+      // cheap while still being a genuine assertion.
+      fetchSpy.mockResolvedValueOnce(jsonResp(200, { ok: true }));
+      await get('/some/path', { anonymous: true, timeoutMs: 20 });
+
+      const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+      const signal = init.signal!;
+      expect(signal.aborted).toBe(false);
+
+      await new Promise<void>((resolve) => {
+        if (signal.aborted) return resolve();
+        signal.addEventListener('abort', () => resolve(), { once: true });
+      });
+      expect(signal.aborted).toBe(true);
     });
   });
 });

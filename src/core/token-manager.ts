@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.1.3 | 2026-05-08 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.2.0 | 2026-08-10 | BB
 // Access + refresh token lifecycle. Enforces spec invariants:
 //
 //   §15.1  Access token in memory only, never disk
@@ -14,6 +14,14 @@
 //   D8 — BroadcastChannel handler validates message shape (token typeof +
 //        bounded length) before adopting state, so a same-origin XSS injection
 //        can't smuggle a fake session.
+// v1.2.0 (P3.1) — refresh-failure classification. The catch in
+//   performRefresh() no longer clears the stored refresh token on EVERY
+//   failure. Only AUTH_SESSION_EXPIRED / AUTH_SESSION_REVOKED clear; network
+//   errors, aborts and 5xx keep the credential so a dead zone no longer signs
+//   a crew member out (and, downstream in BB Express, no longer purges their
+//   unsynced offline work). See isTerminalRefreshError().
+//
+// v1.0.1 hardening (cont.):
 //   C1 — performRefresh() wraps the network call in navigator.locks
 //        ('bb-auth-refresh', exclusive). Inside the lock we double-check
 //        token freshness, so a tab that won the lock after another tab
@@ -290,6 +298,37 @@ export async function getAccessToken(): Promise<string | null> {
   }
 }
 
+// ── Refresh-failure classification (P3.1) ─────────────────────────────────
+
+/**
+ * Is this refresh failure TERMINAL — i.e. is the stored refresh token now
+ * genuinely dead server-side, so keeping it can only produce more 401s?
+ *
+ * Terminal means exactly two codes:
+ *   AUTH_SESSION_EXPIRED  — past the 90-day refresh TTL.
+ *   AUTH_SESSION_REVOKED  — the BFF's single answer for user/admin revoke,
+ *                           reuse-detection family revoke, and a
+ *                           disabled/deleted identity (it maps both
+ *                           REUSE_DETECTED and IDENTITY_INACTIVE onto this).
+ *
+ * Anything else is treated as transient and the credential is kept. That
+ * default direction is chosen on purpose: wrongly keeping a dead token costs
+ * one extra failed request that ends in a real 401 and clears properly on the
+ * next attempt, while wrongly deleting a live token strands a crew member
+ * behind a PIN prompt in the exact moment they have no connectivity. The cheap
+ * error is the one we take.
+ *
+ * Deliberately NOT terminal:
+ *   - a raw TypeError from fetch (DNS, offline, TLS, captive portal)
+ *   - AbortError / timeouts
+ *   - HTTP_5xx (client.ts throws `HTTP_${status}` when the body is not JSON)
+ *   - UNEXPECTED_REDIRECT (a captive portal's interception looks like this)
+ */
+function isTerminalRefreshError(err: unknown): boolean {
+  const code = (err as { code?: unknown } | null)?.code;
+  return code === 'AUTH_SESSION_EXPIRED' || code === 'AUTH_SESSION_REVOKED';
+}
+
 async function performRefresh(): Promise<string | null> {
   if (refreshCallback === null) {
     // SDK not initialized yet — no way to refresh
@@ -390,16 +429,74 @@ async function performRefresh(): Promise<string | null> {
 
       return result.access_token;
     } catch (err) {
-      // Refresh failed — most likely AUTH_SESSION_REVOKED or AUTH_SESSION_EXPIRED
-      // Clear everything so the next getAccessToken() returns null → consumer re-auths
-      await clearRefreshToken();
-      state.accessToken = null;
-      state.accessExpiresAt = 0;
-      state.sessionId = null;
-      broadcast({ type: 'session_cleared' });
-      notifyListeners();
-      // Re-throw so callers (client.ts retry logic) can distinguish refresh-failure
-      // from no-token-present
+      // ── P3.1: classify before destroying anything ──────────────────────
+      //
+      // This block used to clear unconditionally, with the comment "most likely
+      // AUTH_SESSION_REVOKED or AUTH_SESSION_EXPIRED". "Most likely" was doing
+      // a lot of work: a DNS failure, a 5xx, a captive portal or a truck
+      // driving into a dead zone landed here too — and deleted a 90-day refresh
+      // token that was still perfectly valid. The crew member is then signed
+      // out and needs BOTH a PIN and connectivity to recover, in the one moment
+      // they demonstrably have neither. Downstream in BB Express that also
+      // triggered a state purge that took their unsynced offline edits with it.
+      //
+      // Only these are terminal (the credential really is dead server-side):
+      //   AUTH_SESSION_EXPIRED  — refresh token past its 90-day TTL
+      //   AUTH_SESSION_REVOKED  — user/admin revoke, reuse-detection family
+      //                           revoke, or (CT mig 170+) a disabled/deleted
+      //                           identity. The BFF maps all three to this code.
+      //
+      // Everything else — network error, timeout/abort, 5xx, an unparseable
+      // response — is TRANSIENT. Keep the refresh token and let the caller
+      // retry. The retry is safe because the BFF replays the cached response
+      // for the same refresh token for 24h, so a dropped-but-delivered refresh
+      // does not trip reuse detection.
+      //
+      // CNF_JKT_MISMATCH is not in the terminal list and does not need to be:
+      // that path (above) has already cleared and notified before throwing, so
+      // it lands in the transient branch as a no-op. Adding it here would only
+      // double-clear.
+      //
+      // NOTE that replay is BEST-EFFORT server-side (fire-and-forget write,
+      // ON CONFLICT DO NOTHING, skipped on >=500 and when the DB is down). So
+      // it is a strong mitigation, not a guarantee: a retry after a replay-miss
+      // can still land on reuse detection, which returns AUTH_SESSION_REVOKED
+      // and is then correctly treated as terminal here. That degrades to
+      // today's behaviour in a rare case instead of being today's behaviour in
+      // every case.
+      if (isTerminalRefreshError(err)) {
+        await clearRefreshToken();
+        state.accessToken = null;
+        state.accessExpiresAt = 0;
+        state.sessionId = null;
+        broadcast({ type: 'session_cleared' });
+        notifyListeners();
+      } else {
+        // Transient. Drop only the in-memory access token — it is expired or
+        // near-expired anyway, so serving it would be wrong — but KEEP the
+        // refresh token and the session id, and deliberately do NOT notify or
+        // broadcast.
+        //
+        // The no-notify is load-bearing, not an oversight. AuthProvider's
+        // listener gates purely on hasLiveAccessToken() (AuthProvider.tsx:172)
+        // and calls setStatus('anonymous') the moment it is false — and
+        // hasLiveAccessToken() is false whenever the token is merely
+        // *expiring soon*, which is exactly when a refresh runs. So notifying
+        // here would sign the user out on a dead-zone blip even though the
+        // refresh token is intact, which is the A3 chain this phase exists to
+        // break. The whole design relies on notifyListeners() firing only at
+        // terminal points; a transient failure is not one.
+        //
+        // Not broadcasting is also deliberate: a `session_stale` message would
+        // make every sibling tab drop a perfectly good access token because
+        // ONE tab hit a blip. Each tab discovers a real failure on its own
+        // refresh.
+        state.accessToken = null;
+        state.accessExpiresAt = 0;
+      }
+
+      // Re-throw either way so callers (client.ts retry logic) can distinguish
+      // refresh-failure from no-token-present.
       throw err;
     }
   });
