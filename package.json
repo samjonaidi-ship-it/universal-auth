@@ -73,7 +73,7 @@
     "@simplewebauthn/browser": "^13.0.0",
     "idb": "^8.0.0",
     "libphonenumber-js": "^1.10.0",
-    "nanoid": "^5.0.0"
+    "nanoid": "^5.1.16"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.2",
