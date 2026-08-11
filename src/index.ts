@@ -1,4 +1,7 @@
-// @samjonaidi-ship-it/universal-auth | src/index.ts | v1.1.0-rc.18 | 2026-08-11 | BB
+// @samjonaidi-ship-it/universal-auth | src/index.ts | v1.1.0-rc.19 | 2026-08-11 | BB
+// rc.19 (P5c): + getDraft / putDraft / deleteDraft — resumable half-finished
+//   work keyed by IDENTITY rather than device, so it survives picking up a
+//   different phone. Callers strip file bytes; the server caps at 64 KB.
 // rc.18 (P5b/M4): + reportDeviceSyncState — a device tells the server how much
 //   offline work it is holding, so "3 items waiting to sync on BB iPad" is
 //   readable from any other device. AuthDevice gains pending_mutations.
@@ -101,6 +104,9 @@ export {
 export {
   listDevices, revokeDevice, reportDeviceSyncState, type AuthDevice,
 } from './flows/devices-flow.js';
+export {
+  getDraft, putDraft, deleteDraft, type DraftEnvelope,
+} from './flows/drafts-flow.js';
 export {
   verifyEnrollmentToken,
   activateEnrollment,
