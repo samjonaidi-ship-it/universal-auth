@@ -1,4 +1,7 @@
-// @samjonaidi-ship-it/universal-auth | src/index.ts | v1.1.0-rc.17 | 2026-08-11 | BB
+// @samjonaidi-ship-it/universal-auth | src/index.ts | v1.1.0-rc.18 | 2026-08-11 | BB
+// rc.18 (P5b/M4): + reportDeviceSyncState — a device tells the server how much
+//   offline work it is holding, so "3 items waiting to sync on BB iPad" is
+//   readable from any other device. AuthDevice gains pending_mutations.
 // rc.17 (P4.8): errorFromEnvelope reads the server MESSAGE. CT v1 routes send
 //   { code, message }, the factory read only `error`, so every unmapped v1
 //   code reached the UI as "Unknown error code: X" with the real explanation
@@ -95,7 +98,9 @@ export {
   type VerifyPinInput, type VerifyPinResult, type SetPinInput, type PinStatus,
 } from './flows/pin-flow.js';
 // P4.11 — "Your devices": see where you are signed in, sign a device out.
-export { listDevices, revokeDevice, type AuthDevice } from './flows/devices-flow.js';
+export {
+  listDevices, revokeDevice, reportDeviceSyncState, type AuthDevice,
+} from './flows/devices-flow.js';
 export {
   verifyEnrollmentToken,
   activateEnrollment,

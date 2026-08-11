@@ -130,3 +130,14 @@ describe('P4.11 — devices flow', () => {
     });
   });
 });
+
+// ── P5b (M4) ────────────────────────────────────────────────────────────────
+describe('reportDeviceSyncState', () => {
+  it('rejects a non-integer or negative count without calling the server', async () => {
+    // The count is self-reported; sending nonsense would just store nonsense.
+    const { reportDeviceSyncState } = await import('../../../src/flows/devices-flow.js');
+    await expect(reportDeviceSyncState(-1)).resolves.toBe(false);
+    await expect(reportDeviceSyncState(1.5)).resolves.toBe(false);
+    await expect(reportDeviceSyncState(Number.NaN)).resolves.toBe(false);
+  });
+});

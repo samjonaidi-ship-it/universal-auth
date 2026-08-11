@@ -35,6 +35,17 @@ export interface AuthDevice {
   ip: string | null;
   user_agent: string | null;
   /**
+   * How much offline work this device is holding (P5b / M4).
+   *
+   * Self-reported by that device via reportDeviceSyncState(), so it is a HINT
+   * for the UI and never an authority. Absent on devices that predate the
+   * feature or have never reported — treat undefined as "unknown", which is
+   * not the same as zero.
+   */
+  pending_mutations?: number;
+  /** When the device last reported its queue depth. */
+  sync_reported_at?: string | null;
+  /**
    * When the device last checked in — the issue time of its newest live
    * refresh token. NOT `last_used_at`, which the BFF only stamps on the
    * PREVIOUS token as it rotates and is therefore always null on a live one.
@@ -83,4 +94,42 @@ export async function revokeDevice(
   // No event emitted here. The BFF already writes a durable `session.revoked`
   // for the affected identity, and a client-side duplicate would double-count
   // it — the mistake the P4.1 audit caught with pin.set/pin.cleared.
+}
+
+/**
+ * Tell the server how much offline work THIS device is holding.
+ *
+ * ── WHY THE SERVER NEEDS TO KNOW ───────────────────────────────────────────
+ * The offline mutation queue lives in the device's own IndexedDB with no
+ * identity and no device field on it, so the work is invisible to everything
+ * except the device holding it. A crew member who worked for an hour on the
+ * iPad, left it in the truck and opened their phone has no way to find out
+ * anything is outstanding — and neither does an admin looking at the account.
+ *
+ * Reporting the COUNT (never the mutations themselves) is what makes
+ * "3 items waiting to sync on BB iPad" possible from any other device.
+ *
+ * Best-effort by design: a failed report must never disturb the queue it is
+ * describing, so this resolves false instead of throwing.
+ *
+ * @param pendingMutations non-negative integer queue depth
+ * @returns whether the server recorded it
+ */
+export async function reportDeviceSyncState(
+  pendingMutations: number,
+  options: { signal?: AbortSignal } = {},
+): Promise<boolean> {
+  if (!Number.isInteger(pendingMutations) || pendingMutations < 0) return false;
+  try {
+    const { data } = await post<{ recorded?: boolean }>(
+      '/auth/v1/devices/sync-state',
+      { pending_mutations: pendingMutations },
+      { ...(options.signal !== undefined && { signal: options.signal }) },
+    );
+    return data?.recorded === true;
+  } catch {
+    // Offline is the NORMAL case for a device with a queue — the report simply
+    // cannot be delivered yet, and the next one supersedes it.
+    return false;
+  }
 }
