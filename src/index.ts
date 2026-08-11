@@ -86,6 +86,8 @@ export {
   verifyPin, setPin, clearPin, getPinStatus,
   type VerifyPinInput, type VerifyPinResult, type SetPinInput, type PinStatus,
 } from './flows/pin-flow.js';
+// P4.11 — "Your devices": see where you are signed in, sign a device out.
+export { listDevices, revokeDevice, type AuthDevice } from './flows/devices-flow.js';
 export {
   verifyEnrollmentToken,
   activateEnrollment,
