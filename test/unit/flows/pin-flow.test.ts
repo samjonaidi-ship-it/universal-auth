@@ -14,7 +14,16 @@ import {
   getCurrentSessionId,
   __resetTokenManagerForTests,
 } from '../../../src/core/token-manager.js';
-import { __resetDbForTests, getRefreshToken } from '../../../src/core/storage.js';
+import { __resetDbForTests, getRefreshToken, storeRefreshToken } from '../../../src/core/storage.js';
+
+// Wrap storeRefreshToken with the REAL implementation so behaviour is
+// unchanged, but the TTL token-manager writes becomes observable. There is no
+// public getter for it, and asserting the TTL is the whole point of the
+// refresh_expires_at test below.
+vi.mock('../../../src/core/storage.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/core/storage.js')>();
+  return { ...actual, storeRefreshToken: vi.fn(actual.storeRefreshToken) };
+});
 import { clearDeviceIdCache } from '../../../src/core/device-id.js';
 import { __resetNonceCacheForTests } from '../../../src/core/dpop/nonce-cache.js';
 import { verifyPin, setPin, clearPin, getPinStatus } from '../../../src/flows/pin-flow.js';
@@ -112,6 +121,34 @@ describe('P4.1 — pin flow', () => {
       expect(headers['X-App-Id']).toBe('bb_express');
       expect(headers['X-SDK-Version']).toBe('1.1.0-rc.15');
       expect(headers['Idempotency-Key']).toBeTypeOf('string');
+    });
+
+    it('passes refresh_expires_at through — not the +90d default', async () => {
+      // The raw fetch this flow replaces handled this explicitly. Dropping it
+      // would record a TTL the server never agreed to and trip the
+      // legacy-response warning — a quiet regression, not a refactor.
+      const realTtl = new Date(Date.now() + 30 * 86_400_000).toISOString();
+      fetchSpy.mockResolvedValueOnce(
+        jsonResp(200, { ...SESSION_BODY, refresh_expires_at: realTtl }),
+      );
+      await verifyPin({ email: 'crew@example.com', pin: '1234' });
+
+      // storeRefreshToken is the sink token-manager writes the TTL to.
+      expect(storeRefreshToken).toHaveBeenCalled();
+      const [, storedExpiry] = vi.mocked(storeRefreshToken).mock.calls.at(-1)!;
+      expect(Math.abs(storedExpiry - new Date(realTtl).getTime())).toBeLessThan(1000);
+      // …and emphatically not the 90-day fallback.
+      const ninetyDays = Date.now() + 90 * 86_400_000;
+      expect(Math.abs(storedExpiry - ninetyDays)).toBeGreaterThan(86_400_000);
+    });
+
+    it('falls back to the default TTL when the server omits refresh_expires_at', async () => {
+      fetchSpy.mockResolvedValueOnce(jsonResp(200, SESSION_BODY));
+      await verifyPin({ email: 'crew@example.com', pin: '1234' });
+
+      const [, storedExpiry] = vi.mocked(storeRefreshToken).mock.calls.at(-1)!;
+      const ninetyDays = Date.now() + 90 * 86_400_000;
+      expect(Math.abs(storedExpiry - ninetyDays)).toBeLessThan(86_400_000);
     });
 
     it('surfaces a typed error instead of a bare status code', async () => {

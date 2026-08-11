@@ -62,6 +62,8 @@ interface VerifyPinResponse {
   refresh_token: string;
   session_id: string;
   expires_at: string;
+  /** Real refresh TTL. Present on this endpoint; see the note at setSession. */
+  refresh_expires_at?: string;
   identity: Session['identity'];
   aggregate: Session['aggregate'];
   session_meta: Session['session_meta'];
@@ -102,12 +104,22 @@ export async function verifyPin(
     },
   );
 
-  await setSession({
+  // `refresh_expires_at` is passed through when the server sends it. The PIN
+  // verify response DOES include it, and dropping it would silently fall back
+  // to the +90d default in token-manager — recording a TTL the server never
+  // agreed to, and tripping the legacy-response warning. The raw fetch this
+  // flow replaces handled it explicitly; losing it here would be a quiet
+  // regression rather than a refactor.
+  const tokens: Parameters<typeof setSession>[0] = {
     accessToken: data.access_token,
     refreshToken: data.refresh_token,
     expiresAt: new Date(data.expires_at).getTime(),
     sessionId: data.session_id,
-  });
+  };
+  if (data.refresh_expires_at !== undefined) {
+    tokens.refreshExpiresAt = new Date(data.refresh_expires_at).getTime();
+  }
+  await setSession(tokens);
 
   void emit('login.success', { method: 'pin', device_id });
 
@@ -136,7 +148,14 @@ export async function setPin(
     { pin: input.pin },
     { ...(options.signal !== undefined && { signal: options.signal }) },
   );
-  void emit('pin.set', {});
+  // Deliberately NO event here. Consumers already emit `pin.set` with context
+  // the SDK cannot know (pin_length, and for clear, the source: forgot-PIN vs
+  // settings-reset), and the BFF does not emit these server-side — T5
+  // confirmed they are documented in the route header but never fired. A
+  // second, payload-less emit from here would double-count every PIN change
+  // and dilute the richer client event. verifyPin() is different: its
+  // login.success mirrors code-flow, is fully knowable here, and the
+  // consumer's duplicate was removed in the same change.
 }
 
 /**
@@ -151,7 +170,8 @@ export async function clearPin(
     {},
     { ...(options.signal !== undefined && { signal: options.signal }) },
   );
-  void emit('pin.cleared', {});
+  // No event here either — see the note in setPin(). The caller knows whether
+  // this was a forgot-PIN or a settings reset; this function does not.
 }
 
 /**
