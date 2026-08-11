@@ -370,6 +370,18 @@ export class CnfJktMismatchError extends AuthSdkError {
  */
 export interface AuthErrorEnvelope {
   error?: string;
+  /**
+   * The human-readable text CT BFF actually sends.
+   *
+   * Every v1 route replies `{ code, message, protocol_version }` — `error` is
+   * the older unversioned shape. This field was missing from the interface, so
+   * `message` only ever arrived via the index signature and nothing read it:
+   * an unmapped code produced "Unknown error code: X" and the server's real
+   * explanation was discarded. Surfaced by P4.8's WEAK_PIN, which is exactly
+   * the case where the text is the whole point ("avoid repeated digits, runs
+   * like 1234") and the code alone is useless to a crew member.
+   */
+  message?: string;
   code: string;
   hint?: string;
   retry_after_seconds?: number;
@@ -449,7 +461,17 @@ export function errorFromEnvelope(env: AuthErrorEnvelope): AuthSdkError {
     case 'VALIDATION_PHONE_UNREACHABLE': return new ValidationPhoneUnreachable(undefined, opts);
     case 'CONSENT_REQUIRED':           return new ConsentRequired(env.missing_consents, opts);
     default:
-      // Unknown code — wrap as base class so consumers still catch via `instanceof AuthSdkError`
-      return new AuthSdkError(env.code, env.error ?? `Unknown error code: ${env.code}`, opts);
+      // Unknown code — wrap as base class so consumers still catch via `instanceof AuthSdkError`.
+      //
+      // Prefer `message` over `error`: v1 routes send `message`, the older
+      // unversioned ones send `error`. Reading only `error` meant every
+      // unmapped v1 code reached the UI as "Unknown error code: X" with the
+      // server's explanation thrown away — and consumers display
+      // `err.message` directly (CalExp5 SetPinScreen.jsx:72).
+      return new AuthSdkError(
+        env.code,
+        env.message ?? env.error ?? `Unknown error code: ${env.code}`,
+        opts,
+      );
   }
 }

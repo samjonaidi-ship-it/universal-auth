@@ -1,4 +1,8 @@
-// @samjonaidi-ship-it/universal-auth | src/index.ts | v1.1.0-rc.16 | 2026-08-11 | BB
+// @samjonaidi-ship-it/universal-auth | src/index.ts | v1.1.0-rc.17 | 2026-08-11 | BB
+// rc.17 (P4.8): errorFromEnvelope reads the server MESSAGE. CT v1 routes send
+//   { code, message }, the factory read only `error`, so every unmapped v1
+//   code reached the UI as "Unknown error code: X" with the real explanation
+//   discarded. Consumers render err.message directly.
 // rc.16 (P4.11): + listDevices / revokeDevice.
 // rc.15 (P4.1):  + verifyPin / setPin / clearPin / getPinStatus. That export
 //   landed without bumping this header; caught by the P4.11 lookback audit and
