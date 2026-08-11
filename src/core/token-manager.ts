@@ -1,4 +1,7 @@
-// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.2.0 | 2026-08-10 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.3.0 | 2026-08-10 | BB
+// v1.3.0 (P4.6): INVALID_DPOP_BINDING joins the terminal set — once sessions
+//   are DPoP-bound, a lost keypair makes the refresh token permanently
+//   unusable on that device and retrying would loop forever.
 // Access + refresh token lifecycle. Enforces spec invariants:
 //
 //   §15.1  Access token in memory only, never disk
@@ -304,12 +307,15 @@ export async function getAccessToken(): Promise<string | null> {
  * Is this refresh failure TERMINAL — i.e. is the stored refresh token now
  * genuinely dead server-side, so keeping it can only produce more 401s?
  *
- * Terminal means exactly two codes:
+ * Terminal means exactly three codes:
  *   AUTH_SESSION_EXPIRED  — past the 90-day refresh TTL.
  *   AUTH_SESSION_REVOKED  — the BFF's single answer for user/admin revoke,
  *                           reuse-detection family revoke, and a
  *                           disabled/deleted identity (it maps both
  *                           REUSE_DETECTED and IDENTITY_INACTIVE onto this).
+ *   INVALID_DPOP_BINDING  — (P4.6) the local keypair no longer matches the
+ *                           cnf_jkt this token is bound to. Unrecoverable on
+ *                           this device; see the note at the check.
  *
  * Anything else is treated as transient and the credential is kept. That
  * default direction is chosen on purpose: wrongly keeping a dead token costs
@@ -323,10 +329,29 @@ export async function getAccessToken(): Promise<string | null> {
  *   - AbortError / timeouts
  *   - HTTP_5xx (client.ts throws `HTTP_${status}` when the body is not JSON)
  *   - UNEXPECTED_REDIRECT (a captive portal's interception looks like this)
+ *   - INVALID_DPOP_HEADER / INVALID_DPOP_TYPE — our proof was malformed. A
+ *     client bug or a clock problem; the refresh token itself is fine and
+ *     deleting it would sign users out over a code defect.
+ *   - DPOP_REPLAY — the jti was already seen. Every proof mints a fresh jti,
+ *     so a retry succeeds on its own.
  */
 function isTerminalRefreshError(err: unknown): boolean {
   const code = (err as { code?: unknown } | null)?.code;
-  return code === 'AUTH_SESSION_EXPIRED' || code === 'AUTH_SESSION_REVOKED';
+  return (
+    code === 'AUTH_SESSION_EXPIRED' ||
+    code === 'AUTH_SESSION_REVOKED' ||
+    // P4.6: the BFF returns the raw DpopError code on a bound-session refresh,
+    // so these arrive here unmapped rather than as AUTH_SESSION_*.
+    //
+    // INVALID_DPOP_BINDING means the proof's key does not match the `cnf_jkt`
+    // this refresh token is bound to — the keypair is gone (IndexedDB cleared,
+    // profile reset) while the token survived. No retry can regenerate the
+    // original non-extractable private key, so the credential is dead FOR THIS
+    // DEVICE and re-auth is the only path. Without this it would classify as
+    // transient and retry a permanently-doomed refresh forever, leaving the
+    // user in an app that is neither working nor signed out.
+    code === 'INVALID_DPOP_BINDING'
+  );
 }
 
 async function performRefresh(): Promise<string | null> {
