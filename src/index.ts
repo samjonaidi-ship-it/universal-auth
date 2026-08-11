@@ -1,4 +1,8 @@
-// @samjonaidi-ship-it/universal-auth | src/index.ts | v1.1.0-rc.2 | 2026-05-22 | BB
+// @samjonaidi-ship-it/universal-auth | src/index.ts | v1.1.0-rc.16 | 2026-08-11 | BB
+// rc.16 (P4.11): + listDevices / revokeDevice.
+// rc.15 (P4.1):  + verifyPin / setPin / clearPin / getPinStatus. That export
+//   landed without bumping this header; caught by the P4.11 lookback audit and
+//   recorded here rather than backdated.
 // Public barrel — named exports only (tree-shakeable per §8.2).
 //
 // v1.0.1 (Phase C6): `setSession` relocated to `/internal` subpath. The
