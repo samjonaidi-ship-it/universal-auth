@@ -80,6 +80,12 @@ export type {
 
 // Flow surfaces (Block 3)
 export { requestCode, verifyCode, type RequestCodeInput, type VerifyCodeInput } from './flows/code-flow.js';
+// P4.1 — PIN sign-in, the crew's primary path. Previously hand-rolled with
+// raw fetch() by consumers, which is why it never carried a DPoP proof.
+export {
+  verifyPin, setPin, clearPin, getPinStatus,
+  type VerifyPinInput, type VerifyPinResult, type SetPinInput, type PinStatus,
+} from './flows/pin-flow.js';
 export {
   verifyEnrollmentToken,
   activateEnrollment,

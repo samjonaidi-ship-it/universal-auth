@@ -1,4 +1,6 @@
-// @samjonaidi-ship-it/universal-auth | src/core/client.ts | v1.3.0 | 2026-08-10 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/client.ts | v1.4.0 | 2026-08-10 | BB
+// v1.4.0 (P4.1): /auth/v1/pin/verify joins DPOP_PROTECTED_ENDPOINTS — PIN is
+//   the crew's primary sign-in and was the only mint path sending no proof.
 // v1.3.0 (P4.6): DPoP proofs now go out on the calls that ESTABLISH the
 //   binding (anonymous session-minting) and on refreshTokenRequest(), which
 //   built its own fetch and bypassed the gate. Four of the six endpoints
@@ -102,6 +104,11 @@ const DPOP_PROTECTED_ENDPOINTS: ReadonlySet<string> = new Set([
   '/auth/v1/code/verify',
   '/auth/v1/passkey/authenticate/verify',
   '/auth/v1/enroll/activate',
+  // P4.1: PIN is the crew's PRIMARY sign-in and was the only mint path with
+  // no proof, so almost every real session was unbound. The BFF side landed
+  // separately (auth-v1-pin.js now runs verifyDpopOrFallback → cnfJkt); this
+  // is the half that makes a proof arrive for it to read.
+  '/auth/v1/pin/verify',
   '/auth/v1/session/refresh',
   '/auth/v1/session/revoke',
   '/auth/v1/session/revoke-all',
