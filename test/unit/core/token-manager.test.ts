@@ -1,6 +1,10 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/core/token-manager.test.ts | v1.1.0 | 2026-05-06 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/token-manager.test.ts | v1.2.0 | 2026-08-10 | BB
 // A1 gate #4 (mutex-coalesced refresh) + #10 (coverage) for src/core/token-manager.ts.
 // v1.1.0 (P1-G): + cnf.jkt round-trip verify after refresh.
+// v1.2.0 (P3.1): + refresh-failure classification — terminal (expired/revoked)
+//   clears the credential, transient (network/5xx/abort) keeps it and stays
+//   silent. The pre-existing revoke test was rewritten to throw the error shape
+//   production actually throws; its intent is unchanged.
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
@@ -14,7 +18,12 @@ import {
   onSessionChange,
   __resetTokenManagerForTests,
 } from '../../../src/core/token-manager.js';
-import { __resetDbForTests } from '../../../src/core/storage.js';
+import { __resetDbForTests, getRefreshToken } from '../../../src/core/storage.js';
+import {
+  AuthSdkError,
+  AuthSessionExpired,
+  AuthSessionRevoked,
+} from '../../../src/errors.js';
 
 describe('token-manager', () => {
   beforeEach(async () => {
@@ -160,7 +169,15 @@ describe('token-manager', () => {
   });
 
   describe('refresh failure', () => {
-    it('clears session and re-throws on refresh error', async () => {
+    // v1.2.0 (P3.1): this test previously threw `new Error('AUTH_SESSION_REVOKED')`
+    // — a plain Error carrying the code in its *message*, with `.code`
+    // undefined. That was invisible while the catch ignored the error and
+    // cleared unconditionally. Now that the catch classifies, the shortcut is
+    // actively misleading: production never throws that shape.
+    // `refreshTokenRequest` throws `errorFromEnvelope()` → an
+    // `AuthSessionRevoked` instance with a real `.code` (client.ts:452,
+    // errors.ts:431). Intent is unchanged — a revoked session must clear.
+    it('clears session and re-throws when the session was REVOKED', async () => {
       await setSession({
         accessToken: 'stale',
         refreshToken: 'rt-doomed',
@@ -169,12 +186,168 @@ describe('token-manager', () => {
       });
 
       registerRefreshCallback(async () => {
-        throw new Error('AUTH_SESSION_REVOKED');
+        throw new AuthSessionRevoked();
       });
 
-      await expect(getAccessToken()).rejects.toThrow('AUTH_SESSION_REVOKED');
+      await expect(getAccessToken()).rejects.toThrow(AuthSessionRevoked);
       expect(hasLiveAccessToken()).toBe(false);
       expect(getCurrentSessionId()).toBeNull();
+      // The credential itself must be gone from storage, not just from memory.
+      expect(await getRefreshToken()).toBeNull();
+    });
+
+    it('clears the stored credential when the refresh token has EXPIRED', async () => {
+      await setSession({
+        accessToken: 'stale',
+        refreshToken: 'rt-past-ttl',
+        expiresAt: Date.now() - 1000,
+        sessionId: 'sess-old',
+      });
+
+      registerRefreshCallback(async () => {
+        throw new AuthSessionExpired();
+      });
+
+      await expect(getAccessToken()).rejects.toThrow(AuthSessionExpired);
+      expect(await getRefreshToken()).toBeNull();
+      expect(getCurrentSessionId()).toBeNull();
+    });
+
+    // ── P3.1 — the transient half ─────────────────────────────────────────
+    //
+    // These are the regression tests for A3: a dead zone must not destroy a
+    // valid 90-day credential (and, downstream in BB Express, must not trip
+    // the purge that takes unsynced offline work with it).
+
+    it('KEEPS the refresh token when the network fails (raw TypeError)', async () => {
+      await setSession({
+        accessToken: 'stale',
+        refreshToken: 'rt-still-good',
+        expiresAt: Date.now() - 1000,
+        sessionId: 'sess-live',
+      });
+
+      registerRefreshCallback(async () => {
+        // What fetch() actually rejects with when offline — not an AuthSdkError.
+        throw new TypeError('Failed to fetch');
+      });
+
+      await expect(getAccessToken()).rejects.toThrow(TypeError);
+      // The credential survives, so the next attempt can recover silently.
+      expect(await getRefreshToken()).toBe('rt-still-good');
+      // Session identity is retained — the user is not signed out.
+      expect(getCurrentSessionId()).toBe('sess-live');
+    });
+
+    it('KEEPS the refresh token on a 5xx', async () => {
+      await setSession({
+        accessToken: 'stale',
+        refreshToken: 'rt-survives-5xx',
+        expiresAt: Date.now() - 1000,
+        sessionId: 'sess-5xx',
+      });
+
+      registerRefreshCallback(async () => {
+        // client.ts:450 — non-JSON error body becomes `HTTP_${status}`.
+        throw new AuthSdkError('HTTP_503', 'Refresh failed: HTTP 503');
+      });
+
+      // Assert on `.code`, not the message — classification reads the code.
+      await expect(getAccessToken()).rejects.toMatchObject({ code: 'HTTP_503' });
+      expect(await getRefreshToken()).toBe('rt-survives-5xx');
+    });
+
+    it('KEEPS the refresh token on an abort/timeout', async () => {
+      await setSession({
+        accessToken: 'stale',
+        refreshToken: 'rt-survives-abort',
+        expiresAt: Date.now() - 1000,
+        sessionId: 'sess-abort',
+      });
+
+      registerRefreshCallback(async () => {
+        // AbortSignal.timeout() rejects with a DOMException named AbortError,
+        // whose legacy numeric `.code` (20) must not be mistaken for a
+        // terminal auth code.
+        throw new DOMException('The operation was aborted.', 'AbortError');
+      });
+
+      await expect(getAccessToken()).rejects.toThrow(DOMException);
+      expect(await getRefreshToken()).toBe('rt-survives-abort');
+    });
+
+    it('does NOT notify listeners on a transient failure', async () => {
+      // Load-bearing: AuthProvider's listener gates on hasLiveAccessToken()
+      // alone and flips to 'anonymous' whenever it is false — which it is
+      // during any refresh. A notify here would sign the user out on a blip.
+      await setSession({
+        accessToken: 'stale',
+        refreshToken: 'rt-no-notify',
+        expiresAt: Date.now() - 1000,
+        sessionId: 'sess-quiet',
+      });
+
+      const listener = vi.fn();
+      onSessionChange(listener);
+
+      registerRefreshCallback(async () => {
+        throw new TypeError('Failed to fetch');
+      });
+
+      await expect(getAccessToken()).rejects.toThrow(TypeError);
+      expect(listener).not.toHaveBeenCalled();
+    });
+
+    it('DOES notify listeners on a terminal failure', async () => {
+      // The control for the test above: proves the assertion there is about
+      // classification, not about listeners being broken in this harness.
+      await setSession({
+        accessToken: 'stale',
+        refreshToken: 'rt-notify',
+        expiresAt: Date.now() - 1000,
+        sessionId: 'sess-loud',
+      });
+
+      const listener = vi.fn();
+      onSessionChange(listener);
+
+      registerRefreshCallback(async () => {
+        throw new AuthSessionRevoked();
+      });
+
+      await expect(getAccessToken()).rejects.toThrow(AuthSessionRevoked);
+      expect(listener).toHaveBeenCalled();
+    });
+
+    it('recovers on retry after a transient failure, with no re-auth', async () => {
+      // End-to-end proof of the point of the phase: blip → recovery, and the
+      // retry reuses the SAME refresh token (its Idempotency-Key is derived
+      // from it, client.ts:470, so the BFF replays rather than reuse-detects).
+      await setSession({
+        accessToken: 'stale',
+        refreshToken: 'rt-recover',
+        expiresAt: Date.now() - 1000,
+        sessionId: 'sess-recover',
+      });
+
+      let attempt = 0;
+      let tokenSeenOnRetry: string | null = null;
+      registerRefreshCallback(async (rt: string) => {
+        attempt += 1;
+        if (attempt === 1) throw new TypeError('Failed to fetch');
+        tokenSeenOnRetry = rt;
+        return {
+          access_token: 'at-fresh',
+          expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
+          refresh_expires_at: new Date(Date.now() + 90 * 86_400_000).toISOString(),
+          session_id: 'sess-recover',
+        };
+      });
+
+      await expect(getAccessToken()).rejects.toThrow(TypeError);
+      expect(await getAccessToken()).toBe('at-fresh');
+      expect(tokenSeenOnRetry).toBe('rt-recover');
+      expect(hasLiveAccessToken()).toBe(true);
     });
   });
 

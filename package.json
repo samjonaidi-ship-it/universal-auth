@@ -1,6 +1,6 @@
 {
   "name": "@samjonaidi-ship-it/universal-auth",
-  "version": "1.1.0-rc.12",
+  "version": "1.1.0-rc.13",
   "description": "Bainbridge Builders universal authentication SDK — one package, every consumer app (BB_Express, ControlTower, future Customer Portal, Buddy Console).",
   "license": "UNLICENSED",
   "type": "module",
@@ -73,7 +73,7 @@
     "@simplewebauthn/browser": "^13.0.0",
     "idb": "^8.0.0",
     "libphonenumber-js": "^1.10.0",
-    "nanoid": "^5.0.0"
+    "nanoid": "^5.1.16"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.2",

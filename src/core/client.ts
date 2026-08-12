@@ -1,4 +1,7 @@
-// @samjonaidi-ship-it/universal-auth | src/core/client.ts | v1.1.1 | 2026-05-08 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/client.ts | v1.2.0 | 2026-08-10 | BB
+// v1.2.0 (P2.5): every request carries a 15 s default timeout, combined with
+//   (never replacing) a caller-supplied signal. Wired explicitly into
+//   refreshTokenRequest(), which builds its own fetch.
 // HTTP client for CT BFF. Owns:
 //
 //   §3   Every endpoint at `https://api.buildwithbainbridge.com/auth/v1/*`
@@ -140,6 +143,38 @@ function requireConfig(): ClientConfig {
 
 // ── Request primitives ────────────────────────────────────────────────────
 
+/**
+ * P2.5 — default request timeout.
+ *
+ * 15 s. Long enough that a slow-but-alive jobsite connection still completes
+ * (the crew are regularly on 1-2 bars), short enough that a black-holed
+ * connection surfaces as a retryable error instead of an indefinite hang.
+ */
+const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
+
+/**
+ * Combine a caller-supplied AbortSignal with a timeout signal.
+ *
+ * `AbortSignal.any` is Safari 17.4+ / Chrome 116+. The crew run installed iOS
+ * PWAs, so an older WebView is possible; rather than let the whole request
+ * throw a TypeError on `AbortSignal.any is not a function`, fall back to
+ * whichever single signal we have (caller's first — an explicit cancel matters
+ * more than a timeout). Degrading to today's no-timeout behaviour on an old
+ * device is acceptable; breaking every request on it is not.
+ */
+function withDefaultTimeout(callerSignal: AbortSignal | undefined, timeoutMs: number): AbortSignal | undefined {
+  const canTimeout = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function';
+  if (!canTimeout) return callerSignal;
+
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  if (callerSignal === undefined) return timeoutSignal;
+
+  if (typeof AbortSignal.any === 'function') {
+    return AbortSignal.any([callerSignal, timeoutSignal]);
+  }
+  return callerSignal;
+}
+
 export interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown; // JSON-serialized
@@ -149,8 +184,10 @@ export interface RequestOptions {
   headers?: Record<string, string>;
   /** If true, skip auto-attach of Authorization header (public endpoints). */
   anonymous?: boolean;
-  /** If set, aborts the request. */
+  /** If set, aborts the request. Combined with the default timeout, not instead of it. */
   signal?: AbortSignal;
+  /** Override the default request timeout (ms). Rarely needed. */
+  timeoutMs?: number;
   /** For `GET /auth/v1/me` ETag handling. */
   ifNoneMatch?: string;
 }
@@ -293,8 +330,23 @@ async function requestInternal<T>(
       ? (opts.body as BodyInit)
       : JSON.stringify(opts.body);
   }
-  if (opts.signal !== undefined) {
-    init.signal = opts.signal;
+  // P2.5: every request gets a default timeout. Without one a fetch can hang
+  // for as long as the platform allows — on a flaky mobile connection that is
+  // effectively forever, and a hung auth call stalls whatever is waiting on it
+  // (the resume coordinator, a queue drain, a boot). A caller-supplied signal
+  // still wins in the sense that it can abort EARLIER; the two are combined,
+  // never swapped, so passing `signal` no longer silently opts out of the
+  // timeout.
+  //
+  // The resulting AbortError is classified as TRANSIENT by the token manager
+  // (token-manager.ts isTerminalRefreshError), so a timed-out refresh keeps the
+  // credential and retries rather than signing the user out.
+  // Guarded assignment: `exactOptionalPropertyTypes` forbids an explicit
+  // `undefined` here, and withDefaultTimeout() returns undefined on a platform
+  // with neither AbortSignal.timeout nor a caller signal.
+  const requestSignal = withDefaultTimeout(opts.signal, opts.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS);
+  if (requestSignal !== undefined) {
+    init.signal = requestSignal;
   }
 
   // Native fetch throws on network failure — offline queue layer (Block 3 Day 7-8)
@@ -420,6 +472,7 @@ async function refreshTokenRequest(refreshToken: string): Promise<{
   // 16 hex chars (64 bits) is plenty for this dedupe window without leaking
   // the token (preimage-resistant under SHA-256).
   const idempotencyKey = await deriveRefreshIdempotencyKey(refreshToken);
+  const refreshSignal = withDefaultTimeout(undefined, DEFAULT_REQUEST_TIMEOUT_MS);
   const response = await fetch(url, {
     method: 'POST',
     credentials: 'include',
@@ -434,6 +487,12 @@ async function refreshTokenRequest(refreshToken: string): Promise<{
       'Idempotency-Key': idempotencyKey,
     },
     body: JSON.stringify({ refresh_token: refreshToken }),
+    // P2.5: this path builds its own fetch rather than going through
+    // request(), so it needs the timeout wired explicitly — it is the single
+    // most important call to bound, because a hung refresh blocks every
+    // queued getAccessToken() caller behind the refresh mutex.
+    // Conditional spread: `exactOptionalPropertyTypes` forbids `signal: undefined`.
+    ...(refreshSignal !== undefined ? { signal: refreshSignal } : {}),
   });
   if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400)) {
     throw new AuthSdkError(
