@@ -145,5 +145,37 @@ describe('errors (§3.7 L247 canonical codes)', () => {
       expect(e).toBeInstanceOf(AuthSdkError);
       expect(e.code).toBe('FOO_BAR_BAZ');
     });
+
+    // ── P4.8 ────────────────────────────────────────────────────────────
+    // CT BFF v1 routes reply `{ code, message, protocol_version }`; only the
+    // older unversioned routes use `error`. The factory read `error` alone,
+    // so every unmapped v1 code reached the UI as "Unknown error code: X"
+    // with the server's explanation discarded. Consumers render err.message
+    // directly (CalExp5 SetPinScreen.jsx:72), so the user saw the placeholder.
+    it('surfaces the server MESSAGE for an unmapped v1 code', () => {
+      const e = errorFromEnvelope({
+        code: 'WEAK_PIN',
+        message: 'That PIN is too easy to guess.',
+        protocol_version: 'v1',
+      });
+      expect(e.code).toBe('WEAK_PIN');
+      expect(e.message).toBe('That PIN is too easy to guess.');
+      expect(e.message).not.toMatch(/Unknown error code/);
+    });
+
+    it('still honours the legacy `error` field when there is no message', () => {
+      const e = errorFromEnvelope({ code: 'LEGACY_THING', error: 'Old shape text' });
+      expect(e.message).toBe('Old shape text');
+    });
+
+    it('prefers message over error when a route sends both', () => {
+      const e = errorFromEnvelope({ code: 'BOTH', message: 'v1 text', error: 'legacy text' });
+      expect(e.message).toBe('v1 text');
+    });
+
+    it('still falls back to the placeholder when the server sends neither', () => {
+      const e = errorFromEnvelope({ code: 'NO_TEXT' });
+      expect(e.message).toBe('Unknown error code: NO_TEXT');
+    });
   });
 });

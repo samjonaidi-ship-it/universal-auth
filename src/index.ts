@@ -1,4 +1,18 @@
-// @samjonaidi-ship-it/universal-auth | src/index.ts | v1.1.0-rc.2 | 2026-05-22 | BB
+// @samjonaidi-ship-it/universal-auth | src/index.ts | v1.1.0-rc.19 | 2026-08-11 | BB
+// rc.19 (P5c): + getDraft / putDraft / deleteDraft — resumable half-finished
+//   work keyed by IDENTITY rather than device, so it survives picking up a
+//   different phone. Callers strip file bytes; the server caps at 64 KB.
+// rc.18 (P5b/M4): + reportDeviceSyncState — a device tells the server how much
+//   offline work it is holding, so "3 items waiting to sync on BB iPad" is
+//   readable from any other device. AuthDevice gains pending_mutations.
+// rc.17 (P4.8): errorFromEnvelope reads the server MESSAGE. CT v1 routes send
+//   { code, message }, the factory read only `error`, so every unmapped v1
+//   code reached the UI as "Unknown error code: X" with the real explanation
+//   discarded. Consumers render err.message directly.
+// rc.16 (P4.11): + listDevices / revokeDevice.
+// rc.15 (P4.1):  + verifyPin / setPin / clearPin / getPinStatus. That export
+//   landed without bumping this header; caught by the P4.11 lookback audit and
+//   recorded here rather than backdated.
 // Public barrel — named exports only (tree-shakeable per §8.2).
 //
 // v1.0.1 (Phase C6): `setSession` relocated to `/internal` subpath. The
@@ -80,6 +94,19 @@ export type {
 
 // Flow surfaces (Block 3)
 export { requestCode, verifyCode, type RequestCodeInput, type VerifyCodeInput } from './flows/code-flow.js';
+// P4.1 — PIN sign-in, the crew's primary path. Previously hand-rolled with
+// raw fetch() by consumers, which is why it never carried a DPoP proof.
+export {
+  verifyPin, setPin, clearPin, getPinStatus,
+  type VerifyPinInput, type VerifyPinResult, type SetPinInput, type PinStatus,
+} from './flows/pin-flow.js';
+// P4.11 — "Your devices": see where you are signed in, sign a device out.
+export {
+  listDevices, revokeDevice, reportDeviceSyncState, type AuthDevice,
+} from './flows/devices-flow.js';
+export {
+  getDraft, putDraft, deleteDraft, type DraftEnvelope,
+} from './flows/drafts-flow.js';
 export {
   verifyEnrollmentToken,
   activateEnrollment,

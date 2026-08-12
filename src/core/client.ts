@@ -1,4 +1,11 @@
-// @samjonaidi-ship-it/universal-auth | src/core/client.ts | v1.2.0 | 2026-08-10 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/client.ts | v1.4.0 | 2026-08-10 | BB
+// v1.4.0 (P4.1): /auth/v1/pin/verify joins DPOP_PROTECTED_ENDPOINTS — PIN is
+//   the crew's primary sign-in and was the only mint path sending no proof.
+// v1.3.0 (P4.6): DPoP proofs now go out on the calls that ESTABLISH the
+//   binding (anonymous session-minting) and on refreshTokenRequest(), which
+//   built its own fetch and bypassed the gate. Four of the six endpoints
+//   declared DPoP-protected had never sent a proof, so cnf_jkt was NULL for
+//   every session.
 // v1.2.0 (P2.5): every request carries a 15 s default timeout, combined with
 //   (never replacing) a caller-supplied signal. Wired explicitly into
 //   refreshTokenRequest(), which builds its own fetch.
@@ -97,6 +104,11 @@ const DPOP_PROTECTED_ENDPOINTS: ReadonlySet<string> = new Set([
   '/auth/v1/code/verify',
   '/auth/v1/passkey/authenticate/verify',
   '/auth/v1/enroll/activate',
+  // P4.1: PIN is the crew's PRIMARY sign-in and was the only mint path with
+  // no proof, so almost every real session was unbound. The BFF side landed
+  // separately (auth-v1-pin.js now runs verifyDpopOrFallback → cnfJkt); this
+  // is the half that makes a proof arrive for it to read.
+  '/auth/v1/pin/verify',
   '/auth/v1/session/refresh',
   '/auth/v1/session/revoke',
   '/auth/v1/session/revoke-all',
@@ -254,8 +266,12 @@ async function requestInternal<T>(
   }
 
   // Attach Authorization if available and not opted out
+  //
+  // P4.6: `token` is hoisted out of this block because the DPoP attachment
+  // below now runs for anonymous requests too. See the long note there.
+  let token: string | null = null;
   if (opts.anonymous !== true) {
-    const token = await getAccessToken();
+    token = await getAccessToken();
     if (token !== null) {
       headers.Authorization = `Bearer ${token}`;
     }
@@ -264,53 +280,71 @@ async function requestInternal<T>(
     // JSON bodies. Anon endpoints are skipped — they are pre-identity by
     // definition and the header would be noise.
     headers['X-Device-Id'] = await getOrCreateDeviceId();
+  }
 
-    // v1.0.5 (L3.1, DPOP_DESIGN_v1.0.md §5.3): attach DPoP for the 6 protected
-    // endpoints unless the consumer has opted out. Soft-fallback per §10 Q3:
-    // any error in 'auto' mode logs + emits + proceeds with plain Bearer; in
-    // 'always' mode we re-throw so the caller learns about it.
-    const dpopMode: DpopMode = cfg.useDpop ?? 'auto';
-    if (
-      token !== null &&
-      dpopMode !== 'never' &&
-      isDpopRequiredFor(path, method)
-    ) {
-      try {
-        await getOrCreateKeypair(); // lazy — first call generates + persists
-        const cachedNonce = consumeNonce(path);
-        const proofInput: Parameters<typeof buildDpopProof>[0] = {
-          url,
-          method,
-          accessToken: token,
-        };
-        if (cachedNonce !== null) proofInput.nonce = cachedNonce;
-        const proof = await buildDpopProof(proofInput);
-        // RFC 9449 §7.1: with DPoP-bound credentials, the Authorization scheme
-        // is the literal string `DPoP` (case-sensitive in the header value).
-        headers.Authorization = `DPoP ${token}`;
-        headers.DPoP = proof;
-      } catch (err) {
-        if (dpopMode === 'always') {
-          // Hard-fail surface — caller asked for strict DPoP.
-          throw err;
-        }
-        // Soft-fallback: keep the existing `Authorization: Bearer <token>`
-        // header and let the request proceed. The server still sees a valid
-        // session token; only the proof-of-possession binding is absent.
-        void emit('dpop.fallback_used', {
-          endpoint: path,
-          method,
-          reason: err instanceof Error ? err.message : String(err),
-        });
-        // P1-E — route through onError hook; fall back to console.warn.
-        // rc.7 D7-fu(b): typed AuthSdkError subclass so consumers can
-        // `instanceof DpopFallbackError`-check.
-        const fallbackErr = new DpopFallbackError(
-          `DPoP build failed for ${method} ${path}; falling back to plain Bearer. Cause: ${err instanceof Error ? err.message : String(err)}`,
-          err instanceof Error ? { cause: err } : undefined,
-        );
-        reportSoftError(fallbackErr);
+  // v1.0.5 (L3.1, DPOP_DESIGN_v1.0.md §5.3): attach DPoP for the 6 protected
+  // endpoints unless the consumer has opted out. Soft-fallback per §10 Q3:
+  // any error in 'auto' mode logs + emits + proceeds with plain Bearer; in
+  // 'always' mode we re-throw so the caller learns about it.
+  //
+  // P4.6 — this used to sit inside `if (opts.anonymous !== true)` AND require
+  // `token !== null`. Between them, those two conditions excluded exactly the
+  // endpoints that establish the binding in the first place:
+  //
+  //   /auth/v1/code/verify                  anonymous:true, no token yet
+  //   /auth/v1/passkey/authenticate/verify  anonymous:true, no token yet
+  //   /auth/v1/enroll/activate              anonymous:true, no token yet
+  //
+  // All three are declared DPoP-protected above and none of them could ever
+  // satisfy the gate, so no proof was ever sent at sign-in. The CT BFF reads
+  // the DPoP header at every mint site and stores its thumbprint as
+  // `cnf_jkt` (verifyDpopOrFallback → issueSessionV1), but with no header it
+  // records NULL — every session in production is unbound. The whole binding
+  // chain exists on both sides and has never once run.
+  //
+  // RFC 9449 §4.2 makes `ath` conditional on an access token being present,
+  // and the BFF's verifier never reads `ath` at all (services/dpop.js
+  // destructures only jti/htm/htu/iat/nonce). So an ath-less proof at mint is
+  // both spec-correct and accepted today. buildDpopProof already omits `ath`
+  // when accessToken is absent — the capability was there, just unreachable.
+  const dpopMode: DpopMode = cfg.useDpop ?? 'auto';
+  if (dpopMode !== 'never' && isDpopRequiredFor(path, method)) {
+    try {
+      await getOrCreateKeypair(); // lazy — first call generates + persists
+      const cachedNonce = consumeNonce(path);
+      const proofInput: Parameters<typeof buildDpopProof>[0] = { url, method };
+      // ath binds the proof to the access token. On a minting call there is
+      // no token to bind to, and that is the normal case, not a degraded one.
+      if (token !== null) proofInput.accessToken = token;
+      if (cachedNonce !== null) proofInput.nonce = cachedNonce;
+      const proof = await buildDpopProof(proofInput);
+      // RFC 9449 §7.1: with DPoP-bound credentials, the Authorization scheme
+      // is the literal string `DPoP` (case-sensitive in the header value).
+      // Only meaningful when we actually have a token — on a minting call
+      // there is no Authorization header to upgrade.
+      if (token !== null) headers.Authorization = `DPoP ${token}`;
+      headers.DPoP = proof;
+    } catch (err) {
+      if (dpopMode === 'always') {
+        // Hard-fail surface — caller asked for strict DPoP.
+        throw err;
       }
+      // Soft-fallback: keep the existing `Authorization: Bearer <token>`
+      // header and let the request proceed. The server still sees a valid
+      // session token; only the proof-of-possession binding is absent.
+      void emit('dpop.fallback_used', {
+        endpoint: path,
+        method,
+        reason: err instanceof Error ? err.message : String(err),
+      });
+      // P1-E — route through onError hook; fall back to console.warn.
+      // rc.7 D7-fu(b): typed AuthSdkError subclass so consumers can
+      // `instanceof DpopFallbackError`-check.
+      const fallbackErr = new DpopFallbackError(
+        `DPoP build failed for ${method} ${path}; falling back to plain Bearer. Cause: ${err instanceof Error ? err.message : String(err)}`,
+        err instanceof Error ? { cause: err } : undefined,
+      );
+      reportSoftError(fallbackErr);
     }
   }
 
@@ -473,6 +507,52 @@ async function refreshTokenRequest(refreshToken: string): Promise<{
   // the token (preimage-resistant under SHA-256).
   const idempotencyKey = await deriveRefreshIdempotencyKey(refreshToken);
   const refreshSignal = withDefaultTimeout(undefined, DEFAULT_REQUEST_TIMEOUT_MS);
+
+  // P4.6 — attach a DPoP proof to the refresh.
+  //
+  // THIS IS THE HALF THAT CANNOT BE SHIPPED SEPARATELY. `/auth/v1/session/refresh`
+  // is in DPOP_PROTECTED_ENDPOINTS, but this function builds its own fetch and
+  // never passes through requestInternal, so the gate above has never been
+  // consulted for it — the endpoint is declared protected and receives no proof.
+  //
+  // Harmless while every session is unbound. The moment the mint-side change
+  // above starts populating `cnf_jkt`, the BFF's refresh handler takes the
+  // `if (boundJkt)` branch and REQUIRES a valid proof (routes/auth-v1.js), so a
+  // proof-less refresh would 401. Binding sessions without this would lock out
+  // every user at their next refresh — within 15 minutes.
+  //
+  // ath-less on purpose: a refresh carries no access token. The refresh token
+  // is NOT an access token and must not be hashed into `ath`.
+  //
+  // No nonce retry, deliberately: the refresh call site passes
+  // `verifyDpopProof(req, { sql, boundJkt })` with no `requireNonce`, which
+  // defaults false, so USE_DPOP_NONCE cannot be raised here. (The DPoP design
+  // doc says nonces are "refresh-only" — that is drift; the code does not ask
+  // for one.) If anyone ever flips requireNonce on for refresh, they MUST add
+  // a nonce-retry here or every refresh will fail.
+  let dpopProof: string | null = null;
+  const refreshDpopMode: DpopMode = cfg.useDpop ?? 'auto';
+  if (refreshDpopMode !== 'never') {
+    try {
+      await getOrCreateKeypair();
+      dpopProof = await buildDpopProof({ url, method: 'POST' });
+    } catch (err) {
+      if (refreshDpopMode === 'always') throw err;
+      // Soft-fallback matches the main path: proceed without the proof. If the
+      // session IS bound this will 401, which is the correct outcome — better
+      // a clean auth failure than a silently unbound refresh.
+      void emit('dpop.fallback_used', {
+        endpoint: '/auth/v1/session/refresh',
+        method: 'POST',
+        reason: err instanceof Error ? err.message : String(err),
+      });
+      reportSoftError(new DpopFallbackError(
+        `DPoP build failed for POST /auth/v1/session/refresh; refreshing without a proof. Cause: ${err instanceof Error ? err.message : String(err)}`,
+        err instanceof Error ? { cause: err } : undefined,
+      ));
+    }
+  }
+
   const response = await fetch(url, {
     method: 'POST',
     credentials: 'include',
@@ -485,6 +565,7 @@ async function refreshTokenRequest(refreshToken: string): Promise<{
       'X-App-Id': cfg.appId,
       'X-SDK-Version': cfg.sdkVersion,
       'Idempotency-Key': idempotencyKey,
+      ...(dpopProof !== null ? { DPoP: dpopProof } : {}),
     },
     body: JSON.stringify({ refresh_token: refreshToken }),
     // P2.5: this path builds its own fetch rather than going through
