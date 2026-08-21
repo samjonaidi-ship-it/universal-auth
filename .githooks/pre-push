@@ -24,6 +24,26 @@ fi
 
 cd "$(git rev-parse --show-toplevel)"
 
+# A deletion pushes NO CONTENT, so there is nothing to typecheck. Git feeds one
+# line per ref on stdin as "<local ref> <local sha> <remote ref> <remote sha>",
+# and a deletion carries an all-zero LOCAL sha. This hook never read stdin, so
+# `git push origin --delete <branch>` ran the full gate suite and failed —
+# blocking routine branch cleanup on 2026-08-21 and steering the operator toward
+# --no-verify, which the house rules forbid. Fail CLOSED: if stdin gives us no
+# refs at all, run the gates rather than assuming a deletion.
+ZERO="0000000000000000000000000000000000000000"
+saw_ref=0
+only_deletions=1
+while read -r _local_ref local_sha _remote_ref _remote_sha; do
+  [[ -z "${local_sha:-}" ]] && continue
+  saw_ref=1
+  [[ "$local_sha" != "$ZERO" ]] && only_deletions=0
+done
+if [[ "$saw_ref" == "1" && "$only_deletions" == "1" ]]; then
+  echo "[pre-push] deletion-only push (no content) — skipping CI gates."
+  exit 0
+fi
+
 echo "[pre-push] running CI build-job gates locally (skip with --no-verify)..."
 
 # Mirror .github/workflows/ci.yml:30-40 exactly. Order matters — fail-fast on
