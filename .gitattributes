@@ -1,13 +1,16 @@
-# --- BB append-only merge drivers | 2026-09-01 ---
-# Every agent appends a row at the bottom of these files, so parallel branches
-# collide on the same line every time. Those conflicts are mechanical, not
-# semantic: union merge keeps BOTH sides instead of stopping the merge.
+# --- BB append-only merge drivers | v2 | 2026-09-01 ---
+# TEST_LOG.md is pure append (sampled commits: +57/-0, +80/-0, +69/-0) and carries
+# no uniqueness or ordering invariant, so union merge is safe here: it keeps both
+# agents rows instead of raising a conflict on the same last line.
 #
-# Measured on BB_Micro_Bridge 2026-09-01: VERSION_MATRIX.md and TEST_LOG.md
-# accounted for 65 of the last 200 commit-touches on main.
+# VERSION_MATRIX.md and CHANGELOG.md are deliberately NOT union-merged in this
+# repo. They encode a version uniqueness/ordering invariant, and union merge
+# silently accepts two agents claiming the same version number — verified
+# 2026-09-01 by reproducing it. BB_Micro_Bridge can afford union there because
+# scripts/lint-version-matrix.mjs fails CI on a duplicate; this repo has no such
+# check, so the merge conflict IS the only control. Removing it would be a net
+# loss of safety.
 #
-# SESSION_STATE.md is deliberately NOT here — it is rewritten in place
-# (+41/-21 on a sample commit), so union merge would duplicate its sections.
-**/VERSION_MATRIX.md merge=union
-**/TEST_LOG.md       merge=union
-**/CHANGELOG.md      merge=union
+# SESSION_STATE.md is excluded everywhere: it is rewritten in place, so union
+# would duplicate its sections.
+**/TEST_LOG.md merge=union
