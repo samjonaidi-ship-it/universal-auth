@@ -1,4 +1,21 @@
 #!/usr/bin/env bash
+
+# BB_REVIEW_HOOK v1.0 — automatic Tier 1 review on risky pushes.
+# Installed by C:\Users\samjo\Desktop\Claude\TOOLS\install-hooks.mjs — do not edit this block by hand.
+# Routine pushes cost nothing; only risky paths reach a model.
+# Escape hatch:  BB_SKIP_REVIEW=1 git push   (NOT --no-verify, which also skips
+# the architecture guardrails and is blocked by a PreToolUse guard).
+_BB_INPUT=$(cat)
+if [ -z "$BB_SKIP_REVIEW" ] && command -v node >/dev/null 2>&1; then
+  printf '%s\n' "$_BB_INPUT" | node "C:/Users/samjo/Desktop/Claude/TOOLS/bb-review.mjs" --pre-push || exit $?
+fi
+# Restore stdin so the original hook body below still receives its refs.
+exec <<BB_REVIEW_STDIN_EOF
+$_BB_INPUT
+BB_REVIEW_STDIN_EOF
+
+# --- original hook follows, unchanged ---
+
 # @samjonaidi-ship-it/universal-auth | .githooks/pre-push | v1.0.0 | 2026-05-08 | BB
 # BUILD-1 (rc.5 audit): runs the same fast CI gates locally before any push,
 # preventing rc.2/rc.3-class incidents (red lint landing on main because the
