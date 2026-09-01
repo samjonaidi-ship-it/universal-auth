@@ -1,0 +1,13 @@
+# --- BB append-only merge drivers | 2026-09-01 ---
+# Every agent appends a row at the bottom of these files, so parallel branches
+# collide on the same line every time. Those conflicts are mechanical, not
+# semantic: union merge keeps BOTH sides instead of stopping the merge.
+#
+# Measured on BB_Micro_Bridge 2026-09-01: VERSION_MATRIX.md and TEST_LOG.md
+# accounted for 65 of the last 200 commit-touches on main.
+#
+# SESSION_STATE.md is deliberately NOT here — it is rewritten in place
+# (+41/-21 on a sample commit), so union merge would duplicate its sections.
+**/VERSION_MATRIX.md merge=union
+**/TEST_LOG.md       merge=union
+**/CHANGELOG.md      merge=union
