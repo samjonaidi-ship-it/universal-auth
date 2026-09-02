@@ -13,7 +13,17 @@
 # and fails the build on critical/high CVEs in changed dependencies.
 
 name: CI
-on: [push, pull_request, workflow_dispatch]
+# v1.2.0 (2026-09-02): `on: [push, pull_request]` ran this workflow TWICE for
+# every commit on a PR branch — once for the push event, once for the
+# pull_request event, same SHA (verified in the run history: pairs of runs
+# seconds apart). Push now triggers on main only; PRs still get the full gate.
+# memory-quick (a 5-minute soak that passed 36/36 times) runs on main pushes
+# only, so a PR waits on build + security + perf (~2 min) instead of the soak.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
 
 jobs:
   build:
@@ -71,6 +81,9 @@ jobs:
         run: pnpm test:security
 
   memory-quick:
+    # Main pushes only (2026-09-02): 36/36 green on every PR push, at 5 minutes
+    # each — the long pole of every PR. Still gates every merge to main.
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     needs: build
     timeout-minutes: 10  # BUILD-8: explicit timeout (memory soak is 5 min)
