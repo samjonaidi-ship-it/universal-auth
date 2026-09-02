@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# BB_REVIEW_HOOK v1.2 — automatic Tier 1 review on risky pushes.
+# BB_REVIEW_HOOK v1.3 — automatic Tier 1 review on risky pushes.
 # Installed by C:\Users\samjo\Desktop\Claude\TOOLS\install-hooks.mjs — do not edit this block by hand.
 # Routine pushes cost nothing; only risky paths reach a model.
 # Escape hatch:  BB_SKIP="<reason>" git push   (NOT --no-verify, which also skips
@@ -9,7 +9,7 @@ _BB_INPUT=$(cat)
 if [ -z "$BB_SKIP" ] && [ -z "$BB_SKIP_REVIEW" ]; then
   if ! command -v node >/dev/null 2>&1; then
   echo "[bb-review] BLOCKED: no node on PATH, so this push cannot be reviewed." >&2
-  echo "[bb-review] Fix PATH, or push deliberately with:  BB_SKIP="<reason>" git push" >&2
+  echo '[bb-review] Fix PATH, or push deliberately with:  BB_SKIP="<reason>" git push' >&2
   exit 1
   fi
   printf '%s\n' "$_BB_INPUT" | node "C:/Users/samjo/Desktop/Claude/TOOLS/bb-review.mjs" --pre-push || exit $?
@@ -20,6 +20,7 @@ $_BB_INPUT
 BB_REVIEW_STDIN_EOF
 
 # --- original hook follows, unchanged ---
+
 
 
 
