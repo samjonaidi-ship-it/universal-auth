@@ -13,12 +13,19 @@
 # and fails the build on critical/high CVEs in changed dependencies.
 
 name: CI
+# v1.2.1 (2026-09-01): the soak comment said "still gates every merge" - it does
+# not, and the reviewer caught it. Wording only; behaviour unchanged.
 # v1.2.0 (2026-09-02): `on: [push, pull_request]` ran this workflow TWICE for
 # every commit on a PR branch — once for the push event, once for the
 # pull_request event, same SHA (verified in the run history: pairs of runs
 # seconds apart). Push now triggers on main only; PRs still get the full gate.
 # memory-quick (a 5-minute soak that passed 36/36 times) runs on main pushes
 # only, so a PR waits on build + security + perf (~2 min) instead of the soak.
+# Be clear about what that means: it is now a POST-MERGE ALARM, not a merge
+# gate (a push to main happens after the merge, and Railway deploys from main
+# regardless). Accepted on the record - 36/36 green - and this repo has no
+# branch protection, so nothing lists it as required. Pushes to agent/*
+# without a PR run nothing; open the PR to get CI.
 on:
   push:
     branches: [main]
@@ -82,7 +89,8 @@ jobs:
 
   memory-quick:
     # Main pushes only (2026-09-02): 36/36 green on every PR push, at 5 minutes
-    # each — the long pole of every PR. Still gates every merge to main.
+    # each — the long pole of every PR. Runs AFTER the merge: a post-deploy alarm,
+    # not a gate (see the header). Nothing has `needs: memory-quick`.
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     needs: build
