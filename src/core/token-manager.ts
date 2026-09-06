@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.3.0 | 2026-08-10 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.3.1 | 2026-09-06 | BB
 // v1.3.0 (P4.6): INVALID_DPOP_BINDING joins the terminal set — once sessions
 //   are DPoP-bound, a lost keypair makes the refresh token permanently
 //   unusable on that device and retrying would loop forever.
@@ -245,7 +245,7 @@ export async function setSession(tokens: SessionTokens): Promise<void> {
 
 /**
  * Clear all session state — memory + IDB + broadcast.
- * Called on logout, session.revoked, or 401 during refresh.
+ * Called on session.logout, session.revoked, or 401 during refresh.
  *
  * v1.0.2 (L3.1, DPOP_DESIGN_v1.0.md §5.3): also deletes the DPoP keypair.
  * Sign-out kills the cryptographic identity along with the session — the

@@ -1,4 +1,20 @@
-// @samjonaidi-ship-it/universal-auth | src/flows/recovery.ts | v1.1.1 | 2026-06-02 | BB
+// @samjonaidi-ship-it/universal-auth | src/flows/recovery.ts | v1.2.0 | 2026-09-06 | BB
+//
+// v1.2.0 (2026-09-06): the sign-out event is `session.logout`, not `logout`.
+// It was the ONLY dotless name in this SDK's 28-event vocabulary — every other
+// one is `{feature}.{suffix}` (login.success, session.revoked,
+// session.refreshed, session.heartbeat). BB_ControlTower's /events/v1/ingest
+// validates against an exact-match allowlist that holds no dotless type, so
+// every `logout` this SDK has ever emitted was dropped at the door as
+// UNKNOWN_EVENT_TYPE and never reached ct_bff.app_events. Measured on the
+// bb-controltower-bff log source 2026-09-06: 13 events discarded over
+// 09-03 13:54 → 09-06 16:56 from bb_express alone.
+//
+// `session.logout` fits both vocabularies — this SDK already emits
+// session.refreshed / session.revoked, and CT already registers
+// session.expired / session.revoked. Nothing consumed the old name (it was
+// 100% dropped), so this is a rename with no deprecation window; the CT
+// registration must land before consumers upgrade.
 // Session/credential recovery flows — logout-all, passkey removal, device revoke.
 // Full identity-recovery (IDV) is Phase 2+ per §Out-of-scope.
 //
@@ -72,7 +88,7 @@ export async function signOut(
     // Even if server call fails (network / already revoked), local cleanup
     // must still happen — `finally` fires.
   } finally {
-    void emit('logout', { forced: false });
+    void emit('session.logout', { forced: false });
     clearEntitlements();
     await clearSession();
   }
@@ -103,7 +119,7 @@ export async function signOutEverywhere(
     // Even if server call fails (network / already revoked), local cleanup
     // must still happen — `finally` fires. Consistent with signOut().
   } finally {
-    void emit('logout', { forced: false, scope: 'all_devices' });
+    void emit('session.logout', { forced: false, scope: 'all_devices' });
     clearEntitlements();
     await clearSession();
   }

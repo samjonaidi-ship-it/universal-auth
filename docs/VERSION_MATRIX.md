@@ -1,16 +1,19 @@
-# VERSION MATRIX | BB_Universal_Auth | v1.8 | 2026-05-08 | BB
+# VERSION MATRIX | BB_Universal_Auth | v1.9 | 2026-09-06 | BB
 
 ## Current Active Versions
 
 | Component | Version | File | Last Modified |
 |-----------|---------|------|---------------|
-| Package | v1.1.0-rc.10 | `package.json` | 2026-05-22 |
+| Package | v1.1.0-rc.20 | `package.json` | 2026-09-06 |
 | permission-grants | v1.1.1 | `src/flows/permission-grants.ts` | 2026-05-08 |
 | SDK Core | v1.0.4 | `src/index.ts` | 2026-05-04 |
-| Config | v1.1.6 | `src/config.ts` | 2026-05-22 |
+| Config | v1.1.11 | `src/config.ts` | 2026-09-06 |
 | Errors | v1.0.3 | `src/errors.ts` | 2026-05-08 |
 | Client | v1.1.1 | `src/core/client.ts` | 2026-05-08 |
-| Token Manager | v1.1.3 | `src/core/token-manager.ts` | 2026-05-08 |
+| Token Manager | v1.3.1 | `src/core/token-manager.ts` | 2026-09-06 |
+| Recovery flows | v1.2.0 | `src/flows/recovery.ts` | 2026-09-06 |
+| Event Reporter | v1.0.2 | `src/core/event-reporter.ts` | 2026-09-06 |
+| Storage | v1.0.4 | `src/core/storage.ts` | 2026-09-06 |
 | Imperative API | v1.0.2 | `src/imperative/getAuth.ts` | 2026-05-08 |
 | ESLint config | v1.0.0-rc.3 | `eslint.config.js` | 2026-05-08 |
 | size-check-closure | v1.0.1 | `scripts/size-check-closure.ts` | 2026-05-08 |
@@ -39,6 +42,7 @@
 
 | Package | Status | Notes |
 |---------|--------|-------|
+| v1.1.0-rc.20 | ⚠️ REGISTER FIRST | `logout` → `session.logout`. Do NOT upgrade a consumer until `session.logout` is in its `ct_bff.apps.event_types`, or sign-out telemetry keeps being dropped under the new name. The old dotless name was 100% dropped by CT ingest, so nothing regresses by renaming. |
 | v1.1.0-rc.7 | ✅ PUBLISH-READY | rc.6 audit-debt finish: BUILD-9 git index exec bit, 4 new typed soft-error classes (DpopFallbackError, LegacyRefreshResponseError, NoNavigatorLocksError, CnfJktMismatchError), getAuth().signOut(signal), AuthErrorCode JSDoc clarification, + 9 doc/test/comment items. 824/824 tests, branches 84.79 / threshold 84. |
 | v1.1.0-rc.6 | 🟡 PUBLISHED | COV-1 finish + audit followups; superseded by rc.7. |
 | v1.1.0-rc.5 | 🟡 PUBLISHED | 14/17 audit-debt items closed; superseded by rc.6. |
