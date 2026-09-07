@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/core/storage.ts | v1.0.3 | 2026-05-22 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/storage.ts | v1.0.4 | 2026-09-06 | BB
 // Encrypted IndexedDB storage — refresh token + event queue + offline queue backing store.
 //
 // Per spec:
@@ -366,7 +366,7 @@ export async function clearRefreshToken(): Promise<void> {
 }
 
 /**
- * Nuke all SDK-owned IDB state — called on `logout` + `session.revoked`.
+ * Nuke all SDK-owned IDB state — called on `session.logout` + `session.revoked`.
  * Does NOT drop the database (other stores may still be in transit).
  */
 export async function clearAllSessionState(): Promise<void> {

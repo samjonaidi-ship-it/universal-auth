@@ -8,6 +8,59 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
 
 > **Note on v1.1.0-rc.3 (2026-05-06):** rc.3 landed on `main` but failed CI on 3 lint errors before it could be tagged or published. v1.1.0-rc.4 is the same code with those 3 errors resolved + coverage threshold reconciled with measured coverage. Public consumer path for the v1.1 line is rc.1 → rc.4 (rc.2 and rc.3 were never published).
 
+## [1.1.0-rc.20] — 2026-09-06 — `logout` → `session.logout`
+
+**BREAKING (telemetry event name).** The sign-out event is now
+`session.logout`. It was previously the bare string `logout` — the only
+dotless name in this SDK's 28-event vocabulary, where everything else is
+`{feature}.{suffix}` (`login.success`, `session.revoked`,
+`session.refreshed`, `session.heartbeat`).
+
+### Why this was invisible
+
+BB_ControlTower's `/events/v1/ingest` validates every event against an
+exact-match allowlist (`ct_bff.apps.event_types`) and drops anything unlisted
+as `UNKNOWN_EVENT_TYPE`. Not one registered type is dotless, so **every
+`logout` this SDK has ever emitted was discarded at the door** and never
+reached `ct_bff.app_events`. Measured 2026-09-06 on the `bb-controltower-bff`
+log source: 13 events dropped over 09-03 13:54 → 09-06 16:56 from `bb_express`
+alone.
+
+The failure mode is silent by construction — the emit is fire-and-forget
+(`void emit(...)`), the ingest rejection travels only in a response body the
+SDK never reads, and sign-out works correctly either way. Nothing surfaces the
+mistake except the drop log on the far side.
+
+### Changed
+
+- `src/flows/recovery.ts` v1.2.0 — `signOut()` and `signOutEverywhere()` emit
+  `session.logout`. Payloads are unchanged (`{ forced: false }` and
+  `{ forced: false, scope: 'all_devices' }`).
+- `test/integration/seed-test-users.sql` v1.2.1 — harness app registers
+  `session.logout`.
+- Comments in `event-reporter.ts`, `storage.ts`, `token-manager.ts` that named
+  the event as `logout` now say `session.logout`. The immediate-flush trigger
+  itself never string-matched the name (`flushNow()` is called directly by
+  `recovery.ts`), and the service worker's cache purge is a separate
+  `purge_caches` postMessage channel — neither is affected by the rename.
+
+### Upgrading
+
+No deprecation window and no dual-emit: nothing consumed the old name, because
+nothing ever received it. **Consumers must not upgrade until `session.logout`
+is registered for their `app_id` in `ct_bff.apps.event_types`**, or sign-out
+telemetry keeps being dropped under the new name instead of the old one.
+Apps still pinned to rc.19 or earlier continue to emit the dotless `logout`
+until they re-vendor, so the old name stays droppable on the CT side for as
+long as any consumer is behind.
+
+### Added
+
+- `test/unit/flows/recovery-logout-event-name.test.ts` — pins the name on the
+  wire envelope (not on the call site), asserts the dotless form is absent, and
+  checks the emitted name matches the `{feature}.{suffix}` shape the allowlist
+  enforces.
+
 ## [1.1.0-rc.10] — 2026-05-22 — Remove impersonation surface
 
 **Removal of dead API.** The impersonation flow targeted CT BFF endpoints

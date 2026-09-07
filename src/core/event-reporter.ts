@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/core/event-reporter.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/event-reporter.ts | v1.0.2 | 2026-09-06 | BB
 // Event batching + ingestion — POST /events/v1/ingest (§3.2 / §6).
 //
 // v1.0.1 (D5): the device id is cached at module level after first resolution.
@@ -10,7 +10,7 @@
 //   §6.3   Envelope auto-populates sdk_version, protocol_version, client_ts
 //   §6.3   Unknown event types → server drops; SDK logs and discards
 //   §8.1   10s flush window OR 50-event cap, whichever first
-//   §8.1   Immediate flush on `logout`, `session.revoked`
+//   §8.1   Immediate flush on `session.logout`, `session.revoked`
 //
 // Persistence: events go to IDB `event_queue` so they survive page reload.
 // On successful batch POST, rows are removed from IDB.
@@ -201,7 +201,7 @@ export function isTransientIdbError(e: unknown): boolean {
 }
 
 /**
- * Force an immediate flush. Used on `logout`, `session.revoked`, and
+ * Force an immediate flush. Used on `session.logout`, `session.revoked`, and
  * page `visibilitychange → hidden`.
  */
 export async function flushNow(): Promise<void> {

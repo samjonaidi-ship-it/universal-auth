@@ -1,4 +1,4 @@
--- @samjonaidi-ship-it/universal-auth | test/integration/seed-test-users.sql | v1.2.0 | 2026-05-22 | BB
+-- @samjonaidi-ship-it/universal-auth | test/integration/seed-test-users.sql | v1.2.1 | 2026-09-06 | BB
 --
 -- Idempotent seed for the 4 test users the integration suite expects per spec §10.3:
 --   - test-crew-1@test.bainbridgebuilders.com         (persona: crew)
@@ -49,7 +49,7 @@ VALUES (
     'login.failure',
     'session.refreshed',
     'session.revoked',
-    'logout',
+    'session.logout',
     'enrollment.code_sent',
     'enrollment.completed',
     'enrollment.code_failed',
