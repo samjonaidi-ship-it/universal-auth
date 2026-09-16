@@ -1,18 +1,27 @@
 #!/usr/bin/env bash
 
-# BB_REVIEW_HOOK v1.3 — automatic Tier 1 review on risky pushes.
+# BB_REVIEW_HOOK v1.4 — automatic Tier 1 review on risky pushes.
 # Installed by C:\Users\samjo\Desktop\Claude\TOOLS\install-hooks.mjs — do not edit this block by hand.
 # Routine pushes cost nothing; only risky paths reach a model.
 # Escape hatch:  BB_SKIP="<reason>" git push   (NOT --no-verify, which also skips
 # the architecture guardrails and is blocked by a PreToolUse guard).
 _BB_INPUT=$(cat)
-if [ -z "$BB_SKIP" ] && [ -z "$BB_SKIP_REVIEW" ]; then
-  if ! command -v node >/dev/null 2>&1; then
+# v1.4: a skip (BB_SKIP / BB_SKIP_REVIEW) is handled AND LOGGED by bb-review.mjs, which exits 0
+# after recording the reason in ~/.bb-review-runs.jsonl. Before, the skip exited here unlogged.
+if command -v node >/dev/null 2>&1; then
+  if [ -n "$BB_SKIP" ] || [ -n "$BB_SKIP_REVIEW" ]; then
+    # The hatch must not depend on the reviewer it bypasses (reviewer P1, 2026-09-15): a
+    # broken bb-review.mjs must still let BB_SKIP through - logged when it can, said when not.
+    printf '%s\n' "$_BB_INPUT" | node "C:/Users/samjo/Desktop/Claude/TOOLS/bb-review.mjs" --pre-push || echo "[bb-review] BB_SKIP set but the reviewer failed to run (exit $?) — skipped, NOT logged." >&2
+  else
+    printf '%s\n' "$_BB_INPUT" | node "C:/Users/samjo/Desktop/Claude/TOOLS/bb-review.mjs" --pre-push || exit $?
+  fi
+elif [ -n "$BB_SKIP" ] || [ -n "$BB_SKIP_REVIEW" ]; then
+  echo "[bb-review] BB_SKIP=${BB_SKIP:-$BB_SKIP_REVIEW} — review skipped (no node on PATH, so NOT logged)." >&2
+else
   echo "[bb-review] BLOCKED: no node on PATH, so this push cannot be reviewed." >&2
   echo '[bb-review] Fix PATH, or push deliberately with:  BB_SKIP="<reason>" git push' >&2
   exit 1
-  fi
-  printf '%s\n' "$_BB_INPUT" | node "C:/Users/samjo/Desktop/Claude/TOOLS/bb-review.mjs" --pre-push || exit $?
 fi
 # Restore stdin so the original hook body below still receives its refs.
 exec <<BB_REVIEW_STDIN_EOF
@@ -20,6 +29,7 @@ $_BB_INPUT
 BB_REVIEW_STDIN_EOF
 
 # --- original hook follows, unchanged ---
+
 
 
 
