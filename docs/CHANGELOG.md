@@ -8,6 +8,67 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
 
 > **Note on v1.1.0-rc.3 (2026-05-06):** rc.3 landed on `main` but failed CI on 3 lint errors before it could be tagged or published. v1.1.0-rc.4 is the same code with those 3 errors resolved + coverage threshold reconciled with measured coverage. Public consumer path for the v1.1 line is rc.1 → rc.4 (rc.2 and rc.3 were never published).
 
+## [1.1.0-rc.21] — 2026-09-17 — stale-refresh session-revoke race (P4.7)
+
+**Fixes a spontaneous-logout bug**: a session revoked and then re-authenticated
+within seconds could have its BRAND-NEW session torn down and revoked
+server-side by cleanup belonging to the OLD, unrelated failure.
+
+### The race (ct_bff.audit_log, production, 2026-09-17)
+
+1. `00:40:52.387` — a session is revoked (unrelated admin action).
+2. `00:40:59.244` — the client re-authenticates via `/auth/pin`, minting a
+   NEW session.
+3. `00:40:59.633` — a background `/auth/v1/session/refresh` call that had
+   been in flight for the OLD session finally resolves 401
+   (`AUTH_SESSION_REVOKED` — correct; that token really is dead).
+4. `00:41:04.191` — 5s later, cleanup for that failed refresh calls
+   `/auth/v1/session/revoke` — but revokes the NEW session (from step 2),
+   not the old one that actually failed.
+
+The root cause: neither the refresh-failure handler nor `signOut()`'s cleanup
+path captured *which* session a given attempt belonged to. Both acted on
+"whatever the client currently considers its active session" at the moment
+they finally ran — which, after a fast re-auth, is no longer the session the
+failure was about.
+
+### Fixed
+
+- `src/core/token-manager.ts` v1.3.2 — `performRefresh()` now captures the
+  session id it is refreshing FOR before the network round-trip starts. On
+  both the terminal-failure and transient-failure branches, the local
+  clear/broadcast/notify is skipped entirely if `state.sessionId` has since
+  moved on to a different session — the stale response no longer touches a
+  session it wasn't about.
+- `src/flows/recovery.ts` v1.3.0 — `signOut()` accepts an optional
+  `expectedSessionId`. When provided and it no longer matches the current
+  session, `signOut()` is a no-op (no server call, no local clear).
+  Consumers doing cleanup after a stale signal (a failed background refresh,
+  a liveness probe, an offline-queue 401) should capture
+  `getCurrentSessionId()` at the moment they detect the failure and pass it
+  here, instead of calling bare `signOut()`.
+- `src/react/useAuth.ts` v1.0.2 / `src/imperative/getAuth.ts` v1.0.3 —
+  `signOut()`'s type surface includes `expectedSessionId?`, forwarded as-is.
+
+### Added
+
+- `test/unit/core/token-manager.test.ts` — regression test reproducing the
+  race directly: a stale terminal refresh failure must not evict a session
+  installed while it was in flight (plus a control proving the un-raced case
+  still clears normally).
+- `test/unit/flows/recovery.test.ts` — `signOut({ expectedSessionId })`
+  no-ops when the session has moved on, and still proceeds normally when it
+  matches.
+
+### Not in this release
+
+CalExp5's `bb-session-expired` dispatch sites (api-base.js, offline-mutation-
+queue.js, session-liveness.js) still call bare `signOut()`. Threading a
+captured session id through to `expectedSessionId` there is tracked
+separately in that repo — this release fixes the SDK's own internal race
+(the state corruption in `performRefresh()`) and ships the primitive
+(`expectedSessionId`) consumers need for the rest.
+
 ## [1.1.0-rc.20] — 2026-09-06 — `logout` → `session.logout`
 
 **BREAKING (telemetry event name).** The sign-out event is now
