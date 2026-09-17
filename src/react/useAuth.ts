@@ -1,8 +1,11 @@
-// @samjonaidi-ship-it/universal-auth | src/react/useAuth.ts | v1.0.1 | 2026-05-08 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/useAuth.ts | v1.0.2 | 2026-09-17 | BB
 // Public useAuth hook — subscribes to IdentityContext + StatusContext only.
 // Per §D2.4: personas / activePersona / hasPersona / switchActivePersona / allFeatures / agent.
 // allFeatures() reads entitlements module directly (so useAuth doesn't subscribe
 // to EntitlementsContext and re-render when features change — see §8.4 split rule).
+//
+// v1.0.2 (P4.7): signOut's type surface now includes `expectedSessionId?`,
+// forwarded straight through to flows/recovery.ts signOut() (no logic here).
 //
 // v1.0.1 (rc.5 audit D2 + D8): signOut/signOutEverywhere now accept
 // { signal?: AbortSignal } at the type boundary (the underlying flows
@@ -43,7 +46,8 @@ export interface UseAuthReturn {
   requestCode: typeof requestCodeFlow;
   // D2 (rc.5): signal? plumbed through. The underlying recovery.ts flows
   // already accepted AbortSignal; the React surface was hiding it.
-  signOut: (options?: { signal?: AbortSignal }) => Promise<void>;
+  // P4.7: expectedSessionId? plumbed through too — see recovery.ts signOut().
+  signOut: (options?: { signal?: AbortSignal; expectedSessionId?: string }) => Promise<void>;
   signOutEverywhere: (options?: { signal?: AbortSignal }) => Promise<void>;
 }
 

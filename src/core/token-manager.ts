@@ -1,4 +1,16 @@
-// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.3.1 | 2026-09-06 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.3.2 | 2026-09-17 | BB
+// v1.3.2 (P4.7): performRefresh() now captures the session id it is
+//   refreshing FOR before the network round-trip starts. A refresh can sit
+//   on the wire for seconds; if a NEW session is installed (setSession(),
+//   e.g. a PIN re-auth after the server revoked this very session) while the
+//   OLD refresh is still in flight, the stale response — success or terminal
+//   failure — must not mutate/clear/broadcast against whatever session is
+//   merely current NOW. Production trace (ct_bff.audit_log, 2026-09-17): a
+//   session revoked at T+0, a PIN re-auth mints a new session at T+6.8s, and
+//   the stale refresh's 401 arrives at T+7.2s — which used to wipe the new
+//   session's local state and (via the caller's cleanup signOut()) revoke it
+//   server-side too. See flows/recovery.ts v1.3.0 for the matching guard on
+//   the revoke side.
 // v1.3.0 (P4.6): INVALID_DPOP_BINDING joins the terminal set — once sessions
 //   are DPoP-bound, a lost keypair makes the refresh token permanently
 //   unusable on that device and retrying would loop forever.
@@ -371,6 +383,11 @@ async function performRefresh(): Promise<string | null> {
       return state.accessToken;
     }
 
+    // P4.7: capture which session this attempt is FOR, before the network
+    // round-trip starts. See the note at the catch block below — this is
+    // what lets a stale response tell "still mine" from "superseded".
+    const sessionIdAtStart = state.sessionId;
+
     const rt = await getRefreshToken();
     if (rt === null) {
       // No refresh token — need re-auth
@@ -489,14 +506,28 @@ async function performRefresh(): Promise<string | null> {
       // and is then correctly treated as terminal here. That degrades to
       // today's behaviour in a rare case instead of being today's behaviour in
       // every case.
+      // P4.7: this refresh attempt was for `sessionIdAtStart`. A refresh can
+      // sit on the wire for seconds on a bad connection — long enough for the
+      // user to re-authenticate (PIN re-entry after the server revoked this
+      // very session) and install a BRAND NEW session via setSession() before
+      // this stale response ever arrives. `state.sessionId` at this point
+      // reflects whichever session is current NOW, which may no longer be
+      // the one that failed. Tearing down (local clear, IDB wipe, broadcast)
+      // in that case would destroy a live, unrelated session for a failure
+      // that has nothing to do with it — exactly the incident this guards
+      // against: a stale session/refresh 401 must not evict the session that
+      // superseded it.
+      const staleness = state.sessionId !== sessionIdAtStart;
       if (isTerminalRefreshError(err)) {
-        await clearRefreshToken();
-        state.accessToken = null;
-        state.accessExpiresAt = 0;
-        state.sessionId = null;
-        broadcast({ type: 'session_cleared' });
-        notifyListeners();
-      } else {
+        if (!staleness) {
+          await clearRefreshToken();
+          state.accessToken = null;
+          state.accessExpiresAt = 0;
+          state.sessionId = null;
+          broadcast({ type: 'session_cleared' });
+          notifyListeners();
+        }
+      } else if (!staleness) {
         // Transient. Drop only the in-memory access token — it is expired or
         // near-expired anyway, so serving it would be wrong — but KEEP the
         // refresh token and the session id, and deliberately do NOT notify or

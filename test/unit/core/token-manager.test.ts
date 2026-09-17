@@ -319,6 +319,84 @@ describe('token-manager', () => {
       expect(listener).toHaveBeenCalled();
     });
 
+    // ── P4.7 — the session-revoke race ──────────────────────────────────
+    //
+    // Production sequence (ct_bff.audit_log, 2026-09-17): a session is
+    // revoked server-side; 6.8s later the client re-authenticates via PIN,
+    // minting a NEW session; 0.4s after THAT, a /session/refresh call that
+    // had been in flight for the OLD (now-dead) session finally resolves
+    // 401. Before this fix, the catch branch below cleared/broadcast based
+    // on "whatever `state` holds right now" — which by then was the new
+    // session — so the stale failure evicted a session that had nothing to
+    // do with it.
+    it('a stale terminal refresh failure does NOT evict a session installed while it was in flight', async () => {
+      await setSession({
+        accessToken: 'stale-old',
+        refreshToken: 'rt-old',
+        expiresAt: Date.now() - 1000,
+        sessionId: 'sess-old',
+      });
+
+      let releaseRefresh: () => void = () => {};
+      const refreshGate = new Promise<void>((resolve) => {
+        releaseRefresh = resolve;
+      });
+
+      registerRefreshCallback(async (rt) => {
+        expect(rt).toBe('rt-old');
+        await refreshGate; // hang until the test says the network finally answered
+        throw new AuthSessionRevoked(); // the OLD session really was revoked server-side
+      });
+
+      // Kick off the stale refresh for the OLD session — don't await yet,
+      // it's parked on refreshGate.
+      const stalePromise = getAccessToken();
+
+      // While that refresh is still on the wire, the user re-authenticates
+      // (PIN) and a brand-new, unrelated session is installed.
+      await setSession({
+        accessToken: 'at-new',
+        refreshToken: 'rt-new',
+        expiresAt: Date.now() + 15 * 60_000,
+        sessionId: 'sess-new',
+      });
+
+      const listener = vi.fn();
+      onSessionChange(listener);
+
+      // NOW the stale refresh's network call finally resolves with the
+      // terminal error.
+      releaseRefresh();
+      await expect(stalePromise).rejects.toThrow(AuthSessionRevoked);
+
+      // The NEW session must survive untouched: no local wipe, no
+      // cross-tab session_cleared broadcast, nothing.
+      expect(getCurrentSessionId()).toBe('sess-new');
+      expect(hasLiveAccessToken()).toBe(true);
+      expect(await getRefreshToken()).toBe('rt-new');
+      expect(listener).not.toHaveBeenCalled();
+    });
+
+    it('a terminal refresh failure still clears when the session has NOT moved on', async () => {
+      // Control for the test above: same terminal error, but nothing raced
+      // it, so the existing clear-on-terminal-failure behavior must be intact.
+      await setSession({
+        accessToken: 'stale',
+        refreshToken: 'rt-unraced',
+        expiresAt: Date.now() - 1000,
+        sessionId: 'sess-unraced',
+      });
+
+      registerRefreshCallback(async () => {
+        throw new AuthSessionRevoked();
+      });
+
+      await expect(getAccessToken()).rejects.toThrow(AuthSessionRevoked);
+      expect(getCurrentSessionId()).toBeNull();
+      expect(hasLiveAccessToken()).toBe(false);
+      expect(await getRefreshToken()).toBeNull();
+    });
+
     it('recovers on retry after a transient failure, with no re-auth', async () => {
       // End-to-end proof of the point of the phase: blip → recovery, and the
       // retry reuses the SAME refresh token (its Idempotency-Key is derived

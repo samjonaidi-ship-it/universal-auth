@@ -83,6 +83,46 @@ describe('flows/recovery', () => {
     expect(hasLiveAccessToken()).toBe(false);
   });
 
+  // ── P4.7 — expectedSessionId scoping ──────────────────────────────────
+  //
+  // signOut() is also used as cleanup after a stale signal (a background
+  // /session/refresh that finally 401'd, a liveness probe, an offline-queue
+  // drain hitting 401) that believed SOME session was dead. Without scoping,
+  // that cleanup revokes and clears whatever session happens to be current
+  // at the moment it runs — which, if the user re-authenticated in the
+  // meantime, is a brand-new, perfectly live session that has nothing to do
+  // with the original failure.
+  it('signOut with expectedSessionId no-ops when the session has already moved on', async () => {
+    await installSession(); // sessionId 's1', refreshToken 'rt'
+    // A newer session supersedes it — simulates a re-auth racing the cleanup.
+    await setSession({
+      accessToken: 'at-2',
+      refreshToken: 'rt-2',
+      expiresAt: Date.now() + 60_000,
+      sessionId: 's2',
+    });
+
+    await signOut({ expectedSessionId: 's1' });
+
+    // No server call at all — the stale cleanup target is gone, and there is
+    // nothing here to revoke.
+    expect(fetchSpy).not.toHaveBeenCalled();
+    // The newer session must be completely untouched.
+    expect(hasLiveAccessToken()).toBe(true);
+  });
+
+  it('signOut with expectedSessionId proceeds normally when it matches the current session', async () => {
+    await installSession(); // sessionId 's1'
+    fetchSpy.mockResolvedValueOnce(jsonResp(200, { ok: true }));
+
+    await signOut({ expectedSessionId: 's1' });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const call = fetchSpy.mock.calls[0]!;
+    expect(String(call[0])).toContain('/auth/v1/session/revoke');
+    expect(hasLiveAccessToken()).toBe(false);
+  });
+
   it('signOutEverywhere posts to /session/revoke-all', async () => {
     await installSession();
     fetchSpy.mockResolvedValueOnce(jsonResp(200, { ok: true }));

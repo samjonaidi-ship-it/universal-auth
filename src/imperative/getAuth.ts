@@ -1,8 +1,11 @@
-// @samjonaidi-ship-it/universal-auth | src/imperative/getAuth.ts | v1.0.2 | 2026-05-08 | BB
+// @samjonaidi-ship-it/universal-auth | src/imperative/getAuth.ts | v1.0.3 | 2026-09-17 | BB
 // Non-React imperative entry per spec §5.3. Returns a small client wrapping
 // the token-manager + flow surfaces so consumers (e.g. CalExp5's api-base.js
 // wrapper) can read the current access token, observe session changes, and
 // sign out without going through React context.
+//
+// v1.0.3 (P4.7): signOut's type surface now includes `expectedSessionId?`,
+// forwarded straight through to flows/recovery.ts signOut() (no logic here).
 //
 // rc.3: replaced the Day-1 stub. signIn() delegates to flows/code-flow's
 // requestCode + verifyCode (two-step). getSession() returns a thin Session
@@ -90,8 +93,11 @@ export interface AuthClient {
    * v1.0.2 (rc.7 audit D2-imp): accepts `{ signal? }` to align with the
    * React `useAuth().signOut` boundary. Aborting the signal cancels the
    * server revoke RPC; local cleanup still runs in the `finally` block.
+   *
+   * v1.3.0 (P4.7): accepts `expectedSessionId?` — see recovery.ts signOut()
+   * for the session-supersession no-op this guards against.
    */
-  signOut(options?: { signal?: AbortSignal }): Promise<void>;
+  signOut(options?: { signal?: AbortSignal; expectedSessionId?: string }): Promise<void>;
 }
 
 let cachedClient: AuthClient | null = null;
@@ -148,7 +154,7 @@ export function getAuth(): AuthClient {
       });
     },
 
-    async signOut(options?: { signal?: AbortSignal }): Promise<void> {
+    async signOut(options?: { signal?: AbortSignal; expectedSessionId?: string }): Promise<void> {
       await recoverySignOut(options);
     },
   };
