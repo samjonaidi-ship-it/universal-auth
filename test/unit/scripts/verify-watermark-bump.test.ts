@@ -1,5 +1,5 @@
 // @vitest-environment node
-// @samjonaidi-ship-it/universal-auth | test/unit/scripts/verify-watermark-bump.test.ts | v1.0.0 | 2026-09-21 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/scripts/verify-watermark-bump.test.ts | v1.0.1 | 2026-09-21 | BB
 //
 // scripts/verify-watermark-bump.ts + scripts/lib/watermark-scan.ts - "a changed,
 // watermarked file must bump its watermark" (`bb outstanding` O-3; lookback audits
@@ -554,8 +554,13 @@ describe('CLI against a real repo', { timeout: 90_000 }, () => {
     }
   });
 
-  // What actions/checkout really gives a pull_request job: ONE commit, the merge commit, no parents.
-  describe('in CI on a depth-1 clone (what actions/checkout fetches)', () => {
+  // What actions/checkout really gives a pull_request job, reproduced step for step (its own log, measured on
+  // this repo's first CI run): `git init`, `remote add origin`, then
+  //   git fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +<merge sha>:refs/remotes/pull/N/merge
+  // and a detached checkout of that ref. The merge commit lives on refs/pull/N/merge - NOT under refs/heads -
+  // and the remote's fetch refspec is only refs/heads/*. A plain `git clone --depth 1` of a branch is a
+  // different topology and hid the first version of this fix (`git fetch --deepen=1 origin`), which failed in CI.
+  describe('in CI on a depth-1 checkout of refs/pull/N/merge (what actions/checkout fetches)', () => {
     let origin: string;
     let clone: string;
     const shallowCloneOfMergedPr = (branchA: string) => {
@@ -567,11 +572,25 @@ describe('CLI against a real repo', { timeout: 90_000 }, () => {
       gitIn(origin, 'checkout', '-q', '-b', 'pr');
       put('src/a.ts', branchA, origin);
       commitIn(origin, 'the PR change');
-      gitIn(origin, 'checkout', '-q', 'main');
-      // The PR's test-merge commit: parent 1 = the base tip, parent 2 = the PR head.
+      // The PR's test-merge commit: parent 1 = the base tip, parent 2 = the PR head. Built detached and
+      // parked on refs/pull/1/merge like GitHub does; no branch points at it.
+      gitIn(origin, 'checkout', '-q', '--detach', 'main');
       gitIn(origin, 'merge', '-q', '--no-ff', '-m', 'Merge pull request #1', 'pr');
-      execFileSync('git', ['clone', '-q', '--depth', '1', pathToFileURL(origin).href, clone], { env: cleanEnv(), stdio: 'pipe' });
+      const mergeSha = gitIn(origin, 'rev-parse', 'HEAD').trim();
+      gitIn(origin, 'update-ref', 'refs/pull/1/merge', mergeSha);
+      gitIn(origin, 'checkout', '-q', 'main');
+      gitIn(origin, 'config', 'uploadpack.allowAnySHA1InWant', 'true'); // GitHub serves a fetch by SHA
+      mkdirSync(clone);
+      gitIn(clone, 'init', '-q');
+      gitIn(clone, 'remote', 'add', 'origin', pathToFileURL(origin).href);
+      gitIn(
+        clone,
+        'fetch', '--no-tags', '--prune', '--no-recurse-submodules', '--depth=1',
+        'origin', `+${mergeSha}:refs/remotes/pull/1/merge`,
+      );
+      gitIn(clone, 'checkout', '--force', '-q', 'refs/remotes/pull/1/merge');
       // The premise of every test below: HEAD really has no parent here. Without this they would prove nothing.
+      expect(gitIn(clone, 'rev-parse', 'HEAD').trim()).toBe(mergeSha);
       expect(gitIn(clone, 'rev-parse', '--is-shallow-repository').trim()).toBe('true');
       expect(() => gitIn(clone, 'rev-parse', '--verify', '--quiet', 'HEAD^')).toThrow();
     };
@@ -579,7 +598,17 @@ describe('CLI against a real repo', { timeout: 90_000 }, () => {
       for (const d of [origin, clone && resolve(clone, '..')]) if (d) rmSync(d, { recursive: true, force: true });
     });
 
-    it('deepens by one commit, then FAILS a PR that did not bump', async () => {
+    it('premise: `git fetch --deepen=1 origin` (the first fix) does NOT reach HEAD^ here - the CI failure', () => {
+      shallowCloneOfMergedPr(`${A('1.0.0-rc.5')}export const a = 2;\n`);
+      try {
+        gitIn(clone, 'fetch', '--no-tags', '--quiet', '--deepen=1', 'origin');
+      } catch {
+        // a failing fetch is the same outcome: HEAD^ stays absent
+      }
+      expect(() => gitIn(clone, 'rev-parse', '--verify', '--quiet', 'HEAD^')).toThrow();
+    });
+
+    it('fetches the parent, then FAILS a PR that did not bump', async () => {
       shallowCloneOfMergedPr(`${A('1.0.0-rc.5')}export const a = 2;\n`);
       const r = await run({ CI: 'true' }, clone);
       expect(r.status).toBe(1);
@@ -587,7 +616,7 @@ describe('CLI against a real repo', { timeout: 90_000 }, () => {
       expect(r.stderr).toContain('vs HEAD^');
     });
 
-    it('deepens by one commit, then passes a PR that bumped', async () => {
+    it('fetches the parent, then passes a PR that bumped', async () => {
       shallowCloneOfMergedPr(`${A('1.0.0-rc.6', '2026-09-21')}export const a = 2;\n`);
       const r = await run({ CI: 'true' }, clone);
       expect(r.status).toBe(0);
@@ -600,6 +629,7 @@ describe('CLI against a real repo', { timeout: 90_000 }, () => {
       const r = await run({ CI: 'true' }, clone);
       expect(r.status).toBe(1);
       expect(r.stderr).toContain('could not diff');
+      expect(r.stderr).toContain('fatal:'); // git's own reason rides along - the first CI failure said only "Command failed"
       expect(r.stderr).not.toContain('root commit');
     });
 

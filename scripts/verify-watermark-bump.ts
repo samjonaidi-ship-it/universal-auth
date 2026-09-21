@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | scripts/verify-watermark-bump.ts | v1.0.0 | 2026-09-21 | BB
+// @samjonaidi-ship-it/universal-auth | scripts/verify-watermark-bump.ts | v1.0.1 | 2026-09-21 | BB
 // CI gate: a changed, watermarked file must bump its watermark.
 //
 // scripts/verify-watermarks.ts checks that every source file HAS the header; this
@@ -21,7 +21,8 @@
 //   in CI (CI=true)   HEAD^ - a PR is checked out as a merge commit, so HEAD^ is the base
 //                     branch tip; on a push to main it is the previous main. actions/checkout
 //                     fetches ONE commit by default, so HEAD^ does not exist yet: this script
-//                     deepens the clone by one commit first (ci.yml is not edited to do it).
+//                     fetches one more level (`git fetch --depth=2 origin <HEAD sha>`) first -
+//                     ci.yml is not edited to do it.
 //   locally, on a branch   origin/main - a branch of five commits is judged as one change
 //                     (HEAD^ would judge only the last commit and call an earlier
 //                     commit's bump missing).
@@ -83,17 +84,26 @@ function resolveBase(): string {
   return 'HEAD^';
 }
 
-/** actions/checkout is depth 1: HEAD^ is absent until the clone is deepened by one commit. */
+/**
+ * actions/checkout is depth 1: HEAD^ is absent until one more level of history is fetched.
+ * The fetch names HEAD's own SHA. `git fetch --deepen=1 origin` does NOT work here - a pull_request job
+ * is a checkout of refs/pull/N/merge, which the default refspec (refs/heads/*) never fetches, so the
+ * shallow commit is not one of the tips `--deepen` extends (measured on this repo's first CI run).
+ */
 function ensureParentAvailable(): void {
   if (tryGit(['rev-parse', '--is-shallow-repository']) !== 'true') return;
   if (tryGit(['rev-parse', '--verify', '--quiet', 'HEAD^']) !== null) return;
-  if (tryGit(['fetch', '--no-tags', '--quiet', '--deepen=1', 'origin']) === null) {
-    console.warn(`${TAG} could not deepen the shallow clone (git fetch --deepen=1 origin failed)`);
+  const head = tryGit(['rev-parse', 'HEAD']);
+  if (head === null || tryGit(['fetch', '--no-tags', '--quiet', '--depth=2', 'origin', head]) === null) {
+    console.warn(`${TAG} could not fetch the parent of the shallow checkout (git fetch --depth=2 origin <HEAD> failed)`);
   }
 }
 
 function cannotJudge(base: string, err: unknown): never {
-  const why = String(err instanceof Error ? err.message : err).split('\n')[0];
+  const first = (s: unknown): string => String(s ?? '').trim().split('\n')[0] ?? '';
+  const why = [first(err instanceof Error ? err.message : err), first((err as { stderr?: unknown } | null)?.stderr)]
+    .filter((s) => s !== '')
+    .join(' - ');
   console.error(`${TAG} could not diff against ${base}: ${why}`);
   // A real root commit has nothing before it: no change to judge, in CI as anywhere. A SHALLOW clone's
   // boundary commit also looks parentless to git, so shallow is excluded - that is a failure, not a root.
