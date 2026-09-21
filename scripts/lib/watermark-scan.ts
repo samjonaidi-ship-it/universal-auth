@@ -45,6 +45,17 @@
 //   A header-shaped line this parser cannot read is REPORTED (`unrecognised`), never
 //   silently skipped - CalExp5's audit #13 was a bump hook that knew two header shapes,
 //   so a third was never bumped and nobody noticed for months.
+//
+// REPLAYED AGAINST HISTORY (2026-09-21, the last 141 first-parent units of main, each judged
+// as a PR would be): 110 units modified at least one watermarked file (857 file checks).
+// A first cut of the rule failed 90 of them on 606 files - 345 of those were changes that
+// touched ONLY the header line (a scope rename, a path fix, a date sync), which is why a
+// header-only change is out of scope above. With that, 90 units still fail, on 261 files:
+// 246 not-bumped (a real body change under an unchanged version, 27 of them comment-only),
+// 13 version-decreased (11 in one deliberate resync commit, aa88a6e - a false positive the
+// rule cannot tell apart, it takes BB_SKIP; 2 real), 2 watermark-removed (1 real, 1 a false
+// positive: an installer block pushed a header past line 8). So the SDK's history mostly
+// did NOT bump on change: that is the gap this closes, not noise in the rule.
 
 /** How many leading lines may hold the header (a pragma, a shebang or a marker can precede it). */
 export const HEADER_LINES = 8;
@@ -74,14 +85,15 @@ export interface Watermark {
 
 /**
  * Find the watermark in the first HEADER_LINES lines of `text`.
- * Handles LF and CRLF (a Windows autocrlf checkout turns every line into `...\r`)
- * and a UTF-8 BOM.
+ * Handles LF and CRLF (a Windows autocrlf checkout turns every line into `...\r`; the
+ * trailing CR is dropped by trim()) and a UTF-8 BOM (U+FEFF is whitespace to `\s`, so the
+ * opener match steps over it).
  */
 export function parseWatermark(text: string | null | undefined): Watermark | null {
   if (typeof text !== 'string' || text.length === 0) return null;
-  const lines = text.replace(BOM, '').split('\n', HEADER_LINES);
+  const lines = text.split('\n', HEADER_LINES);
   for (let i = 0; i < lines.length; i++) {
-    const raw = (lines[i] ?? '').replace(/\r$/, '');
+    const raw = lines[i] ?? '';
     if (!COMMENT_START.test(raw)) continue;
     const m = STAMP.exec(raw);
     if (!m) continue;
@@ -166,7 +178,6 @@ export function judgeFile(baseText: string | null, headText: string | null): Vio
   if (baseText === null || headText === null) return null; // added or deleted
   const base = parseWatermark(baseText);
   if (!base) return null; // never promised a watermark
-  if (toLf(baseText) === toLf(headText)) return null; // no change to record (a line-ending flip is not one)
   const head = parseWatermark(headText);
   if (!head) {
     return { kind: 'watermark-removed', from: base.versionText, to: null, line: base.line };

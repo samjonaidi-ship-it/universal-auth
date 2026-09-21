@@ -200,6 +200,11 @@ describe('judgeFile - the rule', () => {
       const crlf = (s: string) => s.replace(/\n/g, '\r\n');
       expect(judgeFile(`${H('1.0.0')}x\n`, crlf(`${H('1.0.0', '2026-12-31')}x\n`))).toBeNull();
       expect(judgeFile(`${H('1.0.0')}x\n`, String.fromCharCode(0xfeff) + `${H('1.0.0', '2026-12-31')}x\n`)).toBeNull();
+      // With the header on line 2 the BOM stays in the body, so a BOM that appears or goes away must not
+      // read as a content change of its own.
+      const bom = String.fromCharCode(0xfeff);
+      expect(judgeFile(`${pragma}${H('1.0.0')}x\n`, `${bom}${pragma}${H('1.0.0', '2026-12-31')}x\n`)).toBeNull();
+      expect(judgeFile(`${bom}${pragma}${H('1.0.0')}x\n`, `${pragma}${H('1.0.0', '2026-12-31')}x\n`)).toBeNull();
     });
   });
 
