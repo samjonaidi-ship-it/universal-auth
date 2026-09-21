@@ -147,6 +147,14 @@ export interface Violation {
 
 const toLf = (s: string): string => s.replace(/\r\n/g, '\n');
 
+/** The text with its watermark line removed (LF, no BOM): "did anything but the header change?" */
+function withoutHeader(text: string): string {
+  const w = parseWatermark(text);
+  const lines = toLf(text).replace(BOM, '').split('\n');
+  if (w) lines.splice(w.line - 1, 1);
+  return lines.join('\n');
+}
+
 /**
  * Judge one modified file.
  * @param baseText content on the base side (null = did not exist)
@@ -165,6 +173,11 @@ export function judgeFile(baseText: string | null, headText: string | null): Vio
   }
   const c = compareVersions(head, base);
   if (c > 0) return null;
+  // The header line is the file's own metadata, not its content: a change that touches NOTHING but that
+  // line (a scope rename, a corrected path, a date sync) has no content change to record. Measured on the
+  // last 141 first-parent units of main: 345 of the 591 same-version changes were exactly this. It is
+  // deliberately NOT extended to a DECREASE or a removed header, which stay violations.
+  if (c === 0 && withoutHeader(baseText) === withoutHeader(headText)) return null;
   return {
     kind: c === 0 ? 'not-bumped' : 'version-decreased',
     from: base.versionText,

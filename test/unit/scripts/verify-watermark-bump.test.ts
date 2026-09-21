@@ -169,8 +169,38 @@ describe('judgeFile - the rule', () => {
     expect(judgeFile(base, `${H('1.1.0-rc.5')}code B\n`)).toMatchObject({ kind: 'not-bumped', from: '1.1.0-rc.5', to: '1.1.0-rc.5', line: 1 });
   });
 
-  it('rejects a date-only edit: a new date under the same version is not a bump', () => {
+  it('a new date under the same version is not a bump: the body change is still unrecorded', () => {
     expect(judgeFile(base, `${H('1.1.0-rc.5', '2026-12-31')}code B\n`)?.kind).toBe('not-bumped');
+  });
+
+  describe('a change that touches NOTHING but the header line', () => {
+    // The header is the file's own metadata. 345 of the 591 same-version changes in the last 141 units of
+    // main were exactly this (a package-scope rename, a corrected path, a date sync): no content to record.
+    it('needs no bump: a scope rename, a corrected path, a date sync', () => {
+      expect(judgeFile(base, `${H('1.1.0-rc.5', '2026-05-08', 'src/x.ts', '// @other/scope')}code A\n`)).toBeNull();
+      expect(judgeFile(base, `${H('1.1.0-rc.5', '2026-05-08', 'src/y.ts')}code A\n`)).toBeNull();
+      expect(judgeFile(base, `${H('1.1.0-rc.5', '2026-12-31')}code A\n`)).toBeNull();
+      expect(judgeFile(base, `${H('1.1.0-rc.5', null)}code A\n`)).toBeNull();
+    });
+
+    it('holds only when the rest of the file is byte-for-byte the same (one edited body line is enough)', () => {
+      expect(judgeFile(base, `${H('1.1.0-rc.5', '2026-12-31')}code A \n`)?.kind).toBe('not-bumped');
+      expect(judgeFile(`${H('1.1.0-rc.5')}a\nb\n`, `${H('1.1.0-rc.5')}a\nb\nc\n`)?.kind).toBe('not-bumped');
+    });
+
+    it('is not extended to a version that went DOWN or a header that was removed', () => {
+      expect(judgeFile(base, `${H('1.1.0-rc.4')}code A\n`)?.kind).toBe('version-decreased');
+      expect(judgeFile(base, 'code A\n')?.kind).toBe('watermark-removed');
+    });
+
+    it('reads the header on line 2 (behind a pragma) the same way, and ignores CRLF and a BOM', () => {
+      const pragma = '// @vitest-environment node\n';
+      expect(judgeFile(`${pragma}${H('1.0.0')}x\n`, `${pragma}${H('1.0.0', '2026-12-31')}x\n`)).toBeNull();
+      expect(judgeFile(`${pragma}${H('1.0.0')}x\n`, `${pragma}${H('1.0.0', '2026-12-31')}x\ny\n`)?.kind).toBe('not-bumped');
+      const crlf = (s: string) => s.replace(/\n/g, '\r\n');
+      expect(judgeFile(`${H('1.0.0')}x\n`, crlf(`${H('1.0.0', '2026-12-31')}x\n`))).toBeNull();
+      expect(judgeFile(`${H('1.0.0')}x\n`, String.fromCharCode(0xfeff) + `${H('1.0.0', '2026-12-31')}x\n`)).toBeNull();
+    });
   });
 
   it('holds a dateless header to the same rule', () => {
@@ -381,6 +411,29 @@ describe('CLI against a real repo', { timeout: 90_000 }, () => {
     expect(r.status).toBe(1);
     expect(r.stderr).toContain('src/b.ts');
     expect(r.stderr).not.toContain('src/a.ts');
+  });
+
+  it('passes a change that only touches the header line, and fails the same file once its body moves', async () => {
+    put('src/a.ts', `${A('1.0.0-rc.5', '2026-09-21')}export const a = 1;\n`);
+    commit('header-only date sync');
+    const ok = await run({ BASE_REF: 'base' });
+    expect(ok.status).toBe(0);
+    expect(ok.stdout).toContain('1 watermarked file(s) changed vs base, all bumped');
+    put('src/a.ts', `${A('1.0.0-rc.5', '2026-09-21')}export const a = 2;\n`);
+    commit('and now the body');
+    expect((await run({ BASE_REF: 'base' })).status).toBe(1);
+  });
+
+  it('warns, without failing, about a header-shaped line it cannot read (never a silent pass)', async () => {
+    put('src/odd.ts', `${PKG} | src/odd.ts | v1.2.3x | 2026-05-08 | BB\ncode\n`);
+    commit('add odd');
+    git('branch', '-f', 'base', 'HEAD');
+    put('src/odd.ts', `${PKG} | src/odd.ts | v1.2.3x | 2026-05-08 | BB\ncode 2\n`);
+    commit('edit odd');
+    const r = await run({ BASE_REF: 'base' });
+    expect(r.status).toBe(0);
+    expect(r.stderr).toContain('? src/odd.ts');
+    expect(r.stderr).toContain('NOT checked');
   });
 
   it('is silent on files that never had a watermark, added files and deleted files', async () => {
