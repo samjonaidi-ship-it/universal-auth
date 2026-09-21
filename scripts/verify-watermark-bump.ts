@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | scripts/verify-watermark-bump.ts | v1.0.0 | 2026-09-21 | BB
+// @samjonaidi-ship-it/universal-auth | scripts/verify-watermark-bump.ts | v1.0.1 | 2026-09-21 | BB
 // CI gate: a changed, watermarked file must bump its watermark.
 //
 // scripts/verify-watermarks.ts checks that every source file HAS the header; this

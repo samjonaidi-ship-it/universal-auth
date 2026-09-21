@@ -1,5 +1,5 @@
 // @vitest-environment node
-// @samjonaidi-ship-it/universal-auth | test/unit/scripts/verify-watermark-bump.test.ts | v1.0.0 | 2026-09-21 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/scripts/verify-watermark-bump.test.ts | v1.0.1 | 2026-09-21 | BB
 //
 // scripts/verify-watermark-bump.ts + scripts/lib/watermark-scan.ts - "a changed,
 // watermarked file must bump its watermark" (`bb outstanding` O-3; lookback audits
