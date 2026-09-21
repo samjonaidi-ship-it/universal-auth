@@ -63,7 +63,7 @@
     "test:memory": "vitest run --config vitest.memory.config.ts",
     "size-check": "tsx scripts/size-check-closure.ts",
     "verify:bundle": "tsx scripts/verify-bundle.ts",
-    "verify:watermarks": "tsx scripts/verify-watermarks.ts",
+    "verify:watermarks": "tsx scripts/verify-watermarks.ts && tsx scripts/verify-watermark-bump.ts",
     "verify:no-jose": "tsx scripts/verify-no-jose.ts",
     "verify:readme": "tsx scripts/check-readme-code.ts",
     "verify:version-sync": "tsx scripts/verify-version-sync.ts",
