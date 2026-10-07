@@ -31,6 +31,8 @@ describe('risky-paths auth category', () => {
     }
   });
 
+  // registry.ts registers notification channels only (SMS/email routing); the
+  // auth-flow and risk-signal interfaces are reserved and matched by their own files.
   it('matches the components barrel and the extendability registry', () => {
     expect(isAuth('src/react/components/index.ts')).toBe(true);
     expect(isAuth('src/extendability/registry.ts')).toBe(true);
