@@ -16,8 +16,12 @@
         "^src/react/components/(SignInForm|PasskeyPrompt|CodeEntry|PersonaGuard|ConsentScreen|ConsentCenter|PermissionCenter|DelegationCenter|scope-catalogs)\\.",
         "(^|/)(auth|session)[^/]*\\.(js|mjs|cjs|ts|tsx|jsx)$",
         "(^|/)(permission|role|rbac|acl|abac)[^/]*\\.(js|mjs|cjs|ts|tsx|jsx)$",
-        "^pacts/"
+        "^pacts/",
+        "^src/index\\.ts$",
+        "^src/(react|react/components|extendability)/index\\.ts$",
+        "^src/extendability/registry\\."
       ],
+      "_why_entrypoints": "Added 2026-10-06 (Devin, universal-auth PR #24): the package entry points (package.json exports \".\", \"./react\", \"./extendability\") and the components barrel decide WHICH auth and access APIs consumers can call, and extendability/registry.ts is where auth-flow and risk-signal adapters are registered. None matched a pattern above and authz_content_scan is off, so an edit to them was classified routine. ./sw and ./internal are already covered by their directories; ./profile is profile data, not auth. test/unit/risky-paths.test.ts pins every entry point.",
       "_why_dirs": "src/core holds token-manager, storage-crypto, the DPoP keypair and proof, session-watcher and abac; src/flows every sign-in / enroll / recovery / delegation flow; src/sw and src/offline replay authenticated requests; src/internal and src/imperative re-export the client. Filename patterns alone miss most of these (client.ts, proof.ts, pin-flow.ts), and the regexes are case-sensitive, so AuthProvider.tsx needs its own entry.",
       "_why_pacts": "pacts/ is the consumer contract with the ControlTower BFF auth endpoints — changing it changes what the SDK promises the server."
     },
@@ -94,7 +98,7 @@
   "money_content_scan": false,
   "_money_content_scan": "Declared off 2026-10-06: `git grep -iE \"quickbooks|qbo|intuit\"` over src/ finds only the error-code string 'qbo_missing' in src/errors.ts, no client import — the SDK posts nothing to QuickBooks. The classifier fails closed if this key is ever removed.",
   "authz_content_scan": false,
-  "_authz_content_scan": "Declared off 2026-10-06: every authorization decision in this repo lives under src/core (abac.ts, entitlements.ts) and src/react/useAccess*, which the auth category already matches by PATH, so a content scan would add no coverage. To enable, replace false with { dirs, extensions, pattern, max_bytes }.",
+  "_authz_content_scan": "Declared off 2026-10-06: every authorization decision in this repo lives under src/core (abac.ts, entitlements.ts) and src/react/useAccess*, and the entry points that expose them are listed by path too (_why_entrypoints), so the auth category matches all of it by PATH and a content scan would add no coverage. To enable, replace false with { dirs, extensions, pattern, max_bytes }.",
   "carpool_declare_content_scan": false,
   "_carpool_declare_content_scan": "Declared off 2026-10-06: this repo has no carpool-declaration route handlers. The canonical check-risky-paths fails CLOSED on an undeclared scan, so the key must be present."
 }
