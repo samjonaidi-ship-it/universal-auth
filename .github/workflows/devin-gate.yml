@@ -1,0 +1,115 @@
+# BB_Tools | guardrails/devin-gate.yml | v1.5 | 2026-10-05 | BB
+# CANONICAL. Every managed repo carries a byte-identical copy at
+# .github/workflows/devin-gate.yml; edit THIS file, then
+# `node sync-guardrails.mjs --pr` (BB_Tools). The gate is scripts/devin-gate.mjs.
+#
+# Runs in PARALLEL with CI and makes Devin Review a reliable but never-stuck gate:
+# it waits a bounded time (8 min) for the "Devin Review" commit status on the PR head,
+# nudges once with "/devin review" at 4 min, FAILS only on an unresolved red Devin
+# finding (or a failed `bb-review` status), and otherwise PASSES - adding the
+# `devin-unreviewed` label when Devin skipped, never showed up, or GitHub was down.
+# Re-evaluates when a review is submitted (reviews on a PR whose base is not the default branch are skipped by the job `if`:
+# pull_request_review has no branch filter) and when a `bb-review` commit STATUS turns failure/error: a late failure after the
+# gate already passed. A status event has no PR and its run attaches to the default branch, so the script (STATUS MODE) resolves
+# the open PRs of that sha via commits/{sha}/pulls and RE-RUNS each one's completed gate run; the sweep also re-runs a passed gate
+# whose head now has a failed bb-review. Nothing from the PR is checked out, so no PR code meets the write token. GitHub has NO event for "a review thread was
+# resolved", and a reply (pull_request_review_comment) fires BEFORE the resolve, so a red gate
+# would stay red after the last red thread is resolved. The `schedule` trigger fixes that:
+# every 10 minutes the SAME script (GITHUB_EVENT_NAME=schedule -> sweep mode) walks the open PRs
+# and re-runs the latest FAILED devin-gate run, via rerun-failed-jobs (needs `actions: write`),
+# plus a completed run that never rendered a verdict (cancelled by a superseding event, timed out,
+# aborted start) via a full rerun — a required check that is "cancelled" wedges the PR the same as a
+# failure, with no signal why. All of them are retried
+# ONLY when a fresh read shows it would now be green (no unresolved red thread, bb-review not
+# failed). A still-red PR is never re-run, and a run already in progress is skipped. Each stale run is
+# retried on every 10-minute tick for its first 6 attempts (so recovery after a resolve is about 10 min); after 6
+# failed retries it is retried at most once an hour (never stranded, never a loop or spam).
+# A re-run replays the ORIGINAL run, i.e. the workflow file as it was then. That is safe because this file is only a
+# wrapper: the checkout below takes the CURRENT default branch (never the run's old base sha), so a re-run always
+# executes today's scripts/devin-gate.mjs. Worst-case lag after a resolve: ~10 min (up to an hour after 6 failed retries).
+# BOOTSTRAP: if this workflow lands on a repo before scripts/devin-gate.mjs is on the default branch (sync order, or the
+# PR that introduces the gate), the run step finds no script, prints a ::warning:: and PASSES without judging anything.
+# It never falls back to checking out the PR head: that would run PR code with this job's write token.
+# (Scheduled workflows run from the default branch only, and GitHub may delay or skip a tick.)
+#
+# A REQUIRED context on every managed repo since 2026-10-04 (added once the workflow had synced
+# everywhere; BB_Micro_Bridge #963). Required changes the blast radius of cancellation: a
+# cancelled LATEST run leaves the required check unsatisfied forever, which is exactly why the
+# concurrency group below keeps review events from killing the run they re-evaluate and the
+# sweep treats a no-verdict conclusion as retryable.
+#
+# pull_request_target + a checkout of the BASE sha, like pr-body-lint.yml: the script that
+# judges a PR comes from main, never from the PR, and nothing from the PR is checked out or
+# run. (pull_request_review always carries a read-only token on fork PRs; these repos are
+# private and PRs come from branches, so the token below is what runs.) The only PR input
+# is the PR number, an integer.
+
+name: devin-gate
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  pull_request_review:
+    types: [submitted]
+  status:
+  schedule:
+    - cron: '*/10 * * * *'
+
+concurrency:
+  # ONE serial group per PR: pull_request_target AND pull_request_review runs share devin-gate-<PR>, so
+  # same-PR runs can never overlap — no racing the label/nudge writes, and verdicts post in completion
+  # order: a stale green can never finish after a fresher red and mask a finding (Devin, BB_Tools #213).
+  # Only `synchronize` (a new head sha) cancels in-flight — the one event that makes a running evaluation
+  # stale; every other event QUEUES: a cancelled same-sha run lands on the head as a red 'cancelled'
+  # check and, with the gate required, a cancelled LATEST run wedges the PR.
+  # A pending-slot eviction cannot wedge either: only synchronize changes the head and it never pends
+  # (cancel-in-progress: true starts it at once), so a displaced pending run is always same-sha and
+  # whatever displaced it — a stale review included — still evaluates and posts to that same head.
+  # status events carry no PR: keyed by sha+context. schedule: 'sweep'.
+  group: devin-gate-${{ github.event.pull_request.number || (github.event.context && format('{0}-{1}', github.event.sha, github.event.context)) || 'sweep' }}
+  cancel-in-progress: ${{ github.event.action == 'synchronize' }}
+
+permissions:
+  contents: read
+
+jobs:
+  devin-gate:
+    name: devin-gate
+    # Drafts are not gated; ready_for_review re-runs it. The schedule event has no PR: it sweeps (see header). A status event
+    # only matters when it is a bb-review failure/error. PR events need a PR into the default branch (pull_request_review has
+    # no `branches:` filter).
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'status' && github.event.context == 'bb-review' && (github.event.state == 'failure' || github.event.state == 'error')) ||
+      (github.event.pull_request && github.event.pull_request.draft == false && github.event.pull_request.base.ref == github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      statuses: write   # sweep mode only: a devin-gate-trail crumb status records thread-state transitions durably when the comment API is down
+      actions: write   # sweep mode only: rerun-failed-jobs on a stale red devin-gate run
+      pull-requests: write
+      issues: write
+    steps:
+      # The default branch (= the PR base: both triggers are limited to PRs into main), explicitly: pull_request_target already defaults to the base, but a
+      # pull_request_review run would otherwise check out the PR's merge commit and run
+      # PR-supplied code with this job's token.
+      - name: Checkout the BASE ref
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - name: Wait for Devin Review (bounded)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          STATUS_SHA: ${{ github.event.sha }}
+          STATUS_CONTEXT: ${{ github.event.context }}
+          STATUS_STATE: ${{ github.event.state }}
+        run: |
+          if [ ! -f scripts/devin-gate.mjs ]; then
+            echo "::warning::scripts/devin-gate.mjs is not on the default branch yet; devin-gate skipped, nothing was judged"
+            exit 0
+          fi
+          node scripts/devin-gate.mjs

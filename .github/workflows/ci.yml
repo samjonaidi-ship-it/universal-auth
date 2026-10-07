@@ -1,4 +1,4 @@
-# @samjonaidi-ship-it/universal-auth | .github/workflows/ci.yml | v1.1.1 | 2026-05-08 | BB
+# @samjonaidi-ship-it/universal-auth | .github/workflows/ci.yml | v1.2.2 | 2026-10-06 | BB
 # Per-PR CI gate. Block 6 Day 22 expansion: + perf cold-start, + memory soak
 # (5 min CI cap), + security suite. Heavy suites (24h soak, full chaos,
 # Playwright 12-config matrix) live in chaos.yml + browser-matrix.yml nightly.
@@ -13,6 +13,11 @@
 # and fails the build on critical/high CVEs in changed dependencies.
 
 name: CI
+# v1.2.2 (2026-10-06): the note below said "this repo has no branch protection".
+# main is now protected through BB_Micro_Bridge scripts/branch-protection.json
+# (key "universal-auth"); the required contexts are build, perf, security and
+# dependency-review from this file, plus "Risky path review" from
+# risky-path-gate.yml when BB_PACE=normal. Comments only; behaviour unchanged.
 # v1.2.1 (2026-09-01): the soak comment said "still gates every merge" - it does
 # not, and the reviewer caught it. Wording only; behaviour unchanged.
 # v1.2.0 (2026-09-02): `on: [push, pull_request]` ran this workflow TWICE for
@@ -23,8 +28,8 @@ name: CI
 # only, so a PR waits on build + security + perf (~2 min) instead of the soak.
 # Be clear about what that means: it is now a POST-MERGE ALARM, not a merge
 # gate (a push to main happens after the merge, and Railway deploys from main
-# regardless). Accepted on the record - 36/36 green - and this repo has no
-# branch protection, so nothing lists it as required. Pushes to agent/*
+# regardless). Accepted on the record - 36/36 green. memory-quick is not a
+# required check (it never runs on a PR, so it could not be). Pushes to agent/*
 # without a PR run nothing; open the PR to get CI.
 on:
   push:

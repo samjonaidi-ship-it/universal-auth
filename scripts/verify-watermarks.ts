@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | scripts/verify-watermarks.ts | v1.0.3 | 2026-05-08 | BB
+// @samjonaidi-ship-it/universal-auth | scripts/verify-watermarks.ts | v1.0.4 | 2026-10-06 | BB
 // Enforces BB watermark on every .ts/.tsx source file per global CLAUDE.md §10.
 // Canonical format (v1.0.1+):
 //   // @samjonaidi-ship-it/universal-auth | <path> | v<ver> | <YYYY-MM-DD> | BB
@@ -54,8 +54,17 @@ const VALID_EXT = new Set(['.ts', '.tsx', '.yml', '.yaml']);
 // When present, the watermark is allowed on line 2.
 const PRAGMA_RX = /^\/\/\s*@(vitest-environment|jest-environment|jsxRuntime)\b/;
 
-// Allowlist — generated files / third-party interop that can't have a watermark
-const ALLOWLIST = new Set<string>([]);
+// Allowlist — generated files / third-party interop that can't have a watermark.
+// v1.0.4: the three BB_Tools canonical guardrail workflows. They are copied in
+// BYTE-IDENTICAL from C:\Users\samjo\Desktop\Claude\TOOLS\guardrails\ and carry
+// that repo's `# BB_Tools | guardrails/... | vX | date | BB` header; editing line 1
+// here would make `node TOOLS/sync-guardrails.mjs --check` report drift. Their
+// version is policed by sync-guardrails, not by this script.
+const ALLOWLIST = new Set<string>([
+  '.github/workflows/risky-path-gate.yml',
+  '.github/workflows/pr-body-lint.yml',
+  '.github/workflows/devin-gate.yml',
+]);
 
 // Skip these directory names everywhere (they show up under demo/, test/, etc.)
 const SKIP_DIRS = new Set(['node_modules', 'dist', '.git', 'coverage']);

@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | eslint.config.js | v1.0.0-rc.3 | 2026-05-08 | BB
+// @samjonaidi-ship-it/universal-auth | eslint.config.js | v1.0.1 | 2026-10-06 | BB
 // ESLint 9 flat config. Strict rules per plan CI/CD step 2.
 //
 // eslint-plugin-react-hooks pinned to ^5.0.0 (NOT v7+) because v7 adds
@@ -132,6 +132,31 @@ export default [
       'no-var': 'error',
       eqeqeq: ['error', 'always'],
       'no-undef': 'off',
+    },
+  },
+
+  // v1.0.1 (2026-10-06): plain-JS Node scripts. The BB_Tools canonical guardrails
+  // (scripts/check-risky-paths.mjs, check-pr-body.mjs, devin-gate.mjs) are copied in
+  // byte-identical and run under Node 20/22 in CI. Without this block they fell to
+  // js.configs.recommended with no globals declared: 74 x no-undef on process,
+  // console, fetch... The fix is declaring the Node runtime, NOT turning no-undef
+  // off — it stays on, so a real typo'd name in these files still fails lint.
+  {
+    files: ['scripts/**/*.mjs'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+        Buffer: 'readonly',
+        URL: 'readonly',
+        fetch: 'readonly',
+        AbortController: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        globalThis: 'readonly',
+      },
     },
   },
 ];
