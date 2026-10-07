@@ -1,0 +1,401 @@
+# BB_Tools | guardrails/risky-path-gate.yml | v1.3 | 2026-09-07 | BB
+# CANONICAL. Every managed repo carries a byte-identical copy at
+# .github/workflows/risky-path-gate.yml; edit THIS file, then
+# `node sync-guardrails.mjs --pr` (BB_Tools). Per-repo config is scripts/risky-paths.json.
+#
+# The human-review gate for risky changes (AGENTS.md section 4).
+#
+# Agents may auto-merge routine work. This check goes RED when a PR touches auth,
+# migrations, CI/protection config, secrets, deploy or money, and stays red until a
+# human adds the `human-reviewed` label. As a required check, auto-merge waits
+# rather than merging — nobody has to remember to intervene.
+#
+# ── Why pull_request_target, and why that is SAFE ─────────────────────────────────
+#
+# Until 2026-09-04 all six managed repos used `pull_request`. That trigger runs the
+# PR's OWN copy of everything — the workflow file, the checker, the config, the
+# whole workspace — so it cannot gate changes to any of them:
+#
+#   * the PR's checker judges the PR   — a PR replacing check-risky-paths.mjs with
+#     `process.exit(0)` reports its own risky diff as routine
+#   * the PR's WORKFLOW judges the PR  — keep the job name, replace the command with
+#     `true`, and the required context reports green having checked nothing
+#
+# That is not theoretical here: the six sync PRs that shipped check-risky-paths.mjs
+# v1.3.0 on 2026-09-03 were each judged by the copy of the checker they were
+# themselves installing.
+#
+# `pull_request_target` closes it at the root — the workflow, the checker and the
+# config all come FROM THE BASE REF, so nothing PR-controlled is in the workspace.
+#
+# The usual danger of pull_request_target is that it carries a privileged token, so
+# checking out and RUNNING PR code hands that token to the PR. THIS WORKFLOW NEVER
+# DOES: it fetches the PR head only to read `git diff --name-only`, which produces
+# FILE NAMES and executes nothing. No PR file is read, sourced, built or run. That
+# invariant is the entire safety argument; BB_Tools test/risky-path-gate-workflow.test.mjs
+# asserts it against this canonical file.
+#
+# This design was reached over ten P1s from the pre-push reviewer on BB_Tools' own
+# copy of the gate (v2.3, agent/bb-tools-risky-gate). The ones encoded below:
+#   * a stale `human-reviewed` label released every later push
+#   * the fix for that was a NO-OP — in Actions `&& '' ||` always takes the || arm,
+#     because the empty string is FALSY
+#   * keying on `synchronize` lost to close/reopen; keying on the whole label SET
+#     let ANY later label re-honour a stale `human-reviewed`
+#   * `persist-credentials: false` broke the PR-ref fetch on a PRIVATE repo — all
+#     six of these repos are private, so that reads as hardening and is an OUTAGE
+#   * plain `--name-only` C-quotes odd paths, so a risky file dodges the regex
+#   * the file list crossed a step boundary through a $GITHUB_OUTPUT heredoc, whose
+#     delimiter the PR supplies as a FILENAME
+#
+# CONSEQUENCE on the PR that INSTALLS this file: there is NO gate run at all.
+# Neither trigger fires on it —
+#
+#   pull_request         runs the workflow from the PR HEAD, and the head's copy no
+#                        longer declares that trigger
+#   pull_request_target  runs the workflow from the BASE, which does not declare the
+#                        new trigger yet
+#
+# An earlier version of this comment said the installing PR was "judged by the OLD
+# pull_request gate". That is FALSE, and it shipped to four repos before the
+# pre-push reviewer caught it on the fifth. A wrong comment in a canonical file is
+# copied everywhere and believed.
+#
+# Two consequences worth knowing before changing this trigger again:
+#
+#   at pace=fast (today) the installing PR merges having had ZERO gate runs. The
+#   pre-push reviewer is the only thing that examined it, which is exactly why that
+#   review matters on a change to this file.
+#
+#   at pace=normal/strict "Risky path review" is a REQUIRED context, and the
+#   INSTALLING PR produces no run to satisfy it. It sits on "Expected — Waiting for
+#   status" and can only land by an ADMIN MERGING IT KNOWINGLY. That is the correct
+#   instruction in that ONE case, and it is a one-time cost PER REPO — it recurs in
+#   any repo receiving this workflow for the first time, because that repo's base
+#   branch has no pull_request_target copy yet. Adding `human-reviewed` there does
+#   nothing: there is no run to turn green.
+#
+#   IT DOES NOT APPLY TO LATER EDITS, and an earlier version of this comment said it
+#   did — advising "change this file at pace=fast, or admin-merge deliberately".
+#   That advice was wrong and actively harmful: once pull_request_target is on main,
+#   the BASE copy receives the event, so a PR that weakens or removes this trigger
+#   DOES produce a run, and that run blocks it as ci-and-protection. Following the
+#   old advice would have flipped pace or admin-merged past a gate that was working —
+#   turning a protected workflow change into exactly the bypass AGENTS.md section 4
+#   exists to prevent. Reviewer P1, high effort, on the ProjExp5 rollout.
+#
+#   So: edit this file through the normal review. A human reads the diff and adds
+#   `human-reviewed`, the same as any other risky change.
+#
+# From the NEXT pull request onward the gate reports normally, from the base copy.
+
+name: Risky path gate
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+# Keyed on the PR NUMBER rather than github.ref.
+#
+# HONEST SCOPE (measured 2026-08-22): this does NOT stop a labelled PR carrying a
+# stale failure beside its success. cancel-in-progress only cancels runs still
+# RUNNING, and this job finishes in seconds while the label arrives minutes or hours
+# later. GitHub resolves a required check to its LATEST run, so merging is never
+# blocked by the stale entry; only tools reading the raw rollup misreport it.
+# `gh pr checks` is the source of truth.
+concurrency:
+  group: risky-path-gate-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  risky-paths:
+    # This name is the required-check context in scripts/branch-protection.json.
+    # Renaming it silently un-gates the repo — the old context simply stops
+    # reporting and branch protection waits forever on a check that no longer exists.
+    name: Risky path review
+
+    # required-or-gone. At pace=fast this job is SKIPPED, not run-and-red: a gate
+    # that goes red while nothing requires it only trains people to ignore it.
+    # BB_PACE is a repo variable set by BB_Micro_Bridge
+    # scripts/sync-branch-protection.mjs --apply alongside protection, so one switch
+    # drives both halves. Unset (a repo not yet synced) = runs.
+    #
+    # A skipped job is reported as a PASSING check, sticky per commit. That is
+    # harmless while the gate is not required, but a PR evaluated under fast would
+    # keep that pass after a flip to normal/strict — so the sync script re-runs each
+    # open PR's latest skipped gate run when pace leaves fast.
+    if: vars.BB_PACE != 'fast'
+    runs-on: ubuntu-latest
+
+    # Strictly read-only. A pull_request_target job holds a privileged token, so the
+    # fewer things it may do, the smaller the prize for subverting it.
+    permissions:
+      contents: read
+
+    steps:
+      # No `ref:`. Under pull_request_target that means the BASE branch — the trusted
+      # code. Adding `ref: ${{ github.event.pull_request.head.sha }}` here is THE
+      # classic pull_request_target vulnerability: it would put PR code in a
+      # workspace holding a privileged token. The test suite fails if that appears.
+      #
+      # persist-credentials is deliberately LEFT ON. Every managed repo is PRIVATE,
+      # so the `git fetch origin refs/pull/N/head` below is unauthenticated without
+      # it and fails — which would leave this gate RED on every PR, forever. The
+      # persisted token is this job's own `contents: read` token, and it is only safe
+      # to persist because NO PR CODE IS EVER RUN HERE. Do not "harden" this line
+      # without first making the fetch authenticate another way.
+      #
+      # WHERE the token lives (v1.3, 2026-09-07): from actions/checkout v6 it is no
+      # longer written into `.git/config`; it is a separate file under $RUNNER_TEMP,
+      # pulled in through a git `include.path`. Plain `git fetch` in a later step of
+      # this job still authenticates — git honours the include — which is the only
+      # property the fetch below relies on. Nothing here reads the token out of
+      # `.git/config`, so the v6 relocation changes nothing for this workflow.
+      #
+      # v7's `pull_request_target` fork guard (actions/checkout#2454) is INERT here
+      # on two independent grounds, both verified: it only runs when a workflow
+      # customises `ref` or `repository` (`isDefaultCheckout = isWorkflowRepository
+      # && !core.getInput('ref')`, src/input-helper.ts@v7) — this step sets neither —
+      # and every managed repo has 0 forks. It cannot fire. Do NOT add
+      # `allow-unsafe-pr-checkout: true` "just in case": that is the opt-in for the
+      # exact vulnerability the comment above describes.
+      - name: Checkout the BASE ref
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # ── ONE step, deliberately ────────────────────────────────────────────────
+      #
+      # The diff and the check used to be two steps, with the file list handed over
+      # through `$GITHUB_OUTPUT` as a `files<<RISKY_EOF` heredoc. The PR controls
+      # file NAMES, so it controlled that heredoc's body: a PR adding a file named
+      # `RISKY_EOF` terminates the value early and every risky path after it silently
+      # leaves CHANGED_FILES. Escaping the delimiter is not the fix — a randomised
+      # delimiter is still a delimiter. The list never crosses a boundary now: it is
+      # produced, judged and discarded inside a single shell, in a variable.
+      #
+      # ── When a label counts ───────────────────────────────────────────────────
+      #
+      # ONLY on the `labeled` event. Not "unless this is a synchronize" — keying on
+      # the EVENT asks "is this the event that invalidates a review?" and there is
+      # always one more. Keying on the FACT asks "did a human affirm THIS state?"
+      # There is exactly one event that means yes: a person clicking the label.
+      #
+      # THE TRADE-OFF, stated because it will be met: a reopen, or the removal of
+      # some unrelated label, turns a reviewed PR red again, and the way back is to
+      # remove and re-add `human-reviewed`. That is a human re-affirming the review,
+      # and it fails CLOSED — the failure mode is an extra click, never an
+      # unreviewed merge.
+      #
+      # Decided in SHELL, not a `${{ }}` expression. The obvious expression
+      #     ${{ github.event.action == 'labeled' && join(...) || '' }}
+      # is a trap: Actions' && and || return OPERAND VALUES and the empty string is
+      # FALSY, so an empty join falls through to the other arm.
+      - name: Diff the PR and check risky paths
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          # The head THIS EVENT described, used to PIN the fetched ref below. Not a
+          # fallback source for the diff — that was the old `pull_request` gate's
+          # 18-line SHA-payload block, which was full of `|| true`.
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_REF: ${{ github.base_ref }}
+          PR_ACTION: ${{ github.event.action }}
+          # The ONE label this event added — not the PR's whole label set. Copying
+          # the set back in on any `labeled` event meant an unrelated label (a bot
+          # adding `needs-review`, say) re-honoured a stale `human-reviewed` and
+          # released an unreviewed head. `github.event.label` is populated on
+          # labeled/unlabeled and empty elsewhere, which is exactly the scope wanted.
+          LABEL_ADDED: ${{ github.event.label.name }}
+        run: |
+          set -euo pipefail
+
+          # refs/pull/N/head rather than the head SHA: it resolves for fork PRs too,
+          # where the head commit is not reachable from this repo's refs, and it
+          # resolves on the `labeled` event — which is why the SHA-payload fallback
+          # BB_Micro_Bridge carried under `pull_request` is not needed here and must
+          # not be re-added. This FETCHES and DIFFS the PR ref and does nothing else
+          # with it: no checkout, no file read, nothing executed.
+          #
+          # No `|| true` on the fetch, merge-base or diff: an undeterminable diff
+          # turns the gate red rather than passing an unexamined PR.
+          git fetch --no-tags origin "refs/pull/${PR_NUMBER}/head:refs/remotes/pr/${PR_NUMBER}"
+          git fetch --no-tags origin "${BASE_SHA}" || git fetch --no-tags origin "${BASE_REF}"
+
+          # PIN the head to the commit THIS EVENT described.
+          #
+          # refs/pull/N/head resolves when the runner gets here, not when the event
+          # fired. On a `labeled` event that is a race with real consequences: a human
+          # labels safe commit A, the branch is force-pushed to risky commit B, and this
+          # job scans B while PR_ACTION=labeled still makes `human-reviewed` count — the
+          # unreviewed head reported green. Reviewer P1, high effort.
+          #
+          # Refusing is correct and self-healing: the push that moved the head fires its
+          # own `synchronize` run, which judges the new head with no label in effect. So
+          # nothing is lost by declining to judge a head this event did not describe.
+          # Everything below judges ${HEAD_SHA} — the commit THIS EVENT described —
+          # never "whatever refs/pull/N/head points at now".
+          #
+          # The ref is resolved when the runner reaches it, not when the event fired,
+          # and it moves in BOTH directions:
+          #   AHEAD  a force-push lands between the label click and this job. Scanning
+          #          the new head while PR_ACTION=labeled still honours the label would
+          #          report an unreviewed head green. Reviewer P1, high effort.
+          #   BEHIND refs/pull/* is eventually consistent, so just after a push the ref
+          #          can still show the previous commit. An earlier version refused on
+          #          any mismatch and called that "self-healing" — true for AHEAD (the
+          #          push fires its own run) and FALSE for BEHIND, where nothing moves
+          #          again and the PR sits red until someone re-runs it by hand.
+          #
+          # Pinning to the SHA answers the AHEAD case completely and NARROWS the BEHIND
+          # one: the ref fetch is usually how the object arrives, and if the ref has not
+          # caught up the commit is asked for directly.
+          #
+          # It does not eliminate BEHIND, and an earlier comment here claimed it did.
+          # The object can lag on the server exactly as the ref does; then the direct
+          # fetch fails too and the job exits 2, leaving the PR red until someone re-runs
+          # it. That is correct (fail closed) but it is not self-healing, and saying so
+          # would send the next operator hunting a bug instead of pressing re-run.
+          FETCHED=$(git rev-parse "refs/remotes/pr/${PR_NUMBER}")
+          if [ "$FETCHED" != "$HEAD_SHA" ]; then
+            # JUDGE THE COMMIT THE EVENT DESCRIBED, OR NOTHING.
+            #
+            # THE LIMIT, because an earlier version of this comment claimed more than
+            # the code delivers: this closes the window between the webhook being
+            # generated and this job fetching. It CANNOT close the window between a
+            # human reading a diff and clicking the label — a force-push in that gap
+            # produces a `labeled` event whose HEAD_SHA is already the new commit, and
+            # the guard sees nothing wrong. Label-based review cannot close that; only
+            # the reviewer looking at the head they are affirming can.
+            #
+            # On a `labeled` event the label counts, so judging any commit other than
+            # the one the human was looking at is unsafe: label safe A, force-push
+            # workflow-weakening B before this job reaches the fetch, and this run would
+            # scan A and report the label satisfied. Worse, `concurrency` is keyed on the
+            # PR NUMBER with cancel-in-progress, so this stale labeled run can CANCEL the
+            # synchronize run for B — removing the one result that would have judged it.
+            #
+            # Whether that ends in a green required context depends on how GitHub
+            # attaches a check run to a SHA, which is exactly the kind of reasoning a
+            # gate should not rest on. Refusing is one line and needs no such argument.
+            # Reviewer P1, high effort, on the RevExp5 rollout.
+            if [ "$PR_ACTION" = "labeled" ]; then
+              echo "::error::this label cannot be honoured - the ref does not match the labelled head"
+              echo "  labelled: ${HEAD_SHA}"
+              echo "  ref now:  ${FETCHED}"
+              echo "  Either the head MOVED after the label, or the PR ref is still catching"
+              echo "  up with a push made moments before it (both look identical from here)."
+              echo "  READ THE CURRENT HEAD'S DIFF, then re-apply the label. The synchronize run"
+              echo "  for that commit may have been cancelled by concurrency, in which case your"
+              echo "  reading is the only check it gets - do not just click it again."
+              exit 2
+            fi
+            # Not a labeled event, so no label is in effect and nothing can be released
+            # by judging the commit this event named. Fetching it directly is what makes
+            # the BEHIND case (refs/pull/* lagging just after a push) resolve instead of
+            # going red for no reason.
+            echo "refs/pull/${PR_NUMBER}/head is at ${FETCHED}, this ${PR_ACTION} event described ${HEAD_SHA} - fetching that commit directly"
+            if ! git fetch --no-tags origin "${HEAD_SHA}"; then
+              echo "::error::cannot obtain ${HEAD_SHA}, the head this event described"
+              echo "  refusing to judge a different commit than the one the event named"
+              exit 2
+            fi
+          fi
+
+          MB=$(git merge-base "${BASE_SHA}" "${HEAD_SHA}")
+
+          # --no-renames, and all THREE diffs below must carry it together.
+          #
+          # Since git 2.9 rename detection is ON by default, and for a detected rename
+          # --name-only prints ONLY THE DESTINATION. So a PR whose single change is
+          # `git mv .github/workflows/risky-path-gate.yml docs/gate.yml.txt` - 100%
+          # similar, so certainly a rename - lists just docs/gate.yml.txt, which matches
+          # no pattern, and THE PR THAT DELETES THIS GATE is reported routine. The same
+          # move hides scripts/check-risky-paths.mjs and scripts/risky-paths.json from
+          # where sync-guardrails reads them. Measured on git 2.54.0 against a real
+          # `git mv` of this file:
+          #   default      -> docs/gate.yml.txt                     checker exit 0
+          #   --no-renames -> .github/workflows/risky-path-gate.yml checker exit 1
+          #                   docs/gate.yml.txt
+          #
+          # A risk classifier must see the path a file LEFT, not only where it landed.
+          # Found on BB_Tools' own copy of the gate (P1 #13, agent/bb-tools-risky-gate)
+          # and missed here because the two copies were written in parallel.
+          #
+          # ALL THREE together, not just CHANGED_FILES: Z_COUNT and LINE_COUNT below
+          # count records from the SAME diff to detect a newline in a path. Give one
+          # diff --no-renames and not the others and a rename makes the counts disagree
+          # for a reason that has nothing to do with newlines - the gate would exit 2
+          # on every renaming PR, claiming a newline that is not there.
+          #
+          # -z, not plain --name-only. Git C-QUOTES any path containing a tab, quote,
+          # backslash or non-ASCII byte, so `.github/workflows/de<TAB>ploy.yml`
+          # arrives quoted and escaped and no longer matches the checker's
+          # ^\.github/ pattern — a risky workflow change reported routine. NUL becomes
+          # newline because that is the format CHANGED_FILES uses.
+          #
+          # A path containing a literal NEWLINE is REFUSED below, not split into two
+          # names that match nothing.
+          CHANGED_FILES=$(git diff --no-renames --name-only -z "${MB}" "${HEAD_SHA}" | tr '\0' '\n')
+
+          # A path containing a literal NEWLINE cannot survive a newline-separated list.
+          # `src/services/pay<LF>poster.js` splits into `src/services/pay` and
+          # `poster.js` — neither is in a scanned directory with a scanned extension, so a
+          # QuickBooks import in that file reports ROUTINE. An earlier version of this file
+          # called that a "residual limit" in a comment and shipped it; the reviewer
+          # correctly called it a bypass. Git can produce such a path, so
+          # document-and-continue is not good enough for a gate.
+          #
+          # Counting NUL records against lines detects it exactly — they differ only when
+          # a name contains a newline. Refusing (exit 2, "could not determine") is the
+          # honest answer: this file cannot judge what it cannot represent.
+          Z_COUNT=$(git diff --no-renames --name-only -z "${MB}" "${HEAD_SHA}" | tr -cd '\0' | wc -c | tr -d '[:space:]')
+          # Counted from the PIPELINE, not from $CHANGED_FILES. Command substitution
+          # strips TRAILING newlines, so a file named `pay.js<LF>` gave 1 NUL and 1 line
+          # — counts matched, the name was silently truncated to `pay.js`, `git show`
+          # then failed on both sides and contentHits read it as deleted. Routine.
+          # Same bypass as the embedded newline, one variant over. Reviewer P2.
+          LINE_COUNT=$(git diff --no-renames --name-only -z "${MB}" "${HEAD_SHA}" | tr '\0' '\n' | grep -c '' || true)
+          if [ "$LINE_COUNT" != "$Z_COUNT" ]; then
+            echo "::error::a changed path contains a newline (${Z_COUNT} file(s), ${LINE_COUNT} line(s))"
+            echo "  a newline-separated list cannot represent it, and splitting it would hide the file from the scans"
+            echo "  rename the path, or extend the checker to take a NUL-separated list"
+            exit 2
+          fi
+
+          export CHANGED_FILES
+          echo "resolved $(printf '%s' "$CHANGED_FILES" | grep -c . || true) changed file(s) against ${MB}"
+
+          if [ "$PR_ACTION" = "labeled" ]; then
+            PR_LABELS="$LABEL_ADDED"
+          else
+            echo "event '${PR_ACTION}' is not a human affirming this diff - labels do not count"
+            PR_LABELS=""
+          fi
+          export PR_LABELS
+          echo "labels in effect: ${PR_LABELS:-(none)}"
+
+          # The content scans must judge the PR HEAD, not the base checkout.
+          #
+          # This workspace IS the base, so the checker's default "head" reader — which
+          # reads the working tree — would read the base copy, and eitherSide would union
+          # the base with itself. A PR that ADDS a QBO import to an existing file would
+          # produce no hit and be reported routine, with the content scan blind exactly
+          # where the filename patterns already fail. Reviewer P1 (codex, high effort) on
+          # the first push of this file, before it shipped.
+          #
+          # BB_HEAD_REF makes the head side a pure `git show <ref>:<file>` — a BLOB read.
+          # Nothing from the PR is written to this privileged workspace and nothing is
+          # executed; the checker only regex-matches the text. Reading is not running,
+          # which is the same invariant the diff above relies on.
+          #
+          # BB_BASE_REF is the MERGE BASE, not origin/main: the base branch may have
+          # moved since the PR forked, and judging against a commit the PR never saw
+          # would attribute someone else’s change to it.
+          BB_HEAD_REF="${HEAD_SHA}" \
+          BB_BASE_REF="${MB}" \
+            node scripts/check-risky-paths.mjs

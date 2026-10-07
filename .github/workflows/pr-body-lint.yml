@@ -1,0 +1,61 @@
+# BB_Tools | guardrails/pr-body-lint.yml | v1.1 | 2026-10-02 | BB
+# CANONICAL. Every managed repo carries a byte-identical copy at
+# .github/workflows/pr-body-lint.yml; edit THIS file, then
+# `node sync-guardrails.mjs --pr` (BB_Tools). The checker is scripts/check-pr-body.mjs.
+#
+# AGENTS.md §7: the PR body is the change record and carries a "Searched first:" line
+# (what the §12 brain search found, whether it was reused). 62% of merged PRs had none
+# (REPORTS/BRAIN_USEFULNESS_CHECK_2026-09-30.md), so this checks it.
+#
+# pull_request_target, like risky-path-gate.yml, so the checker that judges a PR comes
+# from the BASE and a PR cannot rewrite it. Nothing from the PR is checked out or run:
+# the only PR input is the body text, handed over through `env:` — NEVER interpolated
+# as `${{ github.event.pull_request.body }}` inside `run:`, where the PR author would
+# be writing shell. The `edited` type is what lets fixing the body turn this green
+# without a push.
+#
+# v1.1: the checker also fails a line copied word for word from an older PR in this repo,
+# so it lists recent PR bodies with the job token (pull-requests: read, still no write).
+#
+# Not pace-gated: this is not a review gate, it asks for one line of text, and the fix
+# is an edit to the PR description. It is NOT a required context (yet) — whether it
+# should block merging is branch-protection config, decided separately.
+
+name: PR body lint
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, edited, reopened, synchronize]
+
+concurrency:
+  group: pr-body-lint-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  searched-first:
+    name: PR body has Searched first
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      # The runner image's own node runs the checker (plain ESM, no deps), the same as
+      # risky-path-gate.yml: no setup-node step to slow a one-line check.
+      #
+      # No `ref:` — the BASE branch, the trusted checker. Adding the PR head here would
+      # run PR code with this job's token.
+      - name: Checkout the BASE ref
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Check the Searched first line
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/check-pr-body.mjs

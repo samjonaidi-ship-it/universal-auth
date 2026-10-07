@@ -1,0 +1,100 @@
+{
+  "_doc": "Paths that must not reach main on an agent's own authority. If a PR touches any of these, the 'Risky path review' check FAILS until a human adds the label below. Once that check is REQUIRED (BB_PACE=normal, via BB_Micro_Bridge scripts/sync-branch-protection.mjs), auto-merge simply waits — the PR does not merge itself and nothing has to be remembered. At BB_PACE=fast the job is skipped.",
+  "_why_this_exists": "AGENTS.md section 4 relies on this gate at BB_PACE=normal. Until 2026-10-06 this repo had no scripts/risky-paths.json and no risky-path-gate.yml, so the gate the contract describes did not exist here (Devin Review, universal-auth PR #22).",
+  "_label": "Add this label to the PR to release the gate. Applying it is the human review — do not add it from an agent.",
+  "label": "human-reviewed",
+  "_tuning": "Patterns are JavaScript regexes (case-SENSITIVE) matched against repo-relative POSIX paths. Err toward catching too much: a false positive costs one label, a false negative merges an auth change unreviewed. If a category gets noisy, narrow THAT pattern rather than deleting the category. Every pattern below was counted against `git ls-files` on 2026-10-06 (a repo-specific pattern that matches nothing is a silent hole — Devin, ProjExp5 PR #7). The auth, ci-and-protection, secrets and deploy categories each match real files here; patterns that match nothing today (Dockerfile, .env, migrations/, money) are kept on purpose as guards for the first such file.",
+  "categories": [
+    {
+      "name": "auth",
+      "why": "this repo IS the authentication SDK every BB app signs in through — token handling, DPoP keys, sessions, flows, access decisions",
+      "patterns": [
+        "^src/(core|flows|sw|offline|internal|imperative)/",
+        "^src/config\\.ts$",
+        "^src/extendability/(auth-flow|risk-signal)\\.",
+        "^src/react/(AuthProvider|ConsentVersionWatcher|use(Auth|Access|AccessBulk|Identity|Entitlements|PermissionGrants|DelegatedGrants))\\.",
+        "^src/react/components/(SignInForm|PasskeyPrompt|CodeEntry|PersonaGuard|ConsentScreen|ConsentCenter|PermissionCenter|DelegationCenter|scope-catalogs)\\.",
+        "(^|/)(auth|session)[^/]*\\.(js|mjs|cjs|ts|tsx|jsx)$",
+        "(^|/)(permission|role|rbac|acl|abac)[^/]*\\.(js|mjs|cjs|ts|tsx|jsx)$",
+        "^pacts/"
+      ],
+      "_why_dirs": "src/core holds token-manager, storage-crypto, the DPoP keypair and proof, session-watcher and abac; src/flows every sign-in / enroll / recovery / delegation flow; src/sw and src/offline replay authenticated requests; src/internal and src/imperative re-export the client. Filename patterns alone miss most of these (client.ts, proof.ts, pin-flow.ts), and the regexes are case-sensitive, so AuthProvider.tsx needs its own entry.",
+      "_why_pacts": "pacts/ is the consumer contract with the ControlTower BFF auth endpoints — changing it changes what the SDK promises the server."
+    },
+    {
+      "name": "migrations",
+      "why": "anything that writes schema — not revertable by reverting the commit",
+      "patterns": [
+        "^migrations/",
+        "\\.sql$",
+        "(^|/)migrate[^/]*\\.(mjs|js|ts)$",
+        "(^|/)[^/]*apply[-_]?(schema|migration)[^/]*\\.(mjs|js|ts)$"
+      ],
+      "_note": "This repo has no database or migrations of its own (2026-10-06: no migrations/). The two .sql files that exist are integration-test seeds under test/integration/; they are caught on purpose, since they define the users and app rows the auth tests run against."
+    },
+    {
+      "name": "ci-and-protection",
+      "why": "the guardrails themselves — a PR that weakens the gate must not pass through the gate",
+      "patterns": [
+        "^\\.github/workflows/",
+        "^\\.githooks/",
+        "(^|/)branch-protection",
+        "(^|/)sync-branch-protection\\.",
+        "^scripts/(lint|check|verify)-",
+        "^scripts/lib/",
+        "^scripts/devin-gate\\.mjs$",
+        "(^|/)risky-paths?\\.(json|mjs|js)$",
+        "^\\.bb-risk$",
+        "^\\.dependency-cruiser",
+        "(^|/)AGENTS\\.md$"
+      ],
+      "_why_lib": "scripts/lib/watermark-scan.ts is the rule behind verify-watermark-bump.ts, a CI gate.",
+      "_why_bb_risk": "bb-review.mjs reads .bb-risk as a repo-level risk declaration; an unguarded ADD of it would be routine (BB_Tools PR #6, P1 #11)."
+    },
+    {
+      "name": "secrets",
+      "why": "credentials, tokens, key handling — never merge unreviewed",
+      "patterns": [
+        "(^|/)\\.env",
+        "(^|/)\\.npmrc$",
+        "(^|/)[^/]*(credential|secret|token|kek)[^/]*\\.(js|mjs|cjs|ts|json)$",
+        "(^|/)credentials?/",
+        "^docs/CI_SECRETS\\.md$"
+      ],
+      "_why_npmrc": ".npmrc carries the GitHub Packages registry auth line for publishing this package."
+    },
+    {
+      "name": "deploy",
+      "why": "how the thing ships — the demo deploys to Railway from main, and the package is published to GitHub Packages on tag",
+      "patterns": [
+        "^Dockerfile",
+        "(^|/)railway\\.(json|toml)$",
+        "^\\.railwayignore$",
+        "^Procfile$",
+        "(^|/)nixpacks\\.",
+        "^\\.dockerignore$",
+        "^scripts/release\\.",
+        "^pnpm-workspace\\.yaml$"
+      ]
+    },
+    {
+      "name": "money",
+      "why": "billing, payroll, invoicing, QuickBooks posting — errors here cost real money",
+      "patterns": [
+        "(^|/)[^/]*(payroll|invoice|billing)[^/]*\\.(js|mjs|cjs|ts|tsx|jsx)$",
+        "(^|/)qbo-(post|write|bill)",
+        "(^|/)qbt-upload\\."
+      ],
+      "_note": "This repo has no money code today (2026-10-06: `git ls-files` finds no payroll, invoice, billing, qbo or qbt file). Kept so the first one added is caught."
+    }
+  ],
+  "_repo": "universal-auth",
+  "ddl_content_scan": false,
+  "_ddl_content_scan": "Declared off 2026-10-06: this repo has no database, migration runner or DDL-writing script. To enable, replace false with { dirs, extensions, pattern, max_bytes } (see BB_Micro_Bridge).",
+  "money_content_scan": false,
+  "_money_content_scan": "Declared off 2026-10-06: `git grep -iE \"quickbooks|qbo|intuit\"` over src/ finds only the error-code string 'qbo_missing' in src/errors.ts, no client import — the SDK posts nothing to QuickBooks. The classifier fails closed if this key is ever removed.",
+  "authz_content_scan": false,
+  "_authz_content_scan": "Declared off 2026-10-06: every authorization decision in this repo lives under src/core (abac.ts, entitlements.ts) and src/react/useAccess*, which the auth category already matches by PATH, so a content scan would add no coverage. To enable, replace false with { dirs, extensions, pattern, max_bytes }.",
+  "carpool_declare_content_scan": false,
+  "_carpool_declare_content_scan": "Declared off 2026-10-06: this repo has no carpool-declaration route handlers. The canonical check-risky-paths fails CLOSED on an undeclared scan, so the key must be present."
+}
