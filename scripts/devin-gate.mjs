@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// BB_Tools | guardrails/devin-gate.mjs | v1.10.1 | 2026-10-09 | BB
+// BB_Tools | guardrails/devin-gate.mjs | v1.10.2 | 2026-10-09 | BB
 // CANONICAL. Every managed repo carries a byte-identical copy at scripts/devin-gate.mjs;
 // edit THIS file, then `node sync-guardrails.mjs --pr` (BB_Tools). Run by devin-gate.yml.
 //
@@ -36,6 +36,16 @@
 // posts a devin-gate check itself. HOLD_PHASE=disarm runs only the disarm, HOLD_PHASE=recheck only the wait and re-run
 // (devin-gate-hold.yml v1.1 runs them as two jobs); unset runs both.
 //
+// v1.10.2 (2026-10-09) - the SWEEP fails the job when a disarm leaves no record, as HOLD MODE does. A held PR disarmed by
+//           the sweep whose record (settleDisarm) or lifted-meanwhile re-arm note (postLiftNote) could not be posted was
+//           only logged: the PR sat held and unarmed with nothing for the lift check to find, so lifting the hold never
+//           asked for the re-arm, and the job stayed green. Now each such PR is flagged (rearm: true) and, after every PR
+//           is processed, runSweep throws one error naming them ("a re-arm may be needed"; err.sweepOut carries the
+//           lines). The flag survives a later error on the same PR, and an error escaping the steps after a successful
+//           mutation sets it too (bb-review first-push P2). A failed disarm MUTATION is re-read, as HOLD MODE does (Devin,
+//           BB_Tools #273 - a lost response left the PR unarmed with no record, green): still armed -> retried next tick
+//           (green); auto-merge off -> recorded like a disarm (an open record is reused); unreadable -> red.
+//           Still one red run per loss: the next tick sees the PR unarmed and has no way to tell it from one never armed.
 // v1.10.1 (2026-10-09) - openDisarmRecord rewritten once against its whole case table (round 4; the table is above it).
 //           Devin, BMB #1028 / universal-auth #28: (1) red - a retried record post whose first try landed AFTER a newer
 //           hold's record (A, B, A) made the closing note for A close B too (v1.10.0 closed through the LAST copy of A); now
@@ -917,6 +927,9 @@ export async function runSweep(env, fetchFn = fetch, log = console.log, nowMs = 
   const out = [];
   for (const p of prs) {
     if (p.draft) continue;
+    // v1.10.2: set when a disarm leaves no record and no re-arm note - lifting the hold would then never ask for the re-arm.
+    let disarmNote = '';
+    let rearm = false;
     try {
       const io = githubIo({ ...env, PR_NUMBER: String(p.number) }, fetchFn);
       const sha = p.head.sha;
@@ -929,40 +942,71 @@ export async function runSweep(env, fetchFn = fetch, log = console.log, nowMs = 
       // disarmed only while it is STILL held and armed. A hold lifted in the moment between that re-read and the mutation
       // is caught by a read after it: the job cannot re-enable auto-merge (contents stays read-only), so it records the
       // original request on the PR - merge method + the re-arm command - and the owner's PR-goal stop hook sees it unarmed.
-      let disarmNote = '';
       if (held && p.auto_merge !== null) {
+        // v1.10.2 (bb-review first-push P2): once the mutation succeeded, an error escaping the record step is a lost record,
+        // never "retried next tick" - the next tick sees the PR unarmed and skips it.
+        let disarmed = false;
         try {
           const live = await io.api('GET', `/repos/${repo}/pulls/${p.number}`);
           if (!live || !isHeld({ title: live.title, labels: live.labels }) || !live.auto_merge) {
             disarmNote = ' - hold lifted or auto-merge off on re-read: auto-merge left alone';
           } else {
-            const r = await io.api('POST', '/graphql', { query: DISARM_Q, variables: { id: live.node_id || p.node_id } });
-            if (!r || r.errors || !r.data || !r.data.disablePullRequestAutoMerge) throw new Error(`disablePullRequestAutoMerge: ${JSON.stringify((r && r.errors) || r).slice(0, 200)}`);
-            disarmNote = ' - auto-merge disarmed (held)';
-            const after = await io.api('GET', `/repos/${repo}/pulls/${p.number}`).catch(() => null);
+            const r = await io.api('POST', '/graphql', { query: DISARM_Q, variables: { id: live.node_id || p.node_id } }).catch((e) => ({ errors: [{ message: errLine(e) }] }));
             const method = live.auto_merge.merge_method || 'squash';
             const readLive = () => io.api('GET', `/repos/${repo}/pulls/${p.number}`);
+            let after;
+            let ours = true;
+            if (!r || r.errors || !r.data || !r.data.disablePullRequestAutoMerge) {
+              // v1.10.2 (Devin, BB_Tools #273), as HOLD MODE: the mutation may have landed with its response lost, or a
+              // hold-disarm job beat it. Re-read: still armed -> a real failure, retried next tick (green); auto-merge off ->
+              // settled below like a disarm; unreadable -> it cannot be told, so the job goes red (the next tick would see
+              // the PR unarmed and skip it, leaving no record).
+              const failed = `disablePullRequestAutoMerge: ${JSON.stringify((r && r.errors) || r).slice(0, 200)}`;
+              const again = await io.api('GET', `/repos/${repo}/pulls/${p.number}`).catch(() => null);
+              if (!again) {
+                rearm = true;
+                disarmNote = ` - auto-merge disarm failed and the PR could not be re-read (${failed}): if it is unarmed it has no disarm record, a re-arm may be needed`;
+                throw Object.assign(new Error(failed), { noted: true });
+              }
+              if (again.auto_merge) throw new Error(failed);
+              disarmed = true;
+              disarmNote = ' - auto-merge was already off (another hold job disarmed it, or our response was lost)';
+              after = again;
+              ours = false;
+            } else {
+              disarmed = true;
+              disarmNote = ' - auto-merge disarmed (held)';
+              after = await io.api('GET', `/repos/${repo}/pulls/${p.number}`).catch(() => null);
+            }
             if (after && !isHeld({ title: after.title, labels: after.labels })) {
               // v1.10.0: a fresh id that names no record, so this late note can never close a newer hold's record.
               disarmNote = ` - auto-merge disarmed, but the hold was lifted meanwhile: re-arm (${method}) requested on the PR`;
               try {
                 disarmNote += await postLiftNote(io, readLive, { method, id: newId(), armed: false, sleep, backoffMs, newId });
-              } catch (e) { disarmNote = ` - auto-merge disarmed, but the hold was lifted meanwhile and the re-arm note could not be settled (${errLine(e)}): re-arm (${method}) needed`; }
+              } catch (e) { rearm = true; disarmNote = ` - auto-merge disarmed, but the hold was lifted meanwhile and the re-arm note could not be settled (${errLine(e)}): re-arm (${method}) needed`; }
             } else {
               // v1.9.2 (Devin, CalExp5 #763 / BB_Tools #269): the record lets the hold job that sees the hold lifted ask for
               // the re-arm; settleDisarm retries it and settles a hold lifted while it was written.
+              // Auto-merge found already off: another job's disarm gets a record only when none is open yet (that job posts
+              // its own); the comments are read with retries, and unreadable -> recorded anyway (duplicate > lost).
               try {
-                disarmNote += await settleDisarm(io, readLive, method, { sleep, backoffMs, newId });
-              } catch (e) { disarmNote = ` - ${errLine(e)}`; }
+                let open = null;
+                if (!ours) open = await withRetries(() => io.listComments(), { sleep, backoffMs }).then(openDisarmRecord, () => null);
+                disarmNote += await settleDisarm(io, readLive, method, { record: !open, id: open ? open.id : undefined, sleep, backoffMs, newId });
+              } catch (e) { rearm = true; disarmNote = ` - ${errLine(e)}: a re-arm may be needed`; }
             }
           }
-        } catch (e) { disarmNote = ` - auto-merge disarm FAILED, retried next tick (${errLine(e)})`; }
+        } catch (e) {
+          if (e && e.noted) { /* disarmNote and rearm already set */ }
+          else if (disarmed) { rearm = true; disarmNote = ` - auto-merge disarmed, but its record step failed (${errLine(e)}): a re-arm may be needed`; }
+          else disarmNote = ` - auto-merge disarm FAILED, retried next tick (${errLine(e)})`;
+        }
       }
       // pull_request_review runs record the PR head sha; pull_request_target's head_sha is UNVERIFIED (the workflow is not on main yet),
       // so also match by the PR association GitHub attaches to the run (findGateRuns).
       const run = (await findGateRuns(io.api, repo, p))[0] || null;
       const stale = run && run.status === 'completed' && (run.conclusion === 'success' || RETRYABLE_CONCLUSIONS.has(run.conclusion));
-      if (!stale) { out.push({ pr: p.number, rerun: false, why: sweepDecision({ run, nowMs }).why + disarmNote }); continue; }
+      if (!stale) { out.push({ pr: p.number, rerun: false, rearm, why: sweepDecision({ run, nowMs }).why + disarmNote }); continue; }
       const statuses = await io.getStatuses(sha);
       const bbReview = statuses.find((s) => s.context === BB_REVIEW_CONTEXT) || null;
       // Threads are read when the verdict depends on them: a failed/never-verdicted run needs them to know
@@ -1064,10 +1108,17 @@ export async function runSweep(env, fetchFn = fetch, log = console.log, nowMs = 
         // The rerun already fired: a failed marker post loses the repeat record, not the result.
         if (d.corrected) { try { await io.postComment(`_devin-gate: the latest green verdict is stale (${d.why}); re-running the check._\n\n${sweepCorrectedMarker(run.id, new Date(nowMs).toISOString(), d.fp)}`); } catch (e) { d.why += ` (correction marker failed: ${errLine(e)})`; } }
       } else if (breadcrumbErr) { d.why += ` (state trail write failed: ${errLine(breadcrumbErr)})`; }
-      out.push({ pr: p.number, rerun: d.rerun, why: d.why + disarmNote });
-    } catch (e) { out.push({ pr: p.number, rerun: false, why: `error: ${errLine(e)}` }); }
+      out.push({ pr: p.number, rerun: d.rerun, rearm, why: d.why + disarmNote });
+    } catch (e) { out.push({ pr: p.number, rerun: false, rearm, why: `error: ${errLine(e)}${disarmNote}` }); }
   }
   for (const o of out) log(`sweep #${o.pr}: ${o.rerun ? 'RE-RAN' : 'skip'} - ${o.why}`);
+  // v1.10.2: a disarm with no record ends the job red, as HOLD MODE does - after every PR is processed.
+  const lost = out.filter((o) => o.rearm);
+  if (lost.length) {
+    const err = new Error(`sweep: auto-merge disarmed on held PR(s) ${lost.map((o) => '#' + o.pr).join(', ')} with no disarm record or re-arm note on the PR - lifting the hold will not ask for the re-arm: a re-arm may be needed`);
+    err.sweepOut = out;
+    throw err;
+  }
   return out;
 }
 
