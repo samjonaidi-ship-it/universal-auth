@@ -1,0 +1,108 @@
+# BB_Tools | guardrails/devin-gate-hold.yml | v1.1 | 2026-10-09 | BB
+# CANONICAL. Every managed repo carries a byte-identical copy at
+# .github/workflows/devin-gate-hold.yml; edit THIS file, then
+# `node sync-guardrails.mjs --pr` (BB_Tools). The script is scripts/devin-gate.mjs (HOLD MODE, v1.9.0 for the two phases).
+#
+# Re-judges a PR at once when a hold for Sam is added or lifted: the title changed (a HOLD title) or the sams-merge
+# label was added or removed. GitHub's default pull_request_target types never fire on a title or label change, so a
+# green devin-gate on a PR Sam then held would stay green and auto-merge would merge it.
+#
+# WHY A SEPARATE WORKFLOW (not more triggers on devin-gate.yml, which v1.6 tried): a job skipped by its `if` still posts
+# a SKIPPED check under its name, and GitHub counts a skipped REQUIRED check as passing. Listening to edited/labeled in
+# devin-gate.yml meant a body edit or any other label change (the gate writes devin-unreviewed itself) put a skipped
+# "devin-gate" check on the head that could cover a red one. This job is named hold-recheck, a name no branch
+# protection requires, so its own skips mean nothing. It never posts a devin-gate check: it disarms auto-merge on a
+# held PR and RE-RUNS the PR's latest devin-gate run (waiting for an unfinished one), so the real gate posts the verdict.
+#
+# pull_request_target + a checkout of the default branch, like devin-gate.yml: nothing from the PR is checked out or
+# run, and the only PR input is the PR number. BOOTSTRAP: a script on the default branch without HOLD MODE (missing, or
+# older than v1.8.0, which would run the full gate from this job) -> a ::warning:: and a pass. A v1.8.x script (HOLD
+# MODE but no HOLD_PHASE): hold-disarm skips, and hold-recheck runs it - v1.8.x ignores HOLD_PHASE and does both
+# phases, as v1.0 of this file did. The label compare in the job `if` is case-insensitive (GitHub ignores case when
+# comparing strings), matching isHeld.
+#
+# v1.1 (2026-10-09) - TWO JOBS (bb-review first-push P1 on the RevExp5 sync). v1.0 ran one job in a per-PR
+# cancel-in-progress:false group, but GitHub keeps only ONE pending job per group: a HOLD added while an earlier job
+# sat in its up-to-16-minute wait for an unfinished devin-gate run was queued behind it - auto-merge stayed armed on a
+# held PR - and a third event replaced the pending one. Now:
+#   hold-disarm   no queue; disarms auto-merge on a held PR at once on every event (it re-reads the PR live first).
+#   hold-recheck  queued per PR, cancel-in-progress: true. It re-reads the live PR and re-runs the latest devin-gate
+#                 run, so the newest event's job does everything an older, cancelled one would have done.
+
+name: devin-gate-hold
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [edited, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  hold-disarm:
+    name: hold-disarm
+    if: >-
+      github.event.pull_request.base.ref == github.event.repository.default_branch &&
+      ((github.event.action == 'edited' && github.event.changes.title) ||
+       ((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name == 'sams-merge'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write   # disarm auto-merge on a held PR
+      issues: write          # the re-arm note when a hold is lifted mid-disarm
+    steps:
+      - name: Checkout the BASE ref
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - name: Disarm a held PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          DEVIN_GATE_MODE: hold
+          HOLD_PHASE: disarm
+        run: |
+          if ! grep -qF "const phase = env.HOLD_PHASE" scripts/devin-gate.mjs 2>/dev/null; then
+            echo "::warning::scripts/devin-gate.mjs on the default branch has no HOLD_PHASE yet (needs v1.9.0); hold-recheck disarms instead"
+            exit 0
+          fi
+          node scripts/devin-gate.mjs
+
+  hold-recheck:
+    name: hold-recheck
+    if: >-
+      github.event.pull_request.base.ref == github.event.repository.default_branch &&
+      ((github.event.action == 'edited' && github.event.changes.title) ||
+       ((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name == 'sams-merge'))
+    concurrency:
+      # The newest hold event wins: its job re-reads the live PR and re-runs the gate, so cancelling an older wait loses nothing.
+      group: devin-gate-hold-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: write         # re-run the PR's devin-gate run
+      pull-requests: write   # v1.8.x fallback: that script also disarms here
+      issues: write          # v1.8.x fallback: the re-arm note
+    steps:
+      - name: Checkout the BASE ref
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - name: Re-judge the hold
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          DEVIN_GATE_MODE: hold
+          HOLD_PHASE: recheck
+        run: |
+          if ! grep -q DEVIN_GATE_MODE scripts/devin-gate.mjs 2>/dev/null; then
+            echo "::warning::scripts/devin-gate.mjs on the default branch has no HOLD MODE yet (needs v1.8.0); hold re-check skipped"
+            exit 0
+          fi
+          node scripts/devin-gate.mjs

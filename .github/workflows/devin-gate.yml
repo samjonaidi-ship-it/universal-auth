@@ -1,7 +1,19 @@
-# BB_Tools | guardrails/devin-gate.yml | v1.5 | 2026-10-05 | BB
+# BB_Tools | guardrails/devin-gate.yml | v1.7 | 2026-10-09 | BB
 # CANONICAL. Every managed repo carries a byte-identical copy at
 # .github/workflows/devin-gate.yml; edit THIS file, then
 # `node sync-guardrails.mjs --pr` (BB_Tools). The gate is scripts/devin-gate.mjs.
+#
+# v1.7 (2026-10-09): the edited/labeled/unlabeled triggers are GONE again - they moved to devin-gate-hold.yml. A job
+# skipped by its `if` still posts a SKIPPED devin-gate check on the PR head, and GitHub counts a skipped required check
+# as passing: a body edit or any label change (the gate writes devin-unreviewed itself) could cover a red gate (bb-review
+# P1, 2026-10-09). devin-gate-hold.yml (job hold-recheck) disarms a held PR and RE-RUNS this workflow's latest run.
+#
+# v1.6 (2026-10-09, superseded by v1.7): also ran on `edited` (only when the TITLE changed) and `labeled`/`unlabeled` (only the
+# `sams-merge` label), so adding or lifting a hold for Sam (a HOLD title / the sams-merge label; devin-gate.mjs v1.7.0)
+# re-judges the PR at once: GitHub's default types never fire on a title or label change, so a green gate on a PR
+# Sam then held stayed green and auto-merge merged it. Label events for any other label (devin-unreviewed, which the
+# gate writes itself) are filtered out by the job `if` - no self-trigger loop. These events keep the head sha, so they
+# queue in the PR's group like a review event; only `synchronize` cancels.
 #
 # Runs in PARALLEL with CI and makes Devin Review a reliable but never-stuck gate:
 # it waits a bounded time (8 min) for the "Devin Review" commit status on the PR head,
