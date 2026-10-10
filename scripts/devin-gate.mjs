@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// BB_Tools | guardrails/devin-gate.mjs | v1.10.0 | 2026-10-09 | BB
+// BB_Tools | guardrails/devin-gate.mjs | v1.10.1 | 2026-10-09 | BB
 // CANONICAL. Every managed repo carries a byte-identical copy at scripts/devin-gate.mjs;
 // edit THIS file, then `node sync-guardrails.mjs --pr` (BB_Tools). Run by devin-gate.yml.
 //
@@ -36,6 +36,12 @@
 // posts a devin-gate check itself. HOLD_PHASE=disarm runs only the disarm, HOLD_PHASE=recheck only the wait and re-run
 // (devin-gate-hold.yml v1.1 runs them as two jobs); unset runs both.
 //
+// v1.10.1 (2026-10-09) - openDisarmRecord rewritten once against its whole case table (round 4; the table is above it).
+//           Devin, BMB #1028 / universal-auth #28: (1) red - a retried record post whose first try landed AFTER a newer
+//           hold's record (A, B, A) made the closing note for A close B too (v1.10.0 closed through the LAST copy of A); now
+//           a copy of an open or closed id is ignored, so A closes at its first position and B stays open; (2) red - the
+//           lift check read the comment list once: one 502 left a lifted hold's record unread; now retried, and a read
+//           that still fails fails the job (re-arm may be needed), as before.
 // v1.10.0 (2026-10-09) - Disarm records carry ids (round 3+ on the disarm record: the whole case table, rewritten once).
 //           Devin on the v1.9.2 sync PRs: (1) CT #811 red - a lift job's note posted late closed the record a NEWER hold
 //           had written, so that hold's lift never asked for the re-arm; (2) CalExp5 #766 red - a hold renewed between a
@@ -342,13 +348,20 @@ export const restoredNote = (method, id) => `_devin-gate: this PR was held for S
 /**
  * The disarm record still waiting for its re-arm note (comments oldest first, as the API lists them). Returns
  * {method, id?} for the newest open record, or null. Pure.
- * v1.10.0 closing rules (a closing note = a `devin-gate-rearm` marker: the re-arm note or the closed note):
- *   closing note with id I, record I seen before it -> closes the LAST record I and every record before it (never a later one;
- *                                                     a retried post whose first try landed leaves two records I)
- *   closing note with id I, no such record before it -> closes nothing (a "lifted meanwhile" note for a disarm that has no record)
- *   closing note with no id (posted before v1.10.0)   -> closes every record before it, as v1.9.2 did
+ * v1.10.1 case table (round 4 on this function: written out whole, rewritten once). A record is a `devin-gate-disarmed`
+ * marker (the disarm note or the restored note); a closing note is a `devin-gate-rearm` marker (re-arm or closed note).
+ *   record id I, I never seen                         -> opens record I at this position
+ *   record id I, I already open                       -> a duplicate (a retried post whose first try landed): ignored, so a
+ *                                                        newer record B posted between the two copies stays after I (A,B,A)
+ *   record id I, I already closed                     -> a duplicate landing after its closing note: ignored, stays closed
  *   record with no id (posted before v1.10.0)         -> named c<comment id>, so v1.10.0 never posts a no-id closing note
- * So a stale note that a lift job posts after a newer hold wrote record B leaves B open (Devin, BB_Tools CT #811).
+ *   closing note id I, record I open                  -> closes I and every record opened before it, never a later one
+ *                                                        (a stale lift note cannot close a newer hold's record: CT #811)
+ *   closing note id I, I never opened                 -> closes nothing and marks nothing (a "lifted meanwhile" note for a
+ *                                                        disarm with no record): a closure never reaches forward - an
+ *                                                        extra re-arm request is harmless, a lost one is not
+ *   closing note with no id (posted before v1.10.0)   -> closes every record before it, as v1.9.2 did
+ * Ids are fresh per disarm (recordId) or per comment (c<id>), so one id is one hold: every copy of it is the same record.
  * A PR that was never armed before its hold has no record, so lifting that hold never asks for a re-arm. Only the
  * comments these jobs post (as github-actions[bot]) count: a person or another app quoting a marker changes nothing.
  * Two lift jobs running at once (a title edit and a label removal) can both post the re-arm note; a duplicate note is
@@ -357,19 +370,23 @@ export const restoredNote = (method, id) => `_devin-gate: this PR was held for S
 export const GATE_BOT = 'github-actions[bot]';
 export function openDisarmRecord(comments) {
   let open = [];
+  const closed = new Set();
   for (const c of comments || []) {
     if (String((c && c.user && c.user.login) || '') !== GATE_BOT) continue;
     const body = String((c && c.body) || '');
     const d = body.match(/<!-- devin-gate-disarmed method=([a-z]+)(?: id=([a-z0-9]+))? -->/);
-    // a record from before v1.10.0 has no id of its own: it is named by its comment id (c<id>), so the note that closes it
-    // never has to be a no-id note, which would close every record before it, newer holds' included (Devin, BB_Tools #271)
-    const legacy = c && c.id != null ? `c${c.id}` : undefined;
-    if (d) { open.push(d[2] ? { method: d[1], id: d[2] } : legacy ? { method: d[1], id: legacy } : { method: d[1] }); continue; }
+    if (d) {
+      // a record from before v1.10.0 has no id of its own: it is named by its comment id (c<id>) (Devin, BB_Tools #271)
+      const id = d[2] || (c && c.id != null ? `c${c.id}` : undefined);
+      if (id && (closed.has(id) || open.some((x) => x.id === id))) continue;
+      open.push(id ? { method: d[1], id } : { method: d[1] });
+      continue;
+    }
     const r = body.match(/<!-- devin-gate-rearm method=[a-z]+(?: id=([a-z0-9]+))?/);
     if (!r) continue;
-    if (!r[1]) { open = []; continue; }
-    const i = open.findLastIndex((x) => x.id === r[1]);
-    if (i >= 0) open = open.slice(i + 1);
+    if (!r[1]) { for (const x of open) if (x.id) closed.add(x.id); open = []; continue; }
+    const i = open.findIndex((x) => x.id === r[1]);
+    if (i >= 0) { for (const x of open.slice(0, i + 1)) if (x.id) closed.add(x.id); open = open.slice(i + 1); }
   }
   return open.length ? open[open.length - 1] : null;
 }
@@ -1172,7 +1189,8 @@ export async function runHoldRecheck(env, fetchFn = fetch, log = console.log, { 
   // closing note instead, so that old record cannot ask a LATER hold, begun unarmed, to re-arm (Devin, BB_Tools #269).
   if (phase !== 'recheck' && !held) {
     try {
-      const rec = openDisarmRecord(await io.listComments());
+      // v1.10.1: retried - a single failed read here left a lifted hold's record unread and its re-arm never asked (Devin, UA #28)
+      const rec = openDisarmRecord(await withRetries(() => io.listComments(), { sleep, backoffMs: holdBackoffMs }));
       if (rec) {
         const live = await readPr();
         if (live && live.state === 'open' && !isHeld({ title: live.title, labels: live.labels })) {
