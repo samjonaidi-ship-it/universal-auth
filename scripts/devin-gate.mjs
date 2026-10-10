@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// BB_Tools | guardrails/devin-gate.mjs | v1.9.1 | 2026-10-09 | BB
+// BB_Tools | guardrails/devin-gate.mjs | v1.10.0 | 2026-10-09 | BB
 // CANONICAL. Every managed repo carries a byte-identical copy at scripts/devin-gate.mjs;
 // edit THIS file, then `node sync-guardrails.mjs --pr` (BB_Tools). Run by devin-gate.yml.
 //
@@ -36,6 +36,44 @@
 // posts a devin-gate check itself. HOLD_PHASE=disarm runs only the disarm, HOLD_PHASE=recheck only the wait and re-run
 // (devin-gate-hold.yml v1.1 runs them as two jobs); unset runs both.
 //
+// v1.10.0 (2026-10-09) - Disarm records carry ids (round 3+ on the disarm record: the whole case table, rewritten once).
+//           Devin on the v1.9.2 sync PRs: (1) CT #811 red - a lift job's note posted late closed the record a NEWER hold
+//           had written, so that hold's lift never asked for the re-arm; (2) CalExp5 #766 red - a hold renewed between a
+//           lift job's read and its re-arm note left the PR held, unarmed and with no record (the new hold's job saw
+//           nothing to disarm); (3) BMB #1024 yellows - an unreadable comment list skipped the record, and a failed
+//           re-read error outlived the read that recovered it.
+//             record   devin-gate-disarmed method=M id=I   posted by every disarm, I fresh (recordId; opts.newId in tests)
+//             closing  devin-gate-rearm method=M id=I      closes the last record I and every record before it, never a later one
+//             closing  id names no earlier record          closes nothing (the "lifted meanwhile" notes use a fresh id)
+//             closing  no id (before v1.10.0)              closes every earlier record, as v1.9.2 did; never posted by v1.10.0
+//             record   no id (before v1.10.0)              named c<comment id>, so its closing note names it too (Devin, #271)
+//             lift: unheld+armed, record I open             -> closedNote(I)
+//             lift: unheld+unarmed, record I open           -> rearmNote(I), re-read: held again + unarmed -> restoredNote(new id)
+//             disarm, lifted meanwhile (both sites)         -> rearmNote(fresh id), same re-read and restore (postLiftNote)
+//             disarm, still held, ours                      -> settleDisarm: record(new id), re-read, lifted -> postLiftNote
+//             disarm, still held, another job's             -> comments read with retries; record open -> settle with its id;
+//                                                             none open OR unreadable -> record anyway (duplicate > lost)
+//             disarm OK, the read after it fails            -> no error of its own: settleDisarm's retried re-read decides
+//           Residual: a hold that begins after postLiftNote's last read gets no record; the re-arm request was already on
+//           the PR while it was unheld, and the owner's PR-goal stop hook sees it unarmed.
+// v1.9.3 (2026-10-09) - settleDisarm's three errors carry { cause: e } (universal-auth's eslint preserve-caught-error
+//           blocked the v1.9.2 sync push). Behaviour unchanged.
+// v1.9.2 (2026-10-09) - Two Devin findings on the v1.9.0 guardrail sync PRs, fixed against one case table:
+//             held+armed, mutation OK, still held       -> disarm + RECORD (disarmedNote, marker devin-gate-disarmed)
+//             held+armed, mutation OK, lifted meanwhile -> disarm + re-arm note (as before)
+//             held+armed, mutation fails, now off       -> another job disarmed: record only if none is open
+//             unheld+unarmed, open record (lift)        -> re-read; still unheld+unarmed+open -> re-arm note (closes it)
+//             unheld+unarmed, no record                 -> nothing (never armed before the hold: never asked to re-arm)
+//             recheck: run done, PR held AND armed      -> disarm (+record) BEFORE the re-run
+//           (1) Devin CalExp5 #763: a hold lifted after the disarm re-ran the gate green but never asked for the re-arm,
+//           so the PR sat green and unarmed for good. Now the disarm is recorded on the PR (runSweep too), and the
+//           hold-disarm job that sees an unheld, unarmed PR with an open record (openDisarmRecord, bot comments only)
+//           posts rearmNote once. (2) Devin SEC_ CT #808: the recheck phase re-ran the gate on a PR that could still be
+//           held AND armed (its hold came while this job waited), so auto-merge could use the old green before the new
+//           red landed; it now disarms first. Errors are collected and thrown together after the re-run, as before.
+//           (3) Devin, BB_Tools #269: settleDisarm (both disarm sites) retries the record, then re-reads the PR - a hold
+//           lifted while the record was written gets the re-arm note (or, re-armed already, the closing note); and a lift
+//           on a PR the owner already re-armed posts closedNote, so an old record cannot ask a later, unarmed hold to re-arm.
 // v1.9.1 (2026-10-09) - a pass whose final hold re-read fails now FAILS instead of passing (Devin SEC_, universal-auth #27).
 //           Under a PR-read outage the gate passed via apiOutage and then could not see a HOLD either, leaving a green
 //           check on a held PR. Failing costs an ordinary PR one sweep tick: the sweep re-runs a failed gate on a PR
@@ -283,8 +321,108 @@ export function isHeld(pr) {
   return (pr.labels || []).some((l) => String(typeof l === 'string' ? l : l && l.name || '').toLowerCase() === 'sams-merge');
 }
 
-/** The PR comment left when a hold is lifted while auto-merge was being disarmed: these jobs cannot re-enable it. Pure. */
-export const rearmNote = (method) => `_devin-gate: the hold was lifted while the sweep was disarming auto-merge (it had been armed: ${method}). Re-arm it from the branch's worktree: \`node TOOLS/bb.mjs landed --arm\`. This job cannot enable auto-merge itself._\n\n<!-- devin-gate-rearm method=${method} -->`;
+/**
+ * v1.10.0: every disarm record carries an id, and every note that closes one names it (` id=I` in the marker), so a
+ * note posted late can never close a record newer than the one it saw (Devin, BB_Tools CT #811). An id is optional
+ * only for reading: records and notes posted before v1.10.0 have none. Pure.
+ */
+const idPart = (id) => (id ? ` id=${id}` : '');
+/** A fresh record id: base36 time + random, enough to tell two records on one PR apart. Injectable as opts.newId. */
+export const recordId = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+
+/** The PR comment left when a hold is lifted after these jobs disarmed auto-merge: they cannot re-enable it. Its marker closes record `id`. Pure. */
+export const rearmNote = (method, id) => `_devin-gate: auto-merge was disarmed while this PR was held for Sam (it had been armed: ${method}), and the hold is now lifted. Re-arm it from the branch's worktree: \`node TOOLS/bb.mjs landed --arm\`. This job cannot enable auto-merge itself._\n\n<!-- devin-gate-rearm method=${method}${idPart(id)} -->`;
+
+/** The PR comment that records a disarm of a held PR, so lifting the hold later can ask for the re-arm (v1.9.2; id v1.10.0). Pure. */
+export const disarmedNote = (method, id) => `_devin-gate: auto-merge disarmed because this PR is held for Sam (it had been armed: ${method}). When the hold is lifted, this job asks the owner to re-arm it._\n\n<!-- devin-gate-disarmed method=${method}${idPart(id)} -->`;
+
+/** v1.10.0: the record restored when the PR was held again, still unarmed, right after its re-arm note (Devin, CalExp5 #766). Same marker as disarmedNote. Pure. */
+export const restoredNote = (method, id) => `_devin-gate: this PR was held for Sam again before it was re-armed (it had been armed: ${method}). The re-arm request above still stands; when this hold is lifted, this job asks again._\n\n<!-- devin-gate-disarmed method=${method}${idPart(id)} -->`;
+
+/**
+ * The disarm record still waiting for its re-arm note (comments oldest first, as the API lists them). Returns
+ * {method, id?} for the newest open record, or null. Pure.
+ * v1.10.0 closing rules (a closing note = a `devin-gate-rearm` marker: the re-arm note or the closed note):
+ *   closing note with id I, record I seen before it -> closes the LAST record I and every record before it (never a later one;
+ *                                                     a retried post whose first try landed leaves two records I)
+ *   closing note with id I, no such record before it -> closes nothing (a "lifted meanwhile" note for a disarm that has no record)
+ *   closing note with no id (posted before v1.10.0)   -> closes every record before it, as v1.9.2 did
+ *   record with no id (posted before v1.10.0)         -> named c<comment id>, so v1.10.0 never posts a no-id closing note
+ * So a stale note that a lift job posts after a newer hold wrote record B leaves B open (Devin, BB_Tools CT #811).
+ * A PR that was never armed before its hold has no record, so lifting that hold never asks for a re-arm. Only the
+ * comments these jobs post (as github-actions[bot]) count: a person or another app quoting a marker changes nothing.
+ * Two lift jobs running at once (a title edit and a label removal) can both post the re-arm note; a duplicate note is
+ * harmless, a lost one is not.
+ */
+export const GATE_BOT = 'github-actions[bot]';
+export function openDisarmRecord(comments) {
+  let open = [];
+  for (const c of comments || []) {
+    if (String((c && c.user && c.user.login) || '') !== GATE_BOT) continue;
+    const body = String((c && c.body) || '');
+    const d = body.match(/<!-- devin-gate-disarmed method=([a-z]+)(?: id=([a-z0-9]+))? -->/);
+    // a record from before v1.10.0 has no id of its own: it is named by its comment id (c<id>), so the note that closes it
+    // never has to be a no-id note, which would close every record before it, newer holds' included (Devin, BB_Tools #271)
+    const legacy = c && c.id != null ? `c${c.id}` : undefined;
+    if (d) { open.push(d[2] ? { method: d[1], id: d[2] } : legacy ? { method: d[1], id: legacy } : { method: d[1] }); continue; }
+    const r = body.match(/<!-- devin-gate-rearm method=[a-z]+(?: id=([a-z0-9]+))?/);
+    if (!r) continue;
+    if (!r[1]) { open = []; continue; }
+    const i = open.findLastIndex((x) => x.id === r[1]);
+    if (i >= 0) open = open.slice(i + 1);
+  }
+  return open.length ? open[open.length - 1] : null;
+}
+
+/** The PR comment that closes disarm record `id` once auto-merge is armed again (no re-arm needed). Its marker is a rearm marker. Pure. */
+export const closedNote = (method, id) => `_devin-gate: auto-merge is armed again, so the disarm record above (${method}) is closed. Nothing to do._\n\n<!-- devin-gate-rearm method=${method}${idPart(id)} closed -->`;
+
+/**
+ * v1.10.0: the note for a hold seen lifted on a PR these jobs disarmed - one helper for all four places that post it
+ * (the lift check, settleDisarm, and the "lifted meanwhile" branch of both disarm sites).
+ * armed -> closedNote(id); unarmed -> rearmNote(id), then the PR is read AGAIN: held again and still unarmed means a new
+ * hold began between the read that saw it lifted and this note, and that hold's job saw nothing to disarm, so it wrote
+ * no record. The note just posted would leave the PR with none, and the next lift would ask nobody to re-arm (Devin,
+ * CalExp5 #766): the record is restored with a fresh id. A hold that begins after this last read gets no record, but
+ * the re-arm request was already on the PR while it was unheld; the owner's PR-goal stop hook sees it unarmed.
+ * Posts and reads are retried. Returns a short note for the log; throws an Error saying what the owner may need to do.
+ */
+export async function postLiftNote(io, readPr, { method, id, armed, sleep, backoffMs = 2000, newId = recordId } = {}) {
+  const tries = (fn) => withRetries(fn, { sleep, backoffMs });
+  try { await tries(() => io.postComment(armed ? closedNote(method, id) : rearmNote(method, id))); } catch (e) {
+    throw new Error(armed ? `the hold was lifted and auto-merge is armed again, but the closing note of its disarm record could not be posted (${errLine(e)}): a later hold begun unarmed may be asked to re-arm (${method})` : `the hold was lifted after a disarm, but the re-arm note could not be posted (${errLine(e)}): re-arm (${method}) needed`, { cause: e });
+  }
+  if (armed) return '';
+  let now;
+  try { now = await tries(readPr); } catch (e) { throw new Error(`re-arm (${method}) requested on the PR, but the PR could not be re-read after it (${errLine(e)}): if it was held again meanwhile, it has no disarm record and the next lift will not ask for the re-arm`, { cause: e }); }
+  if (!now || now.state !== 'open' || !isHeld({ title: now.title, labels: now.labels }) || now.auto_merge) return '';
+  try { await tries(() => io.postComment(restoredNote(method, newId()))); } catch (e) { throw new Error(`re-arm (${method}) requested on the PR, but it was held again meanwhile and its disarm record could not be restored (${errLine(e)}): the next lift will not ask for the re-arm`, { cause: e }); }
+  return ' (held again right after the note: disarm record restored)';
+}
+
+/**
+ * v1.9.2 (Devin, BB_Tools #269): what follows a disarm of a PR that still read as held, in both runSweep and HOLD MODE.
+ * 1. The record (id opts.id, else a fresh one) is posted with retries (a single failed write used to leave no record, so
+ *    the lift asked nobody to re-arm). record=false skips it: another job's disarm whose record `id` is already open.
+ * 2. The PR is read AGAIN after the record: a hold lifted while the record was being written may have been seen by a lift
+ *    job that found no record yet, so this job settles it with postLiftNote - unheld and unarmed -> the re-arm note;
+ *    unheld and armed again -> the closing note. Still held -> the record stays open.
+ * Returns a short note for the log; throws an Error whose message says what the owner may need to do.
+ */
+export async function settleDisarm(io, readPr, method, { record = true, id, sleep, backoffMs = 2000, newId = recordId } = {}) {
+  const tries = (fn) => withRetries(fn, { sleep, backoffMs });
+  const rid = id || (record ? newId() : undefined);
+  if (record) {
+    try { await tries(() => io.postComment(disarmedNote(method, rid))); } catch (e) { throw new Error(`auto-merge disarmed, but its record could not be posted after retries (${errLine(e)}): lifting the hold will not ask for the re-arm (${method})`, { cause: e }); }
+  }
+  let now;
+  try { now = await tries(readPr); } catch (e) { throw new Error(`auto-merge disarmed, but the PR could not be re-read after its record (${errLine(e)}): if the hold was lifted, re-arm (${method}) is needed`, { cause: e }); }
+  if (!now || now.state !== 'open' || isHeld({ title: now.title, labels: now.labels })) return '';
+  const armed = !!now.auto_merge;
+  let extra;
+  try { extra = await postLiftNote(io, readPr, { method, id: rid, armed, sleep, backoffMs, newId }); } catch (e) { throw new Error(`auto-merge disarmed, but the hold was lifted meanwhile and its note could not be settled: ${errLine(e)}`, { cause: e }); }
+  return (armed ? ' (hold lifted and auto-merge re-armed meanwhile: record closed)' : ` (the hold was lifted meanwhile: re-arm (${method}) requested on the PR)`) + extra;
+}
 
 /** Turns off a PR's auto-merge (held PRs; needs pull-requests: write, which the sweep job has). */
 export const DISARM_Q = 'mutation($id:ID!){disablePullRequestAutoMerge(input:{pullRequestId:$id}){pullRequest{number}}}';
@@ -749,7 +887,7 @@ export async function findGateRuns(api, repo, p, maxPages = RUN_PAGE_LIMIT) {
 }
 
 /** Walk the open PRs; re-run the failed devin-gate run of each one whose verdict is now green. Returns [{pr, rerun, why}]. */
-export async function runSweep(env, fetchFn = fetch, log = console.log, nowMs = Date.now()) {
+export async function runSweep(env, fetchFn = fetch, log = console.log, nowMs = Date.now(), { sleep, backoffMs, newId = recordId } = {}) {
   const repo = env.GITHUB_REPOSITORY;
   const base = githubIo({ ...env, PR_NUMBER: '1' }, fetchFn);
   const prs = [];
@@ -785,12 +923,20 @@ export async function runSweep(env, fetchFn = fetch, log = console.log, nowMs = 
             if (!r || r.errors || !r.data || !r.data.disablePullRequestAutoMerge) throw new Error(`disablePullRequestAutoMerge: ${JSON.stringify((r && r.errors) || r).slice(0, 200)}`);
             disarmNote = ' - auto-merge disarmed (held)';
             const after = await io.api('GET', `/repos/${repo}/pulls/${p.number}`).catch(() => null);
+            const method = live.auto_merge.merge_method || 'squash';
+            const readLive = () => io.api('GET', `/repos/${repo}/pulls/${p.number}`);
             if (after && !isHeld({ title: after.title, labels: after.labels })) {
-              const method = live.auto_merge.merge_method || 'squash';
+              // v1.10.0: a fresh id that names no record, so this late note can never close a newer hold's record.
               disarmNote = ` - auto-merge disarmed, but the hold was lifted meanwhile: re-arm (${method}) requested on the PR`;
               try {
-                await io.postComment(rearmNote(method));
-              } catch (e) { disarmNote = ` - auto-merge disarmed, but the hold was lifted meanwhile and the re-arm note could not be posted (${errLine(e)}): re-arm (${method}) needed`; }
+                disarmNote += await postLiftNote(io, readLive, { method, id: newId(), armed: false, sleep, backoffMs, newId });
+              } catch (e) { disarmNote = ` - auto-merge disarmed, but the hold was lifted meanwhile and the re-arm note could not be settled (${errLine(e)}): re-arm (${method}) needed`; }
+            } else {
+              // v1.9.2 (Devin, CalExp5 #763 / BB_Tools #269): the record lets the hold job that sees the hold lifted ask for
+              // the re-arm; settleDisarm retries it and settles a hold lifted while it was written.
+              try {
+                disarmNote += await settleDisarm(io, readLive, method, { sleep, backoffMs, newId });
+              } catch (e) { disarmNote = ` - ${errLine(e)}`; }
             }
           }
         } catch (e) { disarmNote = ` - auto-merge disarm FAILED, retried next tick (${errLine(e)})`; }
@@ -946,8 +1092,10 @@ export async function runStatusEvent(env, fetchFn = fetch, log = console.log) {
  * passing for a required check. A run still unfinished after waitMs THROWS (this job goes red; the 10-minute sweep
  * re-runs a passed gate on a held PR). Returns {disarmed, rerun, why}.
  * v1.9.0: env.HOLD_PHASE = 'disarm' (the disarm only, never waits) or 'recheck' (the wait and re-run only); unset = both.
+ * v1.9.2: a disarm of a PR that stays held posts a record (disarmedNote); an unheld, unarmed PR with an open record gets
+ * the re-arm note (the hold was lifted); the recheck phase disarms a held, armed PR right before its re-run.
  */
-export async function runHoldRecheck(env, fetchFn = fetch, log = console.log, { sleep = (ms) => new Promise((r) => setTimeout(r, ms)), nowFn = () => Date.now(), pollMs = 15000, waitMs = HOLD_WAIT_MS } = {}) {
+export async function runHoldRecheck(env, fetchFn = fetch, log = console.log, { sleep = (ms) => new Promise((r) => setTimeout(r, ms)), nowFn = () => Date.now(), pollMs = 15000, waitMs = HOLD_WAIT_MS, backoffMs: holdBackoffMs = 2000, newId = recordId } = {}) {
   const repo = env.GITHUB_REPOSITORY;
   const io = githubIo(env, fetchFn);
   const n = Number(env.PR_NUMBER);
@@ -956,50 +1104,93 @@ export async function runHoldRecheck(env, fetchFn = fetch, log = console.log, { 
   if (!['disarm', 'recheck', 'both'].includes(phase)) throw new Error(`devin-gate: HOLD_PHASE must be disarm, recheck or unset (got ${JSON.stringify(phase)})`);
   const out = { disarmed: false, rerun: false, why: '' };
   const done = (why) => { out.why = why; log(`hold #${n}: ${out.rerun ? 'RE-RAN the gate' : 'no re-run'}${out.disarmed ? ', disarmed auto-merge' : ''} - ${why}`); return out; };
-  const p = await io.api('GET', `/repos/${repo}/pulls/${n}`);
+  const readPr = () => io.api('GET', `/repos/${repo}/pulls/${n}`);
+  const p = await readPr();
   if (!p || p.state !== 'open') return done('PR is not open');
   const held = isHeld({ title: p.title, labels: p.labels });
   let note = '';
-  // A failed disarm must not stop the re-run: the re-run is what turns the gate red on a held PR (pre-push review P2).
-  // It is reported (thrown) only after the gate has been re-run.
-  let disarmErr = null;
+  // A failed disarm, record or re-arm note must not stop the re-run: the re-run is what turns the gate red on a held PR
+  // (pre-push review P2). They are reported (thrown, all of them in one error) only after the gate has been re-run.
+  const errs = [];
   // As in runSweep (Devin #265): the PR is re-read right before the mutation and disarmed only while it is STILL held
-  // and armed; once the mutation succeeds, a failed follow-up read or re-arm note is reported as that, not as a failed disarm.
-  if (phase !== 'recheck' && held && p.auto_merge) {
+  // and armed; once the mutation succeeds, a failed follow-up read, record or re-arm note is reported as that, not as a
+  // failed disarm. Still held after it -> the disarm is recorded on the PR, so lifting the hold later asks for the
+  // re-arm (v1.9.2, Devin CalExp5 #763); lifted meanwhile -> the re-arm note at once.
+  const disarm = async () => {
     try {
-      const live = await io.api('GET', `/repos/${repo}/pulls/${n}`);
+      const live = await readPr();
       if (!live || !isHeld({ title: live.title, labels: live.labels }) || !live.auto_merge) {
         note = ' (hold lifted or auto-merge off on re-read: auto-merge left alone)';
+        return;
+      }
+      const r = await io.api('POST', '/graphql', { query: DISARM_Q, variables: { id: live.node_id || p.node_id } }).catch((e) => ({ errors: [{ message: errLine(e) }] }));
+      const method = live.auto_merge.merge_method || 'squash';
+      let after;
+      let ours = true;
+      if (!r || r.errors || !r.data?.disablePullRequestAutoMerge) {
+        // hold-disarm jobs are not queued (v1.9.0): a title edit and a label change together start two, and the second
+        // mutation fails once the first has disarmed. Auto-merge off on a re-read is the goal reached, not a failure
+        // (bb-review first-push P2). Still armed, or unreadable -> the failure stands.
+        const again = await readPr().catch(() => null);
+        if (!again || again.auto_merge) throw new Error(JSON.stringify(r?.errors || r).slice(0, 200));
+        note = ' (auto-merge was already off: another hold job disarmed it)';
+        // Our own mutation may have landed with its response lost: this re-read is also the post-disarm read, so a
+        // hold lifted meanwhile still gets the re-arm note (Devin #267). A duplicate note beats a lost one.
+        after = again;
+        ours = false;
       } else {
-        const r = await io.api('POST', '/graphql', { query: DISARM_Q, variables: { id: live.node_id || p.node_id } }).catch((e) => ({ errors: [{ message: errLine(e) }] }));
-        const method = live.auto_merge.merge_method || 'squash';
-        let after;
-        if (!r || r.errors || !r.data?.disablePullRequestAutoMerge) {
-          // hold-disarm jobs are not queued (v1.9.0): a title edit and a label change together start two, and the second
-          // mutation fails once the first has disarmed. Auto-merge off on a re-read is the goal reached, not a failure
-          // (bb-review first-push P2). Still armed, or unreadable -> the failure stands.
-          const again = await io.api('GET', `/repos/${repo}/pulls/${n}`).catch(() => null);
-          if (!again || again.auto_merge) throw new Error(JSON.stringify(r?.errors || r).slice(0, 200));
-          note = ' (auto-merge was already off: another hold job disarmed it)';
-          // Our own mutation may have landed with its response lost: this re-read is also the post-disarm read, so a
-          // hold lifted meanwhile still gets the re-arm note (Devin #267). A duplicate note beats a lost one.
-          after = again;
-        } else {
-          out.disarmed = true;
-          // A failed re-read is reported, never read as "still held": the hold may have been lifted, and this job is the
-          // only one that can tell the owner to re-arm (bb-review P1 on #265's follow-up).
-          after = await io.api('GET', `/repos/${repo}/pulls/${n}`).catch((e) => { disarmErr = new Error(`auto-merge disarmed, but the PR could not be re-read to see whether the hold was lifted meanwhile (${errLine(e)}): if it was, re-arm (${method}) is needed`); return null; });
-        }
-        if (after && !isHeld({ title: after.title, labels: after.labels })) {
-          note = ` (the hold was lifted meanwhile: re-arm (${method}) requested on the PR)`;
-          try {
-            await io.postComment(rearmNote(method));
-          } catch (e) { disarmErr = new Error(`auto-merge disarmed, but the hold was lifted meanwhile and the re-arm note could not be posted (${errLine(e)}): re-arm (${method}) needed`); }
+        out.disarmed = true;
+        // A failed re-read is never read as "still held": settleDisarm below re-reads with retries after the record and
+        // throws if that fails too (the hold may have been lifted). v1.10.0 (Devin, BMB #1024): this read's own failure is
+        // no longer reported - a later read that recovers is the answer, and the error would have outlived it.
+        after = await readPr().catch(() => null);
+      }
+      if (after && !isHeld({ title: after.title, labels: after.labels })) {
+        note = ` (the hold was lifted meanwhile: re-arm (${method}) requested on the PR)`;
+        try {
+          // v1.10.0: a fresh id that names no record, so this late note can never close a newer hold's record.
+          note += await postLiftNote(io, readPr, { method, id: newId(), armed: false, sleep, backoffMs: holdBackoffMs, newId });
+        } catch (e) { errs.push(new Error(`auto-merge disarmed, but the hold was lifted meanwhile and the re-arm note could not be settled (${errLine(e)}): re-arm (${method}) needed`, { cause: e })); }
+      } else if (after || ours) {
+        // Our disarm always gets its record; one another job made gets it only when no record is open yet (that job
+        // posts its own - unless its mutation's response was lost, which is what this covers). settleDisarm retries the
+        // record and re-reads after it (Devin, BB_Tools #269). v1.10.0 (Devin, BMB #1024): the comments are read with
+        // retries, and still unreadable -> recorded anyway (a duplicate record costs a duplicate reminder; a lost one
+        // strands the PR unarmed).
+        try {
+          let open = null;
+          if (!ours) open = await withRetries(() => io.listComments(), { sleep, backoffMs: holdBackoffMs }).then(openDisarmRecord, () => null);
+          note += await settleDisarm(io, readPr, method, { record: !open, id: open ? open.id : undefined, sleep, backoffMs: holdBackoffMs, newId });
+        } catch (e) { errs.push(e); }
+      }
+    } catch (e) { errs.push(new Error(`disablePullRequestAutoMerge failed: ${errLine(e)}`)); }
+  };
+  if (phase !== 'recheck' && held && p.auto_merge) await disarm();
+  // v1.9.2 (Devin CalExp5 #763): the hold was lifted on a PR these jobs disarmed - it would go green and never merge.
+  // Only a PR with an open disarm record (armed before the hold) is asked to re-arm. It is re-read first, so a PR held
+  // again meanwhile is left alone (its record stays open for the next lift). A PR the owner already re-armed gets the
+  // closing note instead, so that old record cannot ask a LATER hold, begun unarmed, to re-arm (Devin, BB_Tools #269).
+  if (phase !== 'recheck' && !held) {
+    try {
+      const rec = openDisarmRecord(await io.listComments());
+      if (rec) {
+        const live = await readPr();
+        if (live && live.state === 'open' && !isHeld({ title: live.title, labels: live.labels })) {
+          // v1.10.0: the note names the record it saw (rec.id), so posted late it cannot close a newer one (Devin, CT #811),
+          // and a hold renewed right after it gets its record back (postLiftNote; Devin, CalExp5 #766).
+          const extra = await postLiftNote(io, readPr, { method: rec.method, id: rec.id, armed: !!live.auto_merge, sleep, backoffMs: holdBackoffMs, newId });
+          note = (live.auto_merge ? ` (auto-merge already re-armed: disarm record (${rec.method}) closed)` : ` (the hold was lifted after a disarm: re-arm (${rec.method}) requested on the PR)`) + extra;
         }
       }
-    } catch (e) { disarmErr = new Error(`disablePullRequestAutoMerge failed: ${errLine(e)}`); }
+    } catch (e) { errs.push(new Error(`could not check for, or post, the re-arm note of a hold lifted after a disarm (${errLine(e)}): a re-arm may be needed`)); }
   }
-  const finish = (why) => { const r = done(why); if (disarmErr) throw disarmErr; return r; };
+  const failure = () => {
+    if (!errs.length) return null;
+    const e = errs.length === 1 ? errs[0] : new Error(errs.map((x) => x.message).join('; '));
+    e.holdReported = true;
+    return e;
+  };
+  const finish = (why) => { const r = done(why); const f = failure(); if (f) throw f; return r; };
   if (phase === 'disarm') return finish(`${held ? 'held' : 'not held'}: disarm phase only (hold-recheck re-runs the gate)${note}`);
   const recheck = async () => {
     if (p.draft) return finish(`draft: not gated${note}`);
@@ -1016,22 +1207,30 @@ export async function runHoldRecheck(env, fetchFn = fetch, log = console.log, { 
         await sleep(pollMs);
         run = await io.api('GET', `/repos/${repo}/actions/runs/${run.id}`);
       }
-      const now = await io.api('GET', `/repos/${repo}/pulls/${n}`);
+      const now = await readPr();
       if (!now || now.state !== 'open') return finish(`PR closed while waiting${note}`);
-      if (now.head?.sha === cur.head?.sha) break;
+      const same = now.head?.sha === cur.head?.sha;
       cur = now;
+      if (same) break;
     }
+    // v1.9.2 (Devin SEC_, BB_ControlTower #808): a re-run does not replace the old verdict at once, and a hold added
+    // while this job waited may not be disarmed yet (its hold-disarm job failed, or this is the only job left): auto-merge
+    // on a held PR could still use the old green. A held PR that is still armed is disarmed here, before the re-run.
+    const nowHeld = isHeld({ title: cur.title, labels: cur.labels });
+    if (nowHeld && cur.auto_merge) await disarm();
     await io.api('POST', `/repos/${repo}/actions/runs/${run.id}/rerun`);
     out.rerun = true;
-    return finish(`${held ? 'held' : 'not held'}: devin-gate run ${run.id} (${run.conclusion}) re-run to re-judge${note}`);
+    return finish(`${nowHeld ? 'held' : 'not held'}: devin-gate run ${run.id} (${run.conclusion}) re-run to re-judge${note}`);
   };
   // A later failure (listing runs, the re-run POST, the wait deadline) must not mask a disarm problem - that message is
   // the only record that auto-merge may need re-arming (bb-review P1 on #265's follow-up). Both go in the one error.
   try {
     return await recheck();
   } catch (e) {
-    if (!disarmErr || e === disarmErr) throw e;
-    throw new Error(`${disarmErr.message}; then: ${errLine(e)}`, { cause: e });
+    if (e && e.holdReported) throw e;
+    const f = failure();
+    if (!f) throw e;
+    throw new Error(`${f.message}; then: ${errLine(e)}`, { cause: e });
   }
 }
 
