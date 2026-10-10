@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// BB_Tools | guardrails/devin-gate.mjs | v1.6.1 | 2026-10-06 | BB
+// BB_Tools | guardrails/devin-gate.mjs | v1.9.1 | 2026-10-09 | BB
 // CANONICAL. Every managed repo carries a byte-identical copy at scripts/devin-gate.mjs;
 // edit THIS file, then `node sync-guardrails.mjs --pr` (BB_Tools). Run by devin-gate.yml.
 //
@@ -19,7 +19,8 @@
 //   `bb-review` status = failure/error on the head  -> FAIL (a second reviewer; absent = ignored). Devin's own
 //                                                      state is still reported and still drives the label
 //                                                      (a bb-review failure never erases a missing-Devin fact)
-//   GitHub API outage (after 3 retries)             -> PASS + label devin-unreviewed, loudly
+//   GitHub API outage (after 3 retries)             -> PASS + label devin-unreviewed, loudly - but only once a
+//                                                      final PR read shows no hold; that read failing FAILS (v1.9.1)
 //
 // Node 22, no dependencies. Env: GITHUB_TOKEN, GITHUB_REPOSITORY, PR_NUMBER (set by the
 // workflow); optional DEVIN_GATE_NUDGE_MIN, DEVIN_GATE_MAX_MIN, DEVIN_GATE_POLL_S.
@@ -30,6 +31,52 @@
 // the script resolves the open PRs of that sha (commits/{sha}/pulls) and RE-RUNS each one's completed devin-gate
 // run (the re-run judges the head afresh and now fails). No PR code is checked out or run.
 //
+// HOLD MODE (DEVIN_GATE_MODE=hold, from devin-gate-hold.yml on a title edit or a sams-merge label change): see
+// runHoldRecheck. It disarms auto-merge on a held PR at once and RE-RUNS the PR's latest devin-gate run; it never
+// posts a devin-gate check itself. HOLD_PHASE=disarm runs only the disarm, HOLD_PHASE=recheck only the wait and re-run
+// (devin-gate-hold.yml v1.1 runs them as two jobs); unset runs both.
+//
+// v1.9.1 (2026-10-09) - a pass whose final hold re-read fails now FAILS instead of passing (Devin SEC_, universal-auth #27).
+//           Under a PR-read outage the gate passed via apiOutage and then could not see a HOLD either, leaving a green
+//           check on a held PR. Failing costs an ordinary PR one sweep tick: the sweep re-runs a failed gate on a PR
+//           that is not held (RETRYABLE_CONCLUSIONS) and never on a held one.
+// v1.9.0 (2026-10-09) - HOLD_PHASE splits HOLD MODE in two (bb-review first-push P1 on the RevExp5 guardrails sync).
+//           devin-gate-hold.yml v1.0 queued every hold event for a PR in one cancel-in-progress:false group, and GitHub
+//           keeps only ONE pending job per group: a HOLD added while an earlier job sat in its up-to-16-minute wait was
+//           queued behind it, so auto-merge stayed armed on a held PR for that long, and a third event replaced the
+//           pending one outright. Now hold-disarm (no queue, HOLD_PHASE=disarm) disarms at once on every event, and
+//           hold-recheck (HOLD_PHASE=recheck, queued per PR with cancel-in-progress: true - the newest event re-reads the
+//           live PR, so a cancelled older wait loses nothing) re-runs the gate. A bad HOLD_PHASE value throws. Two
+//           disarm jobs can now race (a title edit plus a label): a failed mutation whose re-read shows auto-merge
+//           already off is reported as that, not as a failed disarm (bb-review first-push P2 on this change); that
+//           re-read is also the post-disarm read, so a hold lifted meanwhile still gets the re-arm note (Devin #267). The combined disarm+recheck error carries { cause } (ESLint preserve-caught-error in universal-auth).
+// v1.8.1 (2026-10-09) - runHoldRecheck disarms like runSweep (Devin #265): the PR is re-read right before the mutation
+//           (a hold lifted after the first read leaves auto-merge alone), and once the mutation succeeds a failed
+//           follow-up read or re-arm note is reported as that, with disarmed=true, not as a failed disarm. A failed
+//           re-read after the disarm throws (the hold may have been lifted: re-arm may be needed), and a later failure
+//           (listing runs, the re-run, the wait) carries that message instead of masking it (bb-review P1 x2).
+// v1.8.0 (2026-10-09) - the hold re-check moved out of devin-gate.yml (bb-review first-push P1 on the BB_Scan_OpenAI-v4
+//           sync). devin-gate.yml v1.6 listened to edited/labeled/unlabeled and filtered them with its job `if`; a job
+//           skipped by `if` still reports a SKIPPED devin-gate check on the head, and GitHub counts a skipped required
+//           check as passing - so a body edit or ANY label change (the gate writes devin-unreviewed itself) could cover
+//           a red gate. devin-gate.yml v1.7 drops those triggers; devin-gate-hold.yml (job hold-recheck, not a required
+//           name) runs HOLD MODE instead. findGateRuns also ignores skipped runs, so the sweep judges the run that
+//           really rendered a verdict.
+// v1.7.0 (2026-10-09) - two changes (FIRST_WRITE_AND_PR_FLOW_MASTER_PLAN_2026-10-09 fixes 6 and 9, contract v1.13):
+//   HELD FOR SAM  a PR whose title starts with an uppercase HOLD, carries a bracketed "[HOLD" anywhere (any case; real
+//           titles end "[HOLD — Sam merges]"), or carries the label sams-merge now FAILS this check with "held for Sam:
+//           title HOLD / label sams-merge", before anything else (a draft too). It was prose only: a HOLD PR could be
+//           armed and merged by auto-merge. A bare lowercase "Hold music fix" is NOT held. The result leaves the
+//           devin-unreviewed label alone (unreviewed: null) - it is set again by the normal run once the hold lifts.
+//           Adding OR lifting a hold re-runs the gate at once: devin-gate-hold.yml (v1.8.0; was devin-gate.yml v1.6)
+//           listens to edited (title changed) and labeled/unlabeled (sams-merge only). The sweep backs that up: a PASSED run on a held PR is re-run
+//           (it now fails), and a failed run on a held PR is never re-run while the hold stands (no retry spam).
+//   SEC_ IS RED  redFindings also counts a thread whose marker id starts with SEC_ (security) as red, even when the
+//           emoji is not 🔴. Yellow and info notes still never block outside strict mode (verified: tests added).
+//           isRedThread is exported so landed.mjs v1.17 judges severity with this one parser. It fails SAFE on format
+//           drift: 🔴 or a SEC_ id anywhere in the body is red, and a body with no severity marker at all (no 🔴, 🟡
+//           or 🔍, no SEC_) is red too. Measured 2026-10-09 on 377 Devin threads (BB_Tools, BMB, CT, last 40 merged
+//           PRs each): 🔴 was always in the first three lines, and the 28 emoji-less threads were all SEC_.
 // v1.6.1 (2026-10-06) - the sweep reads the changed-file list against the PR's changed_files count, as the gate run
 //           does. It called getFiles() with no count, so a short read that dropped a guardrail path judged the PR
 //           non-strict. An unknown count or a short read now judges strictly (Devin, CT #796).
@@ -88,6 +135,8 @@ export const SWEEP_COOLDOWN_MS = 60 * 60000;
 export const RETRYABLE_CONCLUSIONS = new Set(['failure', 'cancelled', 'timed_out', 'action_required', 'startup_failure', 'stale']);
 export const OPEN_PR_PAGE_LIMIT = 20;
 export const RUN_PAGE_LIMIT = 5;
+/** HOLD MODE: how long to wait for an unfinished devin-gate run before re-running it (its job times out at 15 min). */
+export const HOLD_WAIT_MS = 16 * 60000;
 /** Head ref of every sync PR opened by sync-guardrails.mjs. */
 export const SYNC_BRANCH = 'agent/guardrails-sync';
 /** Commit-status context sync-guardrails.mjs (v1.4+) posts once the synced blobs read back byte-identical to canonical. */
@@ -100,6 +149,7 @@ export const CANONICAL_CONTEXT = 'guardrails-canonical';
 export const GUARDRAIL_PATHS = Object.freeze([
   'scripts/check-risky-paths.mjs', '.github/workflows/risky-path-gate.yml', 'scripts/guardrails-telemetry.mjs', 'scripts/guardrails-modes.mjs',
   'scripts/check-pr-body.mjs', '.github/workflows/pr-body-lint.yml', 'scripts/devin-gate.mjs', '.github/workflows/devin-gate.yml',
+  '.github/workflows/devin-gate-hold.yml',
   'scripts/deploy-verify.mjs', '.github/workflows/deploy-verify.yml',
 ]);
 export const FILES_PAGE_LIMIT = 30;
@@ -185,14 +235,27 @@ export function sweepCorrection(comments, runId) {
 }
 
 /**
+ * Is this thread RED: its first three body lines carry 🔴 (the severe marker; detection identical to the 2026-10-01
+ * measurement) or the marker id starts with SEC_ (a security finding). Severity only: author, resolved and
+ * outdated are the caller's filters. Pure.
+ */
+export function isRedThread(t) {
+  if (!t) return false; // no thread at all, not a thread with an unreadable body
+  const body = String(t.body || '');
+  if (/🔴/u.test(body) || /"id"\s*:\s*"SEC_/.test(body)) return true;
+  // No recognisable severity at all - a format we do not know, or a body the API returned empty/null - is red
+  // (fail safe): a gate that cannot read the finding must not wave it through as yellow.
+  return !/🟡|🔍/u.test(body);
+}
+
+/**
  * Open RED Devin findings. A finding is a review thread whose FIRST comment is Devin's, that is
- * neither resolved nor outdated, and whose first three body lines carry 🔴 (the severe marker;
- * detection identical to the 2026-10-01 measurement). `threads` = [{isResolved,isOutdated,path,line,author,body,url}]. Pure.
+ * neither resolved nor outdated, and is red (isRedThread). `threads` = [{isResolved,isOutdated,path,line,author,body,url}]. Pure.
  */
 export function redFindings(threads) {
   return (threads || [])
     .filter((t) => t && DEVIN_LOGINS.includes(t.author) && !t.isResolved && !t.isOutdated)
-    .filter((t) => /🔴/u.test(String(t.body || '').split('\n').slice(0, 3).join(' ')))
+    .filter(isRedThread)
     .map((t) => {
       const lines = String(t.body || '').replace(/<!--[\s\S]*?-->/g, '').split('\n');
       const line = lines.find((l) => /🔴/u.test(l)) || lines.find((l) => l.trim()) || '(untitled finding)';
@@ -210,6 +273,21 @@ export function openDevinThreads(threads) {
       return { path: t.path || '?', line: t.line ?? null, url: t.url || '', title: line.replace(/\*\*/g, '').trim().slice(0, 140) };
     });
 }
+
+/** Held for Sam: a title starting with uppercase HOLD, a bracketed "[HOLD" anywhere (any case), or the label sams-merge. labels = names or {name}. Pure. */
+export const HELD_REASON = 'held for Sam: title HOLD / label sams-merge';
+export function isHeld(pr) {
+  if (!pr) return false;
+  const title = String(pr.title || '');
+  if (/^\s*HOLD\b/.test(title) || /\[\s*hold\b/i.test(title)) return true;
+  return (pr.labels || []).some((l) => String(typeof l === 'string' ? l : l && l.name || '').toLowerCase() === 'sams-merge');
+}
+
+/** The PR comment left when a hold is lifted while auto-merge was being disarmed: these jobs cannot re-enable it. Pure. */
+export const rearmNote = (method) => `_devin-gate: the hold was lifted while the sweep was disarming auto-merge (it had been armed: ${method}). Re-arm it from the branch's worktree: \`node TOOLS/bb.mjs landed --arm\`. This job cannot enable auto-merge itself._\n\n<!-- devin-gate-rearm method=${method} -->`;
+
+/** Turns off a PR's auto-merge (held PRs; needs pull-requests: write, which the sweep job has). */
+export const DISARM_Q = 'mutation($id:ID!){disablePullRequestAutoMerge(input:{pullRequestId:$id}){pullRequest{number}}}';
 
 /** Is this changed path part of the CANONICAL guardrails (BB_Tools)? Pure. */
 export const isStrictPath = (f) => typeof f === 'string' && (f.startsWith('guardrails/') || f === 'sync-guardrails.mjs');
@@ -327,7 +405,7 @@ export async function withRetries(fn, { retries = API_RETRIES, sleep = (ms) => n
 
 /**
  * The whole gate, with every side effect injected (so tests take no time and no network).
- * io: getPr() -> {sha, draft, headRef?, author?, changedFiles?}; getStatuses(sha) -> [{context,state,description}];
+ * io: getPr() -> {sha, draft, headRef?, author?, changedFiles?, title?, labels?}; getStatuses(sha) -> [{context,state,description}];
  *     getFiles?(expectedCount) -> [path]; getCanonicalStatus?(sha) -> {state, creator}|null (optional: absent = files unknown -> strict);
  *     getThreads() -> threads; listComments() -> [{body}]; postComment(body);
  *     setLabel(on:boolean); sleep(ms); now() -> ms; log(line)
@@ -357,6 +435,7 @@ export async function runGate(io, cfg = {}) {
       const pr = await retry(() => io.getPr());
       if (sha !== '?' && pr.sha !== sha) { warnings.push(`head moved ${sha.slice(0, 8)} -> ${pr.sha.slice(0, 8)}; a newer run judges the new head`); }
       sha = pr.sha;
+      if (isHeld(pr)) { result = { action: 'fail', unreviewed: null, reason: HELD_REASON }; break; }
       if (pr.draft) { result = { action: 'pass', unreviewed: false, reason: 'draft PR - not gated' }; break; }
       if (filesSha !== sha || (files === null && io.getFiles)) {
         // Read once per head, and again on every poll while it is unreadable (a transient 502 must not pin an ordinary
@@ -430,6 +509,16 @@ export async function runGate(io, cfg = {}) {
     }
     await io.sleep(pollMs);
   }
+  if (result.action === 'pass') {
+    // A hold Sam adds while this run was deciding must not leave a green check behind it: re-read once just before passing.
+    // A failed re-read FAILS (v1.9.1, Devin SEC_ on universal-auth #27): after an outage pass no PR read may ever have
+    // succeeded, so nothing proves the PR is not held. The sweep re-runs a failed gate on a PR that is not held.
+    try { if (isHeld(await retry(() => io.getPr()))) result = { action: 'fail', unreviewed: null, reason: HELD_REASON }; } catch (e) {
+      const msg = `could not re-read the PR for a hold before passing (${errLine(e)}) - failing: a hold cannot be ruled out; the sweep re-runs this gate`;
+      warnings.push(msg);
+      result = { action: 'fail', unreviewed: null, reason: msg };
+    }
+  }
   // unreviewed === null is no longer produced by decide(); kept as a guard for a caller that wants to leave the label alone.
   try { if (result.unreviewed !== null) await retry(() => io.setLabel(!!result.unreviewed)); } catch (e) { warnings.push(`could not update the ${LABEL} label (${String(e?.message || e).split('\n')[0]})`); }
   return { result, sha, elapsedMin: (io.now() - t0) / 60000, warnings };
@@ -469,7 +558,7 @@ export function githubIo(env = process.env, fetchFn = fetch, { requestTimeoutMs 
   const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
   return {
     api,
-    getPr: async () => { const p = await api('GET', `/repos/${repo}/pulls/${pr}`); return { sha: p.head.sha, draft: !!p.draft, headRef: p.head.ref, author: p.user?.login || '', changedFiles: p.changed_files }; },
+    getPr: async () => { const p = await api('GET', `/repos/${repo}/pulls/${pr}`); return { sha: p.head.sha, draft: !!p.draft, headRef: p.head.ref, author: p.user?.login || '', changedFiles: p.changed_files, title: p.title || '', labels: (p.labels || []).map((l) => l.name) }; },
     // Changed paths (a rename contributes both names). A partial list could hide a canonical file, so the page cap
     // and a count that disagrees with the PR's changed_files both THROW (the caller then judges strictly).
     getFiles: async (expectedCount) => {
@@ -554,15 +643,30 @@ export function githubIo(env = process.env, fetchFn = fetch, { requestTimeoutMs 
  * attempt cap, whose fresh verdict would be green. A PR that is still red is never re-run, so the sweep cannot
  * loop or spam. A no-verdict run gets a FULL rerun: it has no failed job for rerun-failed-jobs to target.
  */
-export function sweepDecision({ run, bbReview, threads, corrected, nowMs = Date.now(), strict = false }) {
+export function sweepDecision({ run, bbReview, threads, corrected, nowMs = Date.now(), strict = false, held = false }) {
   const blocking = (ts) => blockingFindings(ts, { strict });
   const what = strict ? 'open Devin thread(s) (strict)' : 'red finding(s)';
   if (!run) return { rerun: false, why: 'no devin-gate run on this head' };
-  const bbFailed = !!bbReview && /^(failure|error)$/i.test(bbReview.state || '');
   // Anti-loop: after SWEEP_MAX_ATTEMPTS the run is re-tried at most once per SWEEP_COOLDOWN_MS (never permanently
   // stranded: a late resolve is picked up within the hour). Applies to stale-green re-runs too: a re-run whose
   // own read degrades green again (threads unreadable, an API flap) would otherwise re-trigger every tick.
   const cooling = (run.run_attempt || 1) >= SWEEP_MAX_ATTEMPTS && nowMs - Date.parse(run.updated_at || run.created_at || 0) < SWEEP_COOLDOWN_MS;
+  // v1.7.0: a hold is judged before anything else. A green gate on a held PR is stale (the hold came after it, and the
+  // edited/labeled event was missed): re-run it - the re-run fails on the hold. It can pass again only when its own PR
+  // read fails (the outage pass), so the re-run honours the same attempt cap + cooldown as every other stale-green
+  // correction instead of firing every tick (Devin, BB_Tools #264). A failed run on a held PR is never retried while the
+  // hold stands: the retry would fail again on the hold.
+  // Round 4 (BB_Tools #264): dating the hold (PR updated_at, then issue events) kept leaving a hole - a held PR's green gate
+  // must not depend on WHEN the hold began. A held PR can no longer auto-merge at all: every sweep disarms its auto-merge
+  // (runSweep, before any decision), and landed --arm refuses a held PR (exit 5). So this re-run only refreshes the
+  // check's colour and keeps the plain cap + cooldown: a new hold, an old hold, a re-added hold, unrelated activity -
+  // all the same, because none of them can merge the PR.
+  if (held && run.status === 'completed' && run.conclusion === 'success') {
+    if (cooling) return { rerun: false, why: `${HELD_REASON} after the gate passed, but ${run.run_attempt} attempts already - cooling down (once per hour)` };
+    return { rerun: true, full: true, why: `${HELD_REASON} after the gate passed: the green gate is stale` };
+  }
+  if (held) return { rerun: false, why: `${HELD_REASON} - not re-run until Sam lifts it` };
+  const bbFailed = !!bbReview && /^(failure|error)$/i.test(bbReview.state || '');
   // A PASSED gate can be stale in two directions: bb-review failed after the green, or a red review landed
   // after the gate's last thread read while an older run finished later and posted green on top (status-event
   // runs live in their own concurrency group and can always overlap a PR run; Devin, BB_Tools #213). The sweep
@@ -636,6 +740,8 @@ export async function findGateRuns(api, repo, p, maxPages = RUN_PAGE_LIMIT) {
   }
   return [...byId.values()]
     .filter((x) => x.event !== 'schedule' && x.event !== 'status')
+    // A skipped run rendered no verdict (a draft, a non-default base): never the PR's current run (v1.8.0).
+    .filter((x) => x.conclusion !== 'skipped')
     // A run GitHub attributes to OTHER PRs is not this one's even when it shares the head sha (Devin, CalExp5 #684); only a run with no
     // attribution at all falls back to the head sha.
     .filter((x) => (x.pull_requests || []).some((q) => q.number === p.number) || (x.head_sha === sha && !(x.pull_requests || []).length))
@@ -659,11 +765,41 @@ export async function runSweep(env, fetchFn = fetch, log = console.log, nowMs = 
     try {
       const io = githubIo({ ...env, PR_NUMBER: String(p.number) }, fetchFn);
       const sha = p.head.sha;
+      // The open-PR list carries title and labels: a hold added after the gate passed is caught here even when its event was missed.
+      const held = isHeld({ title: p.title, labels: (p.labels || []).map((l) => l && l.name) });
+      // A held PR never auto-merges: disarm it on every tick, whatever the gate run says and whenever the hold began
+      // (Devin rounds 1-4, BB_Tools #264 - a green gate on a held PR can no longer merge it). Only when the list shows
+      // auto-merge armed (null = not armed); a failed disarm is reported in the sweep line and retried next tick.
+      // The list can be stale by the time the mutation runs (Devin round 5): the PR is re-read right before it, and
+      // disarmed only while it is STILL held and armed. A hold lifted in the moment between that re-read and the mutation
+      // is caught by a read after it: the job cannot re-enable auto-merge (contents stays read-only), so it records the
+      // original request on the PR - merge method + the re-arm command - and the owner's PR-goal stop hook sees it unarmed.
+      let disarmNote = '';
+      if (held && p.auto_merge !== null) {
+        try {
+          const live = await io.api('GET', `/repos/${repo}/pulls/${p.number}`);
+          if (!live || !isHeld({ title: live.title, labels: live.labels }) || !live.auto_merge) {
+            disarmNote = ' - hold lifted or auto-merge off on re-read: auto-merge left alone';
+          } else {
+            const r = await io.api('POST', '/graphql', { query: DISARM_Q, variables: { id: live.node_id || p.node_id } });
+            if (!r || r.errors || !r.data || !r.data.disablePullRequestAutoMerge) throw new Error(`disablePullRequestAutoMerge: ${JSON.stringify((r && r.errors) || r).slice(0, 200)}`);
+            disarmNote = ' - auto-merge disarmed (held)';
+            const after = await io.api('GET', `/repos/${repo}/pulls/${p.number}`).catch(() => null);
+            if (after && !isHeld({ title: after.title, labels: after.labels })) {
+              const method = live.auto_merge.merge_method || 'squash';
+              disarmNote = ` - auto-merge disarmed, but the hold was lifted meanwhile: re-arm (${method}) requested on the PR`;
+              try {
+                await io.postComment(rearmNote(method));
+              } catch (e) { disarmNote = ` - auto-merge disarmed, but the hold was lifted meanwhile and the re-arm note could not be posted (${errLine(e)}): re-arm (${method}) needed`; }
+            }
+          }
+        } catch (e) { disarmNote = ` - auto-merge disarm FAILED, retried next tick (${errLine(e)})`; }
+      }
       // pull_request_review runs record the PR head sha; pull_request_target's head_sha is UNVERIFIED (the workflow is not on main yet),
       // so also match by the PR association GitHub attaches to the run (findGateRuns).
       const run = (await findGateRuns(io.api, repo, p))[0] || null;
       const stale = run && run.status === 'completed' && (run.conclusion === 'success' || RETRYABLE_CONCLUSIONS.has(run.conclusion));
-      if (!stale) { out.push({ pr: p.number, rerun: false, why: sweepDecision({ run, nowMs }).why }); continue; }
+      if (!stale) { out.push({ pr: p.number, rerun: false, why: sweepDecision({ run, nowMs }).why + disarmNote }); continue; }
       const statuses = await io.getStatuses(sha);
       const bbReview = statuses.find((s) => s.context === BB_REVIEW_CONTEXT) || null;
       // Threads are read when the verdict depends on them: a failed/never-verdicted run needs them to know
@@ -725,7 +861,7 @@ export async function runSweep(env, fetchFn = fetch, log = console.log, nowMs = 
         files = typeof count === 'number' ? await io.getFiles(count) : null;
       } catch { files = null; }
       const strict = isStrict(files);
-      const d = sweepDecision({ run, bbReview, threads, corrected, nowMs, strict });
+      const d = sweepDecision({ run, bbReview, threads, corrected, nowMs, strict, held });
       // The fingerprint alone cannot tell a red that STAYED open from one that resolved and re-opened
       // (identical bits), so each observed transition is recorded against the marker: its trail then
       // proves a same-fingerprint state is a NEW occurrence and lifts the cooldown suppression
@@ -765,7 +901,7 @@ export async function runSweep(env, fetchFn = fetch, log = console.log, nowMs = 
         // The rerun already fired: a failed marker post loses the repeat record, not the result.
         if (d.corrected) { try { await io.postComment(`_devin-gate: the latest green verdict is stale (${d.why}); re-running the check._\n\n${sweepCorrectedMarker(run.id, new Date(nowMs).toISOString(), d.fp)}`); } catch (e) { d.why += ` (correction marker failed: ${errLine(e)})`; } }
       } else if (breadcrumbErr) { d.why += ` (state trail write failed: ${errLine(breadcrumbErr)})`; }
-      out.push({ pr: p.number, rerun: d.rerun, why: d.why });
+      out.push({ pr: p.number, rerun: d.rerun, why: d.why + disarmNote });
     } catch (e) { out.push({ pr: p.number, rerun: false, why: `error: ${errLine(e)}` }); }
   }
   for (const o of out) log(`sweep #${o.pr}: ${o.rerun ? 'RE-RAN' : 'skip'} - ${o.why}`);
@@ -801,13 +937,113 @@ export async function runStatusEvent(env, fetchFn = fetch, log = console.log) {
   return out;
 }
 
+/**
+ * HOLD MODE (v1.8.0). Run by devin-gate-hold.yml when a PR's title changes or the sams-merge label is added or removed.
+ * Reads the PR live. Held and armed -> auto-merge is disarmed now (a hold lifted between the read and the mutation gets
+ * the sweep's re-arm note). Then the PR's latest devin-gate run is RE-RUN in full once it has finished (an unfinished
+ * one is waited for: it may have read the PR before the change), so the real gate re-judges the hold and posts its
+ * verdict on the head. This job never posts a devin-gate check - that is the point: a SKIPPED devin-gate run counts as
+ * passing for a required check. A run still unfinished after waitMs THROWS (this job goes red; the 10-minute sweep
+ * re-runs a passed gate on a held PR). Returns {disarmed, rerun, why}.
+ * v1.9.0: env.HOLD_PHASE = 'disarm' (the disarm only, never waits) or 'recheck' (the wait and re-run only); unset = both.
+ */
+export async function runHoldRecheck(env, fetchFn = fetch, log = console.log, { sleep = (ms) => new Promise((r) => setTimeout(r, ms)), nowFn = () => Date.now(), pollMs = 15000, waitMs = HOLD_WAIT_MS } = {}) {
+  const repo = env.GITHUB_REPOSITORY;
+  const io = githubIo(env, fetchFn);
+  const n = Number(env.PR_NUMBER);
+  // v1.9.0: devin-gate-hold.yml runs the two phases as two jobs, so the disarm is never queued behind a wait.
+  const phase = env.HOLD_PHASE || 'both';
+  if (!['disarm', 'recheck', 'both'].includes(phase)) throw new Error(`devin-gate: HOLD_PHASE must be disarm, recheck or unset (got ${JSON.stringify(phase)})`);
+  const out = { disarmed: false, rerun: false, why: '' };
+  const done = (why) => { out.why = why; log(`hold #${n}: ${out.rerun ? 'RE-RAN the gate' : 'no re-run'}${out.disarmed ? ', disarmed auto-merge' : ''} - ${why}`); return out; };
+  const p = await io.api('GET', `/repos/${repo}/pulls/${n}`);
+  if (!p || p.state !== 'open') return done('PR is not open');
+  const held = isHeld({ title: p.title, labels: p.labels });
+  let note = '';
+  // A failed disarm must not stop the re-run: the re-run is what turns the gate red on a held PR (pre-push review P2).
+  // It is reported (thrown) only after the gate has been re-run.
+  let disarmErr = null;
+  // As in runSweep (Devin #265): the PR is re-read right before the mutation and disarmed only while it is STILL held
+  // and armed; once the mutation succeeds, a failed follow-up read or re-arm note is reported as that, not as a failed disarm.
+  if (phase !== 'recheck' && held && p.auto_merge) {
+    try {
+      const live = await io.api('GET', `/repos/${repo}/pulls/${n}`);
+      if (!live || !isHeld({ title: live.title, labels: live.labels }) || !live.auto_merge) {
+        note = ' (hold lifted or auto-merge off on re-read: auto-merge left alone)';
+      } else {
+        const r = await io.api('POST', '/graphql', { query: DISARM_Q, variables: { id: live.node_id || p.node_id } }).catch((e) => ({ errors: [{ message: errLine(e) }] }));
+        const method = live.auto_merge.merge_method || 'squash';
+        let after;
+        if (!r || r.errors || !r.data?.disablePullRequestAutoMerge) {
+          // hold-disarm jobs are not queued (v1.9.0): a title edit and a label change together start two, and the second
+          // mutation fails once the first has disarmed. Auto-merge off on a re-read is the goal reached, not a failure
+          // (bb-review first-push P2). Still armed, or unreadable -> the failure stands.
+          const again = await io.api('GET', `/repos/${repo}/pulls/${n}`).catch(() => null);
+          if (!again || again.auto_merge) throw new Error(JSON.stringify(r?.errors || r).slice(0, 200));
+          note = ' (auto-merge was already off: another hold job disarmed it)';
+          // Our own mutation may have landed with its response lost: this re-read is also the post-disarm read, so a
+          // hold lifted meanwhile still gets the re-arm note (Devin #267). A duplicate note beats a lost one.
+          after = again;
+        } else {
+          out.disarmed = true;
+          // A failed re-read is reported, never read as "still held": the hold may have been lifted, and this job is the
+          // only one that can tell the owner to re-arm (bb-review P1 on #265's follow-up).
+          after = await io.api('GET', `/repos/${repo}/pulls/${n}`).catch((e) => { disarmErr = new Error(`auto-merge disarmed, but the PR could not be re-read to see whether the hold was lifted meanwhile (${errLine(e)}): if it was, re-arm (${method}) is needed`); return null; });
+        }
+        if (after && !isHeld({ title: after.title, labels: after.labels })) {
+          note = ` (the hold was lifted meanwhile: re-arm (${method}) requested on the PR)`;
+          try {
+            await io.postComment(rearmNote(method));
+          } catch (e) { disarmErr = new Error(`auto-merge disarmed, but the hold was lifted meanwhile and the re-arm note could not be posted (${errLine(e)}): re-arm (${method}) needed`); }
+        }
+      }
+    } catch (e) { disarmErr = new Error(`disablePullRequestAutoMerge failed: ${errLine(e)}`); }
+  }
+  const finish = (why) => { const r = done(why); if (disarmErr) throw disarmErr; return r; };
+  if (phase === 'disarm') return finish(`${held ? 'held' : 'not held'}: disarm phase only (hold-recheck re-runs the gate)${note}`);
+  const recheck = async () => {
+    if (p.draft) return finish(`draft: not gated${note}`);
+    const deadline = nowFn() + waitMs;
+    let cur = p;
+    let run;
+    // The run is picked for the CURRENT head: a push during the wait starts a new run on a new sha, and re-running the old
+    // one would judge the old head (pre-push review P2). After each wait the PR is re-read; a new head re-selects.
+    for (;;) {
+      run = (await findGateRuns(io.api, repo, cur))[0] || null;
+      if (!run) return finish(`no devin-gate run on this PR yet: its first run judges the hold${note}`);
+      while (run.status !== 'completed') {
+        if (nowFn() >= deadline) throw new Error(`devin-gate run ${run.id} still ${run.status} after ${Math.round(waitMs / 60000)} min; the 10-minute sweep re-judges this PR`);
+        await sleep(pollMs);
+        run = await io.api('GET', `/repos/${repo}/actions/runs/${run.id}`);
+      }
+      const now = await io.api('GET', `/repos/${repo}/pulls/${n}`);
+      if (!now || now.state !== 'open') return finish(`PR closed while waiting${note}`);
+      if (now.head?.sha === cur.head?.sha) break;
+      cur = now;
+    }
+    await io.api('POST', `/repos/${repo}/actions/runs/${run.id}/rerun`);
+    out.rerun = true;
+    return finish(`${held ? 'held' : 'not held'}: devin-gate run ${run.id} (${run.conclusion}) re-run to re-judge${note}`);
+  };
+  // A later failure (listing runs, the re-run POST, the wait deadline) must not mask a disarm problem - that message is
+  // the only record that auto-merge may need re-arming (bb-review P1 on #265's follow-up). Both go in the one error.
+  try {
+    return await recheck();
+  } catch (e) {
+    if (!disarmErr || e === disarmErr) throw e;
+    throw new Error(`${disarmErr.message}; then: ${errLine(e)}`, { cause: e });
+  }
+}
+
 /** A positive finite number from env, else the default (junk is rejected, not zero). */
 export function envMinutes(v, dflt) { const n = Number(v); return Number.isFinite(n) && n > 0 ? n : dflt; }
 
 const invokedDirectly = process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
 if (invokedDirectly) {
   const env = process.env;
-  if (env.GITHUB_EVENT_NAME === 'schedule') {
+  if (env.DEVIN_GATE_MODE === 'hold') {
+    await runHoldRecheck(env);
+  } else if (env.GITHUB_EVENT_NAME === 'schedule') {
     await runSweep(env);
   } else if (env.GITHUB_EVENT_NAME === 'status') {
     await runStatusEvent(env);
