@@ -1,4 +1,6 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/core/token-manager-issue32.test.ts | v1.0.0 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/token-manager-issue32.test.ts | v1.1.0 | 2026-10-14 | BB
+// v1.1.0 (token-manager v1.5.1, pre-push review): a /me naming a cookie
+//   session during the install store does not silence the install's notify.
 // rc.23 (token-manager v1.5.0) — issue #32, follow-ups from PR #31's review:
 //   - a server-wins noteCookieSession() drops the old session's access token;
 //   - a clearSession() that starts while setSession() stores its refresh token
@@ -103,6 +105,28 @@ describe('token-manager — issue #32 follow-ups (rc.23)', () => {
     await expect(clearSession()).rejects.toThrow('idb down');
 
     expect(getCurrentSessionId()).toBeNull();
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('review: a cookie note during the install store still notifies listeners', async () => {
+    const listener = vi.fn();
+    onSessionChange(listener);
+
+    const gate = deferred<void>();
+    const real = await vi.importActual<typeof import('../../../src/core/storage.js')>(
+      '../../../src/core/storage.js'
+    );
+    vi.mocked(storage.storeRefreshToken).mockImplementationOnce(async (rt, exp) => {
+      await gate.promise;
+      await real.storeRefreshToken(rt, exp);
+    });
+
+    const installing = setSession(tokens('sess-A'));
+    await vi.waitFor(() => expect(storage.storeRefreshToken).toHaveBeenCalled());
+    noteCookieSession('sess-Z'); // a late /me moves the generation; no clear, no install
+    gate.resolve();
+    await installing;
+
     expect(listener).toHaveBeenCalledTimes(1);
   });
 });

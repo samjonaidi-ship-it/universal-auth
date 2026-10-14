@@ -27,6 +27,18 @@ Follow-ups from PR #31's review. No public signature changed.
 - `session-watcher.ts` v1.3.0 and `session-events.ts` v0.2.0 — `session.revoked`
   is emitted after the clear, with `stale: true` when a sign-in superseded it.
   The SSE revoke now clears only the session that was current when it arrived.
+- Pre-push review of this release:
+  - `AuthProvider.tsx` v1.2.1 — the hydrate no longer applies the old
+    session's `/me` over a sign-in that landed during the mint. An
+    `initialSession` with a live token reports `'live'`.
+  - `token-manager.ts` v1.5.1 — `setSession()` stays silent only when a
+    `clearSession()` or a newer `setSession()` began during its store. A `/me`
+    naming a cookie session no longer silences it.
+  - `session-events.ts` v0.3.0 — a revoke whose payload names another
+    `session_id` clears nothing (`stale: true`). A stale revoke reopens the
+    stream for the session that is current now.
+  - `session-watcher.ts` v1.3.1 and `session-events.ts` v0.3.0 — a failed
+    IndexedDB wipe adds `wipe_failed: true` to `session.revoked`.
 
 ## [1.1.0-rc.22] — 2026-10-14 — cookie-only sessions and silent no-token refresh
 

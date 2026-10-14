@@ -1,4 +1,6 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/core/session-watcher-scope.test.ts | v1.1.0 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/session-watcher-scope.test.ts | v1.2.0 | 2026-10-14 | BB
+// v1.2.0 (session-watcher v1.3.1, pre-push review): a failed IndexedDB wipe
+// is reported as wipe_failed: true.
 // v1.1.0 (rc.23, issue #32): session.revoked is emitted after the clear, and
 // says stale: true when a sign-in during the wipe superseded the clear.
 // rc.22 (session-watcher v1.2.0): a revoked /me poll is scoped to the session
@@ -135,5 +137,26 @@ describe('session-watcher — revoke is scoped to the polling session', () => {
     );
     expect(getCurrentSessionId()).toBe('sess-E');
     expect(hasLiveAccessToken()).toBe(true);
+  });
+
+  it('review: a failed IndexedDB wipe is reported as wipe_failed', async () => {
+    await setSession(tokens('sess-E'));
+    startSessionWatcher();
+    await vi.waitFor(() => expect(rejectMe).not.toBeNull());
+    vi.mocked(storage.clearAllSessionState).mockImplementationOnce(async () => {
+      throw new Error('idb blocked');
+    });
+
+    rejectMe?.(new AuthSessionRevoked('revoked'));
+
+    await vi.waitFor(() =>
+      expect(emit).toHaveBeenCalledWith(
+        'session.revoked',
+        expect.objectContaining({ session_id: 'sess-E', wipe_failed: true })
+      )
+    );
+    const payload = vi.mocked(emit).mock.calls.find((c) => c[0] === 'session.revoked')?.[1];
+    expect(payload).not.toHaveProperty('stale');
+    expect(getCurrentSessionId()).toBeNull();
   });
 });

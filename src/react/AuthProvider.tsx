@@ -1,4 +1,8 @@
-// @samjonaidi-ship-it/universal-auth | src/react/AuthProvider.tsx | v1.2.0 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/AuthProvider.tsx | v1.2.1 | 2026-10-14 | BB
+// v1.2.1 (pre-push review): hydrate applies its /me reply only when the
+//   session it minted for is still current. A sign-in during the mint gives
+//   'live', and the session listener applies that session's own /me. The
+//   initialSession effect labels a live token session 'live'.
 // v1.2.0 (rc.23, issue #32): the mint is scoped to the session it started
 //   under. A sign-in that lands during a failed mint reports 'live' (its own
 //   token), and a mint that a sign-in or sign-out overtook sets nothing; its
@@ -223,7 +227,10 @@ export function AuthProvider({
     if (hasInitialSession) {
       // A live token is a newer token sign-in: the SSR snapshot must not
       // relabel it with its own id, and there is nothing to mint (issue #32).
-      if (hasLiveAccessToken()) return;
+      if (hasLiveAccessToken()) {
+        setTokenState('live');
+        return;
+      }
       // No /me round-trip: scope the SSR session from its own metadata.
       noteCookieSession(initialSessionId);
       let cancelledMint = false;
@@ -248,6 +255,7 @@ export function AuthProvider({
         // v1.1.0: give a cookie session an id + generation. Dropped if a
         // sign-in or sign-out happened while /me was in flight.
         noteCookieSession(data.session_meta?.session_id, scopeAtRequest);
+        const scopeAtMint = getSessionScope();
         // Cookie alive, no local token: try to mint one, once.
         const next = await mintTokenState();
         if (cancelled) return;
@@ -255,6 +263,12 @@ export function AuthProvider({
         // is about the old session; the session listener owns the new one.
         if (next === null) return;
         setTokenState(next);
+        // v1.2.1: 'live' can be a sign-in that landed during the mint, or a
+        // refresh that adopted another session id. Either way the session
+        // moved and notified the listener, which applies its own /me. This
+        // reply would overwrite that identity. The mint's own terminal clear
+        // keeps the cookie session, so its reply still applies.
+        if (!isSessionScopeCurrent(scopeAtMint) && !isRefreshClearCurrent()) return;
         applySession(data);
         // Backfill entitlements cache
         void refreshEntitlements();

@@ -1,4 +1,8 @@
-// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.5.0 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.5.1 | 2026-10-14 | BB
+// v1.5.1 (pre-push review): setSession() stands down only for a clearSession()
+//   or a newer setSession() that began during its store (clearCount /
+//   installCount). Before, any generation bump did, so a /me naming a cookie
+//   session during the store left tabs and listeners untold.
 // v1.5.0 (rc.23, issue #32 - follow-ups from PR #31's review):
 //   - noteCookieSession(): when /me names a different session (server wins),
 //     the in-memory access token is dropped too. It belonged to the old
@@ -189,6 +193,8 @@ let pendingClear: Promise<void> | null = null;
 // Counts setSession() installs. A clear compares it, not the generation:
 // only a real sign-in during the wipe may make the clear stand down.
 let installCount = 0;
+// Counts clearSession() calls. setSession() compares it (v1.5.1).
+let clearCount = 0;
 // The refresh-token store of a setSession() still running. A clear waits for
 // the installs that began before it, so its wipe runs after their store.
 let pendingInstall: Promise<void> | null = null;
@@ -376,7 +382,8 @@ export async function setSession(tokens: SessionTokens): Promise<void> {
   // server re-uses the id.
   generation++;
   installCount++;
-  const myGeneration = generation;
+  const myInstall = installCount;
+  const myClears = clearCount;
   state.sessionId = tokens.sessionId;
   sessionSource = 'token';
 
@@ -402,7 +409,9 @@ export async function setSession(tokens: SessionTokens): Promise<void> {
 
   // v1.5.0: a sign-out or a newer sign-in during the store owns the session
   // now. Telling tabs and listeners about this one would undo it.
-  if (generation !== myGeneration) return;
+  // v1.5.1: only those two. Any other session move (a /me naming a cookie
+  // session, a refresh adopting an id) is not a reason to stay silent.
+  if (installCount !== myInstall || clearCount !== myClears) return;
 
   broadcast({
     type: 'session_updated',
@@ -438,6 +447,7 @@ async function clearSessionAndReport(): Promise<boolean> {
   state.sessionId = null;
   sessionSource = null;
   state.inFlightRefresh = null;
+  clearCount++;
   const myInstall = installCount;
 
   // v1.4.0: a setSession() that lands while the wipe runs owns the device
@@ -1012,6 +1022,7 @@ export function __resetTokenManagerForTests(): void {
   sessionSource = null;
   pendingClear = null;
   installCount = 0;
+  clearCount = 0;
   pendingInstall = null;
   refreshClearGeneration = null;
   warnedMissingRefreshExpiresAt = false;

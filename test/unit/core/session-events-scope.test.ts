@@ -1,4 +1,7 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/core/session-events-scope.test.ts | v1.0.0 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/session-events-scope.test.ts | v1.1.0 | 2026-10-14 | BB
+// v1.1.0 (session-events v0.3.0, pre-push review): a revoke naming another
+// session_id clears nothing; a stale revoke reopens the stream; a failed
+// wipe is reported as wipe_failed: true.
 // rc.23 (session-events v0.2.0, issue #32): an SSE `session.revoked` clears
 // only the session current when it arrived, and is emitted after the clear,
 // with stale: true when a sign-in during the wipe superseded the clear.
@@ -111,5 +114,85 @@ describe('session-events — revoke is scoped and reported after the clear', () 
     );
     expect(getCurrentSessionId()).toBe('sess-B');
     expect(hasLiveAccessToken()).toBe(true);
+  });
+
+  it('review: a stale revoke reopens the stream for the session that is current now', async () => {
+    await setSession(tokens('sess-A'));
+    startSessionEvents();
+    let releaseWipe!: () => void;
+    const held = new Promise<void>((r) => {
+      releaseWipe = r;
+    });
+    const real = await vi.importActual<typeof import('../../../src/core/storage.js')>(
+      '../../../src/core/storage.js'
+    );
+    vi.mocked(storage.clearAllSessionState).mockImplementationOnce(async () => {
+      await held;
+      await real.clearAllSessionState();
+    });
+
+    MockEventSource.instances[0]!.dispatch('session.revoked', { reason: 'admin_revoke' });
+    await vi.waitFor(() => expect(storage.clearAllSessionState).toHaveBeenCalled());
+    const installing = setSession(tokens('sess-B'));
+    releaseWipe();
+    await installing;
+
+    await vi.waitFor(() =>
+      expect(emit).toHaveBeenCalledWith('session.revoked', expect.objectContaining({ stale: true }))
+    );
+    expect(MockEventSource.instances).toHaveLength(2);
+    expect(MockEventSource.instances[1]!.readyState).toBe(1);
+  });
+
+  it('review: a revoke that names another session_id clears nothing and keeps the stream', async () => {
+    await setSession(tokens('sess-A'));
+    startSessionEvents();
+    MockEventSource.instances[0]!.dispatch('session.revoked', {
+      reason: 'admin_revoke',
+      session_id: 'sess-other-device',
+    });
+
+    await vi.waitFor(() =>
+      expect(emit).toHaveBeenCalledWith(
+        'session.revoked',
+        expect.objectContaining({ session_id: 'sess-other-device', stale: true })
+      )
+    );
+    expect(storage.clearAllSessionState).not.toHaveBeenCalled();
+    expect(getCurrentSessionId()).toBe('sess-A');
+    expect(hasLiveAccessToken()).toBe(true);
+    expect(MockEventSource.instances).toHaveLength(2);
+  });
+
+  it('review: a revoke naming this session_id clears it', async () => {
+    await setSession(tokens('sess-A'));
+    startSessionEvents();
+    MockEventSource.instances[0]!.dispatch('session.revoked', { reason: 'admin_revoke', session_id: 'sess-A' });
+
+    await vi.waitFor(() =>
+      expect(emit).toHaveBeenCalledWith('session.revoked', expect.objectContaining({ session_id: 'sess-A' }))
+    );
+    const payload = vi.mocked(emit).mock.calls.find((c) => c[0] === 'session.revoked')?.[1];
+    expect(payload).not.toHaveProperty('stale');
+    expect(getCurrentSessionId()).toBeNull();
+    expect(MockEventSource.instances).toHaveLength(1);
+  });
+
+  it('review: a failed IndexedDB wipe is reported as wipe_failed', async () => {
+    await setSession(tokens('sess-A'));
+    startSessionEvents();
+    vi.mocked(storage.clearAllSessionState).mockImplementationOnce(async () => {
+      throw new Error('idb blocked');
+    });
+
+    MockEventSource.instances[0]!.dispatch('session.revoked', { reason: 'admin_revoke' });
+
+    await vi.waitFor(() =>
+      expect(emit).toHaveBeenCalledWith('session.revoked', expect.objectContaining({ wipe_failed: true }))
+    );
+    const payload = vi.mocked(emit).mock.calls.find((c) => c[0] === 'session.revoked')?.[1];
+    expect(payload).not.toHaveProperty('stale');
+    expect(getCurrentSessionId()).toBeNull();
+    expect(MockEventSource.instances).toHaveLength(1);
   });
 });

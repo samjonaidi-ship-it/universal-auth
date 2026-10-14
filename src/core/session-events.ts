@@ -1,4 +1,8 @@
-// @samjonaidi-ship-it/universal-auth | src/core/session-events.ts | v0.2.0 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/session-events.ts | v0.3.0 | 2026-10-14 | BB
+// v0.3.0 (rc.23, pre-push review): a revoke whose payload names another
+//   session_id is stale and clears nothing. A stale revoke reopens the stream
+//   for the session that is current now. A failed IndexedDB wipe is reported
+//   as wipe_failed: true on the event.
 // v0.2.0 (rc.23, issue #32): a `session.revoked` event clears only the session
 //   that was current when it arrived (clearSessionIfCurrent), and the event
 //   is emitted after the clear, with stale: true when a sign-in superseded it.
@@ -139,8 +143,10 @@ function openEventSource(apiBaseUrl: string): void {
     // v0.2.0 (issue #32): the clear is scoped to the session current when the
     // event arrived, and the event is emitted after it (stale: true when a
     // sign-in superseded the clear).
-    void revokeAndReport(payload, getSessionScope());
+    // v0.3.0: stop first, so a stale revoke's restart is not undone.
+    const scope = getSessionScope();
     stopSessionEvents();
+    void revokeAndReport(payload, scope);
   }) as EventListener);
 
   es.addEventListener('entitlements.updated', () => {
@@ -202,18 +208,33 @@ async function revokeAndReport(
   payload: Record<string, unknown>,
   scope: ReturnType<typeof getSessionScope>
 ): Promise<void> {
-  // A rejected wipe has still cleared memory and told tabs and listeners.
-  let cleared: boolean;
-  try {
-    cleared = await clearSessionIfCurrent(scope);
-  } catch {
-    cleared = true;
+  // v0.3.0: the server fans a revoke out to every stream of the identity
+  // (SSE_DESIGN §6.3). A payload that names another session is about that
+  // session, not this one.
+  const named = payload.session_id;
+  const otherSession =
+    typeof named === 'string' && named.length > 0 && named !== scope.sessionId;
+  // A rejected wipe has still cleared memory and told tabs and listeners, so
+  // it counts as cleared; the event says the wipe failed.
+  let cleared = false;
+  let wipeFailed = false;
+  if (!otherSession) {
+    try {
+      cleared = await clearSessionIfCurrent(scope);
+    } catch {
+      cleared = true;
+      wipeFailed = true;
+    }
   }
   void emit('session.revoked', {
     reason: 'server',
     ...payload,
     ...(cleared ? {} : { stale: true }),
+    ...(wipeFailed ? { wipe_failed: true } : {}),
   });
+  // The stream was closed on arrival. A stale revoke leaves a live session
+  // behind, and that session still needs its revoke stream.
+  if (!cleared && getSessionScope().sessionId !== null) startSessionEvents();
 }
 
 function parseEventData(raw: unknown): Record<string, unknown> {

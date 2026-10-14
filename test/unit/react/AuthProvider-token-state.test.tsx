@@ -1,4 +1,6 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/react/AuthProvider-token-state.test.tsx | v1.3.0 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/react/AuthProvider-token-state.test.tsx | v1.4.0 | 2026-10-14 | BB
+// v1.4.0 (AuthProvider v1.2.1, pre-push review): hydrate does not apply the
+//   old session's /me over a sign-in that landed during the mint.
 // v1.3.0 (rc.23, AuthProvider v1.2.0, issue #32): a sign-in during a failed
 //   mint reports 'live'; a sign-out during it leaves 'none'; an initialSession
 //   does not relabel a live token session; a new initialSession object with
@@ -14,7 +16,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { useContext, type ReactNode } from 'react';
-import { AuthProvider, StatusContext } from '../../../src/react/AuthProvider.js';
+import { AuthProvider, IdentityContext, StatusContext } from '../../../src/react/AuthProvider.js';
 import type { Session } from '../../../src/types/api.js';
 import { configureClient, __resetClientForTests } from '../../../src/core/client.js';
 import {
@@ -40,6 +42,16 @@ function meBody(sessionId: string): Session {
       expires_at: new Date(Date.now() + 60_000).toISOString(),
     },
   };
+}
+
+function meFor(sessionId: string, name: string): Session {
+  const body = meBody(sessionId);
+  return { ...body, identity: { ...body.identity, identity_id: name, display_name: name } };
+}
+
+function IdentityProbe(): ReactNode {
+  const ctx = useContext(IdentityContext);
+  return <div data-testid="who">{ctx?.identity?.display_name ?? 'nobody'}</div>;
 }
 
 function jsonResp(status: number, body: unknown): Response {
@@ -370,5 +382,45 @@ describe('AuthProvider — tokenState (rc.22)', () => {
     await new Promise((r) => setTimeout(r, 50));
 
     expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('review: a sign-in during the mint is not overwritten by the old session /me', async () => {
+    registerRefreshCallback(async () => {
+      // B signs in during A's mint. The listener's /me for B lands first;
+      // then A's refresh fails and the hydrate resumes with A's /me reply.
+      await setSession({
+        accessToken: 'at-B',
+        refreshToken: 'rt-B',
+        expiresAt: Date.now() + 15 * 60_000,
+        sessionId: 'sess-B',
+      });
+      await new Promise((r) => setTimeout(r, 30));
+      throw new AuthSdkError('HTTP_503', 'bff down');
+    });
+    let meCalls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input instanceof Request ? input.url : input);
+        if (url.includes('/auth/v1/me') && ++meCalls > 1) return jsonResp(200, meFor('sess-B', 'bob'));
+        if (url.includes('/auth/v1/me')) {
+          await storeRefreshToken('rt-A', Date.now() + 86_400_000);
+          return jsonResp(200, meFor('sess-A', 'alice'));
+        }
+        return jsonResp(404, { error: 'not_stubbed' });
+      })
+    );
+
+    render(
+      <AuthProvider>
+        <StatusProbe />
+        <IdentityProbe />
+      </AuthProvider>
+    );
+
+    await waitFor(() => expect(screen.getByTestId('who').textContent).toBe('bob'));
+    await new Promise((r) => setTimeout(r, 80));
+    expect(screen.getByTestId('who').textContent).toBe('bob');
+    expect(screen.getByTestId('token').textContent).toBe('live');
   });
 });
