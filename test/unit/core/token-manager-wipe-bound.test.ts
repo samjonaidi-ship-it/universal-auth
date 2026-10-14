@@ -1,4 +1,7 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/core/token-manager-wipe-bound.test.ts | v1.5.0 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/token-manager-wipe-bound.test.ts | v1.6.0 | 2026-10-14 | BB
+// v1.6.0 (pre-push review on rc.25): a sign-out in another tab during this
+// tab's store keeps its marker and wipes (real setSession); session_updated
+// is ignored while a sign-out is pending; a refused marker write still wipes.
 // v1.5.0 (token-manager v1.6.5, Devin on CalExp5 #909): a sign-out wipe never
 // deletes another tab's newer sign-in, in either lock order; setSession
 // removes the marker inside the store lock; a superseded wipe does not
@@ -521,5 +524,68 @@ describe('token-manager — wipe bound and locally-revoked marker (issue #33)', 
     await tabA;
 
     expect(await storage.getRefreshToken()).toBe('rt-B');
+  });
+
+  it('pre-push review: a sign-out in another tab during this tab\'s store keeps its marker, and its wipe runs', async () => {
+    installFakeLocks();
+    // Something else holds the store lock, so this tab's sign-in queues.
+    let letGo!: () => void;
+    const gate = new Promise<void>((r) => (letGo = r));
+    const busy = otherTab(() => gate);
+    const signingIn = setSession(tokens('B')); // real setSession, no marker yet
+    // Tab A signs out while B's store waits: marker first, then its wipe.
+    localStorage.setItem(MARKER, 'tab-A-sign-out');
+    const tabA = otherTab(async () => {
+      if (localStorage.getItem(MARKER) !== 'tab-A-sign-out') return; // stands down
+      await storage.clearAllSessionState();
+      localStorage.removeItem(MARKER);
+    });
+    letGo();
+    await busy;
+    await signingIn;
+    await tabA;
+
+    // The sign-out came last, so it wins: B's refresh token is wiped.
+    expect(vi.mocked(storage.clearAllSessionState)).toHaveBeenCalledTimes(1);
+    expect(await storage.getRefreshToken()).toBeNull();
+  });
+
+  it('pre-push review: while another tab\'s sign-out is pending, session_updated is not adopted', async () => {
+    await setSession(tokens('A'));
+    await clearSession(); // this tab's channel is open, and it is signed out
+    const peer = new BroadcastChannel('bb-universal-auth-session');
+    const update = (id: string) => ({
+      type: 'session_updated',
+      accessToken: `at-${id}`,
+      accessExpiresAt: Date.now() + 60_000,
+      sessionId: id,
+    });
+
+    localStorage.setItem(MARKER, 'tab-A-sign-out');
+    peer.postMessage(update('B'));
+    await new Promise((r) => setTimeout(r, 10));
+    expect(getCurrentSessionId()).toBeNull();
+
+    // Once the sign-out settles, a sign-in elsewhere is adopted as before.
+    localStorage.removeItem(MARKER);
+    peer.postMessage(update('C'));
+    await new Promise((r) => setTimeout(r, 10));
+    peer.close();
+    expect(getCurrentSessionId()).toBe('C');
+  });
+
+  it('pre-push review: a sign-out still wipes when localStorage refuses the marker', async () => {
+    await setSession(tokens('A'));
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('quota', 'QuotaExceededError');
+    });
+    try {
+      await clearSession();
+    } finally {
+      setItem.mockRestore();
+    }
+
+    expect(vi.mocked(storage.clearAllSessionState)).toHaveBeenCalledTimes(1);
+    expect(await storage.getRefreshToken()).toBeNull();
   });
 });

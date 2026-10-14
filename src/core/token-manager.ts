@@ -11,6 +11,11 @@
 //       sign-out runs its own wipe.
 //   Both lock orders: B first -> A sees no marker, keeps B; A first -> A
 //   wipes, then B stores. Same-tab order (pendingClear/pendingInstall) holds.
+//   Pre-push review: setSession() removes only the marker it saw when it
+//   began (compare-and-delete). A sign-out in another tab DURING the store
+//   is newer than the sign-in, so its marker stays and its wipe runs. While
+//   a marker is set, other tabs ignore session_updated: a sign-in that a
+//   newer sign-out superseded must not be adopted by them.
 // v1.6.4 (rc.24, Devin round 3, PR #35): performRefresh() decides ownership by
 //   the stored row's identity (storage getRefreshTokenRowId(), the row's IV),
 //   not by re-reading the token. A re-read ran the expiry check, so a token
@@ -467,6 +472,9 @@ function handleBroadcast(raw: unknown): void {
   }
   switch (raw.type) {
     case 'session_updated':
+      // v1.6.5: a sign-out is pending (its wipe has not removed the marker).
+      // A sign-in it superseded is about to be wiped; do not adopt it.
+      if (isLocallyRevoked()) return;
       // Another tab refreshed; adopt its access token without re-fetching
       state.accessToken = raw.accessToken;
       state.accessExpiresAt = raw.accessExpiresAt;
@@ -580,6 +588,9 @@ export async function setSession(tokens: SessionTokens): Promise<void> {
   installCount++;
   const myInstall = installCount;
   const myClears = clearCount;
+  // v1.6.5 (pre-push review): the marker this sign-in replaces. A sign-out
+  // in another tab during the store writes a new one, which stays.
+  const markerBefore = readRevokedMarker();
   state.sessionId = tokens.sessionId;
   sessionSource = 'token';
 
@@ -600,7 +611,7 @@ export async function setSession(tokens: SessionTokens): Promise<void> {
       // clear began during the store (that clear owns the marker now).
       // v1.6.5: removed inside the store lock, so a sign-out wipe queued
       // behind this store sees the marker gone and leaves this token.
-      if (clearCount === myClears) clearRevokedMarker();
+      if (clearCount === myClears) clearRevokedMarker(markerBefore);
     });
   })();
   pendingInstall = install;
