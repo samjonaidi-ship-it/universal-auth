@@ -1,4 +1,7 @@
-// @samjonaidi-ship-it/universal-auth | src/index.ts | v1.1.0-rc.19 | 2026-08-11 | BB
+// @samjonaidi-ship-it/universal-auth | src/index.ts | v1.1.0-rc.22 | 2026-10-14 | BB
+// rc.22: + getAccessTokenOrThrow, onTokenUnavailable, getSessionScope,
+//   getSessionGeneration, isSessionScopeCurrent, isTerminalRefreshError and
+//   their types. All additive (CalExp5 #881's SDK gaps).
 // rc.19 (P5c): + getDraft / putDraft / deleteDraft — resumable half-finished
 //   work keyed by IDENTITY rather than device, so it survives picking up a
 //   different phone. Callers strip file bytes; the server caps at 64 KB.
@@ -42,6 +45,16 @@ export {
   getCurrentSessionId,
   hasLiveAccessToken,
   type SessionTokens,
+  // rc.22
+  getAccessTokenOrThrow,
+  onTokenUnavailable,
+  getSessionScope,
+  getSessionGeneration,
+  isSessionScopeCurrent,
+  isTerminalRefreshError,
+  type SessionScope,
+  type SessionSource,
+  type TokenUnavailableEvent,
 } from './core/token-manager.js';
 
 // v1.0.1 (Phase C6): `setSession` deprecation shim. The canonical home is

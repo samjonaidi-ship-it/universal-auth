@@ -1,4 +1,7 @@
-// @samjonaidi-ship-it/universal-auth | src/errors.ts | v1.0.3 | 2026-05-08 | BB
+// @samjonaidi-ship-it/universal-auth | src/errors.ts | v1.0.4 | 2026-10-14 | BB
+// v1.0.4 (rc.22): AUTH_NO_REFRESH_TOKEN + AuthNoRefreshToken — thrown by
+//   getAccessTokenOrThrow() when there is no refresh token to mint from
+//   (cookie-only session, or never signed in). SDK-internal; never from the BFF.
 // Typed error classes for every canonical error code per §3.7.
 // Full enumeration: 15 from §3.7 + `VALIDATION_PHONE_UNREACHABLE` (§5.4.5)
 // + `CONSENT_REQUIRED` (v1.4.0 §3.4) = 17 server-canonical
@@ -82,6 +85,8 @@ export type AuthErrorCode =
   | 'LEGACY_REFRESH_RESPONSE'
   | 'NO_NAVIGATOR_LOCKS'
   | 'CNF_JKT_MISMATCH'
+  // SDK-only (rc.22): no refresh token stored, so no access token can be minted
+  | 'AUTH_NO_REFRESH_TOKEN'
   // SDK-only (D8 / rc.5)
   | 'AUTH_PROVIDER_MISSING'
   // Forward-compat — admits unknown future codes
@@ -356,6 +361,21 @@ export class NoNavigatorLocksError extends AuthSdkError {
 export class CnfJktMismatchError extends AuthSdkError {
   constructor(message: string, opts?: ConstructorParameters<typeof AuthSdkError>[2]) {
     super('CNF_JKT_MISMATCH', message, opts);
+  }
+}
+
+/**
+ * rc.22: no access token could be produced because there is no stored refresh
+ * token. Typical for a cookie-only session (the user hopped subdomains: the
+ * cross-subdomain cookie authenticates `/auth/v1/me`, but this origin's IDB
+ * holds no refresh token). Thrown by `getAccessTokenOrThrow()`; plain
+ * `getAccessToken()` still returns `null` for backward compatibility.
+ * NOT terminal — nothing is cleared. Re-auth (or a future cookie-mint
+ * endpoint on the BFF) is the only way to get a bearer token.
+ */
+export class AuthNoRefreshToken extends AuthSdkError {
+  constructor(message: string, opts?: ConstructorParameters<typeof AuthSdkError>[2]) {
+    super('AUTH_NO_REFRESH_TOKEN', message, opts);
   }
 }
 

@@ -1,4 +1,6 @@
-// @samjonaidi-ship-it/universal-auth | src/internal/index.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/internal/index.ts | v1.0.2 | 2026-10-14 | BB
+// v1.0.2 (rc.22): + noteCookieSession (AuthProvider calls it after /me;
+//   exposed here for non-React hosts that hydrate themselves).
 // Internal subpath — exposes low-level surfaces that are NOT part of the
 // stable public API. Anything imported from `@samjonaidi-ship-it/universal-auth/internal`
 // is subject to change between minor versions. Use at your own risk.
@@ -10,4 +12,4 @@
 // instead. `setSession` remains exported here for non-SDK token sources
 // (e.g., CalExp5 PIN-based sign-in via POST /auth/v1/pin/verify).
 
-export { setSession, type SessionTokens } from '../core/token-manager.js';
+export { setSession, noteCookieSession, type SessionTokens } from '../core/token-manager.js';

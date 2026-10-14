@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/react/index.ts | v1.0.7 | 2026-05-22 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/index.ts | v1.0.8 | 2026-10-14 | BB
 // React subpath barrel — `@samjonaidi-ship-it/universal-auth/react`.
 // Tree-shakeable named exports only (sideEffects: false).
 //
@@ -8,6 +8,7 @@
 //   VehicleSection, GearSection, ComplianceDocsSection, PropertySection,
 //   CompletenessBar. These were built into dist/ but never re-exported —
 //   unreachable from any documented import path. Latent since v1.0.0-rc.4.
+// v1.0.8 (rc.22): + TokenState type.
 
 // Provider + contexts
 export {
@@ -16,6 +17,7 @@ export {
   EntitlementsContext,
   StatusContext,
   type AuthStatus,
+  type TokenState,
   type IdentityContextValue,
   type EntitlementsContextValue,
   type StatusContextValue,

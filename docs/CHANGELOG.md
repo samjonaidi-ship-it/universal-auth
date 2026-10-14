@@ -8,6 +8,54 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
 
 > **Note on v1.1.0-rc.3 (2026-05-06):** rc.3 landed on `main` but failed CI on 3 lint errors before it could be tagged or published. v1.1.0-rc.4 is the same code with those 3 errors resolved + coverage threshold reconciled with measured coverage. Public consumer path for the v1.1 line is rc.1 → rc.4 (rc.2 and rc.3 were never published).
 
+## [1.1.0-rc.22] — 2026-10-14 — cookie-only sessions and silent no-token refresh
+
+Closes the SDK gaps CalExp5 PR #881 had to work around in app code.
+Every change is additive; no public signature changed.
+
+### Added
+
+- `AuthNoRefreshToken` (`AUTH_NO_REFRESH_TOKEN`, not terminal) in `src/errors.ts` v1.0.4.
+- `getAccessTokenOrThrow()` — like `getAccessToken()`, but throws
+  `AuthNoRefreshToken` instead of resolving `null` when no refresh token exists.
+- `onTokenUnavailable(listener)` — fires once per session generation when a
+  token is needed and there is no refresh token. It never notifies
+  `onSessionChange` listeners, so a cookie session does not flip to anonymous.
+- `isTerminalRefreshError(err)` is now exported. `DEVICE_UNRECOGNIZED` is
+  documented as **not terminal**: it asks for device verification and the
+  session stays; the CT BFF does not emit it on `/session/refresh` today.
+- Session scope: `getSessionScope()` → `{sessionId, generation, source}`,
+  `getSessionGeneration()`, `isSessionScopeCurrent(scope)`. Every
+  `setSession`/`clearSession` and every session-id change starts a new
+  generation. Cookie-only sessions take the `/me` `session_meta.session_id`
+  (internal `noteCookieSession`), with `source: 'cookie'`.
+- React: `TokenState = 'live' | 'cookie_only' | 'none'` on `useAuth()` and
+  `StatusContext`.
+
+### Fixed
+
+- `token-manager.ts` v1.4.0 — the "no refresh token" branch returned `null`
+  silently. It now emits `onTokenUnavailable`. Wrong doc comments on
+  `getAccessToken()` and the v1.2.0 terminal-code list are corrected.
+- `AuthProvider.tsx` v1.1.0 — `hydrate()` set `authenticated` with no access
+  token and no signal. It now tries ONE mint via `getAccessToken()`, then
+  reports `tokenState: 'cookie_only'` when the cookie is alive but no token
+  exists.
+- `session-watcher.ts` v1.2.0 — a `/me` revoke is scoped to the session it
+  polled for. A late 401 for a replaced session no longer clears the new
+  one; `session.revoked` carries `session_id`, `generation` and `stale`.
+
+### Known limit
+
+- A true cookie → token mint needs a CT BFF endpoint (`/session/refresh`
+  requires `refresh_token` in the body). Until then `cookie_only` is the
+  honest state. Follow-up: a CT BFF cookie-mint endpoint.
+
+### Consumers
+
+- CalExp5 and ControlTower should bump to `1.1.0-rc.22`, then drop the #881
+  workarounds.
+
 ## [1.1.0-rc.21] — 2026-09-17 — stale-refresh session-revoke race (P4.7)
 
 **Fixes a spontaneous-logout bug**: a session revoked and then re-authenticated

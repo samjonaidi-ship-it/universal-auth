@@ -1,4 +1,13 @@
-// @samjonaidi-ship-it/universal-auth | src/react/AuthProvider.tsx | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/AuthProvider.tsx | v1.1.0 | 2026-10-14 | BB
+// v1.1.0 (rc.22): status 'authenticated' no longer hides a missing token.
+//   - StatusContext adds `tokenState`: 'live' | 'cookie_only' | 'none'.
+//   - After /me succeeds with no in-memory token, hydrate tries ONE mint
+//     (getAccessToken()); if that yields nothing the session is reported
+//     'cookie_only' instead of passing for a token session.
+//   - hydrate records the cookie session's id (session_meta.session_id) via
+//     noteCookieSession(), so cookie-only sessions have a scope too.
+//   status stays 'authenticated' for a cookie-only session: the cookie is a
+//   real session (D10 cross-subdomain SSO) and existing consumers rely on it.
 // React provider with 3-context split per §8.4.
 //
 // Why split:
@@ -20,6 +29,8 @@ import {
 import {
   onSessionChange,
   hasLiveAccessToken,
+  getAccessToken,
+  noteCookieSession,
 } from '../core/token-manager.js';
 import {
   AuthSessionExpired,
@@ -56,8 +67,20 @@ export interface EntitlementsContextValue {
   hasAppAccess: (appId: string) => boolean;
 }
 
+/**
+ * v1.1.0: whether the SDK holds an access token for this session.
+ *   live        — a bearer token is in memory (or was just minted);
+ *   cookie_only — /me succeeded on the session cookie, but no token could be
+ *                 minted (no refresh token on this origin). Cookie-authed
+ *                 calls work; bearer-only calls will not;
+ *   none        — no session, or not hydrated yet.
+ */
+export type TokenState = 'live' | 'cookie_only' | 'none';
+
 export interface StatusContextValue {
   status: AuthStatus;
+  /** v1.1.0 — see TokenState. */
+  tokenState: TokenState;
 }
 
 // ── Contexts ──────────────────────────────────────────────────────────────
@@ -125,6 +148,10 @@ export function AuthProvider({
     return 'authenticated';
   });
 
+  const [tokenState, setTokenState] = useState<TokenState>(() =>
+    hasLiveAccessToken() ? 'live' : 'none'
+  );
+
   // ── Hydration ──────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -139,6 +166,21 @@ export function AuthProvider({
       try {
         const { data } = await get<Session>('/auth/v1/me');
         if (cancelled) return;
+        // v1.1.0: give a cookie session an id + generation (no-op when a
+        // token session is already installed).
+        noteCookieSession(data.session_meta?.session_id);
+        if (!hasLiveAccessToken()) {
+          // Cookie alive, no local token: try to mint one, once. Null means
+          // no refresh token on this origin (onTokenUnavailable has fired).
+          // A throw is a transient refresh failure; the next request retries.
+          try {
+            await getAccessToken();
+          } catch {
+            // fall through to the honest report below
+          }
+          if (cancelled) return;
+        }
+        setTokenState(hasLiveAccessToken() ? 'live' : 'cookie_only');
         applySession(data);
         // Backfill entitlements cache
         void refreshEntitlements();
@@ -174,6 +216,7 @@ export function AuthProvider({
       invalidateAccessCache();
       if (!hasLiveAccessToken()) {
         // Session cleared
+        setTokenState('none');
         setIdentity(null);
         setPersonas([]);
         setPrimaryPersona(null);
@@ -184,6 +227,7 @@ export function AuthProvider({
         return;
       }
       // Session installed/refreshed — re-fetch /me
+      setTokenState('live');
       void (async () => {
         try {
           const { data } = await get<Session>('/auth/v1/me');
@@ -306,7 +350,10 @@ export function AuthProvider({
     };
   }, [features, appAccess, entitlementsTick]);
 
-  const statusValue = useMemo<StatusContextValue>(() => ({ status }), [status]);
+  const statusValue = useMemo<StatusContextValue>(
+    () => ({ status, tokenState }),
+    [status, tokenState]
+  );
 
   // 3-context split — components subscribe to whichever they need
   return (
