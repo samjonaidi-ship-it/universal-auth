@@ -3,15 +3,15 @@
 //   superseded sign-out no longer keeps the signed-out session.
 //   - noteCookieSession() ignores the id a pending sign-out signs out. An
 //     unscoped SSR /me note could put that session back mid-sign-out.
-//   - The stand-down decides by the held session's source. Case table
-//     (only when the wipe stood down for a sign-in and nothing moved since):
+//   - The stand-down no longer keeps a cookie-noted signed-out session.
+//     Case table (only when the wipe stood down for a sign-in and nothing
+//     moved since):
 //       held null                 + update -> adopt the update
 //       held null                 + none   -> report the clear
 //       held from a token         + any    -> already adopted; no clear
+//       held = other, cookie      + any    -> keep it (newer /me); no clear
 //       held = signed-out, cookie + update -> adopt the update
 //       held = signed-out, cookie + none   -> drop it; report the clear
-//       held = other, cookie      + update -> adopt the update
-//       held = other, cookie      + none   -> keep it; no clear
 //     "update" = the newest ignored session_updated for another session.
 // v1.6.7 (rc.25, Devin round 2, PR #36):
 //   - Each pending sign-out keeps its own record (signed-out session, row at
@@ -818,10 +818,11 @@ async function clearSessionAndReport(): Promise<boolean> {
       const update = own.update !== null && own.update.sessionId !== signedOut ? own.update : null;
       if (supersededBySignIn && !reported && clearCount === myClears && installCount === myInstall) {
         const held = state.sessionId;
-        if (held !== null && sessionSource === 'token') {
+        if (held !== null && (sessionSource === 'token' || held !== signedOut)) {
           // v1.6.7 (Devin PR #36 r2): the sign-in removed the marker before it
           // broadcast, so this tab already adopted it; do not report a clear
-          // or stop that session's event stream.
+          // or stop that session's event stream. A cookie note for another
+          // session is the server's newer word; it is kept too.
           adoptedSignIn = true;
         } else if (update !== null) {
           state.accessToken = update.accessToken;
@@ -829,12 +830,9 @@ async function clearSessionAndReport(): Promise<boolean> {
           adoptSessionId(update.sessionId, 'token');
           adoptedSignIn = true;
           notifyListeners();
-        } else if (held !== null && held === signedOut) {
+        } else if (held !== null) {
           // A cookie note put the signed-out session back: finish the clear.
           adoptSessionId(null, null);
-        } else if (held !== null) {
-          // A cookie note for another session: the server's word, kept.
-          adoptedSignIn = true;
         }
       }
     },
