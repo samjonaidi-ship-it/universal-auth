@@ -1,4 +1,6 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/core/session-watcher-scope.test.ts | v1.0.0 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/session-watcher-scope.test.ts | v1.1.0 | 2026-10-14 | BB
+// v1.1.0 (rc.23, issue #32): session.revoked is emitted after the clear, and
+// says stale: true when a sign-in during the wipe superseded the clear.
 // rc.22 (session-watcher v1.2.0): a revoked /me poll is scoped to the session
 // it started under. A 401 that comes back after a NEW session was installed
 // must not clear the new one, and the session.revoked event names the session
@@ -19,6 +21,10 @@ vi.mock('../../../src/core/client.js', () => ({
 vi.mock('../../../src/core/event-reporter.js', () => ({ emit: vi.fn(async () => {}) }));
 vi.mock('../../../src/core/entitlements.js', () => ({ refreshEntitlements: vi.fn(async () => {}) }));
 vi.mock('../../../src/config.js', () => ({ getUseSSE: () => 'never' }));
+vi.mock('../../../src/core/storage.js', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../../src/core/storage.js')>();
+  return { ...real, clearAllSessionState: vi.fn(real.clearAllSessionState) };
+});
 
 import {
   configureSessionWatcher,
@@ -31,6 +37,7 @@ import {
   hasLiveAccessToken,
   __resetTokenManagerForTests,
 } from '../../../src/core/token-manager.js';
+import * as storage from '../../../src/core/storage.js';
 import { __resetDbForTests } from '../../../src/core/storage.js';
 import { emit } from '../../../src/core/event-reporter.js';
 import { get } from '../../../src/core/client.js';
@@ -92,5 +99,41 @@ describe('session-watcher — revoke is scoped to the polling session', () => {
     const payload = vi.mocked(emit).mock.calls.find((c) => c[0] === 'session.revoked')?.[1];
     expect(payload).not.toHaveProperty('stale');
     expect(hasLiveAccessToken()).toBe(false);
+  });
+
+  it('issue #32: a clear superseded by a sign-in is reported stale, and only after the clear', async () => {
+    await setSession(tokens('sess-D'));
+    startSessionWatcher();
+    await vi.waitFor(() => expect(rejectMe).not.toBeNull());
+
+    let releaseWipe!: () => void;
+    const held = new Promise<void>((r) => {
+      releaseWipe = r;
+    });
+    const real = await vi.importActual<typeof import('../../../src/core/storage.js')>(
+      '../../../src/core/storage.js'
+    );
+    vi.mocked(storage.clearAllSessionState).mockImplementationOnce(async () => {
+      await held;
+      await real.clearAllSessionState();
+    });
+
+    rejectMe?.(new AuthSessionRevoked('revoked'));
+    await vi.waitFor(() => expect(storage.clearAllSessionState).toHaveBeenCalled());
+    // The wipe is held: nothing may announce the revoke yet.
+    expect(vi.mocked(emit).mock.calls.some((c) => c[0] === 'session.revoked')).toBe(false);
+
+    const installing = setSession(tokens('sess-E'));
+    releaseWipe();
+    await installing;
+
+    await vi.waitFor(() =>
+      expect(emit).toHaveBeenCalledWith(
+        'session.revoked',
+        expect.objectContaining({ session_id: 'sess-D', stale: true })
+      )
+    );
+    expect(getCurrentSessionId()).toBe('sess-E');
+    expect(hasLiveAccessToken()).toBe(true);
   });
 });

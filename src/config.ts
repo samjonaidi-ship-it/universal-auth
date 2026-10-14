@@ -1,4 +1,5 @@
-// @samjonaidi-ship-it/universal-auth | src/config.ts | v1.1.12 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | src/config.ts | v1.1.13 | 2026-10-14 | BB
+// v1.1.13: SDK_VERSION → 1.1.0-rc.23.
 // v1.1.12: SDK_VERSION → 1.1.0-rc.22.
 // v1.1.7 (P3.1/P2.5): SDK_VERSION → 1.1.0-rc.13. Kept in lockstep with
 //   package.json by scripts/verify-version-sync.ts (CI gate).
@@ -231,7 +232,7 @@ export function assertApiBaseUrlSafety(
  *  of regression. `pnpm verify:version-sync` (scripts/verify-version-sync.ts)
  *  now CI-gates this constant against package.json:version on every build.
  */
-export const SDK_VERSION = '1.1.0-rc.22';
+export const SDK_VERSION = '1.1.0-rc.23';
 
 /**
  * Initialize the SDK. Called once at app startup.

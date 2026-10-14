@@ -8,6 +8,26 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
 
 > **Note on v1.1.0-rc.3 (2026-05-06):** rc.3 landed on `main` but failed CI on 3 lint errors before it could be tagged or published. v1.1.0-rc.4 is the same code with those 3 errors resolved + coverage threshold reconciled with measured coverage. Public consumer path for the v1.1 line is rc.1 → rc.4 (rc.2 and rc.3 were never published).
 
+## [1.1.0-rc.23] — 2026-10-14 — session-scope race fixes (issue #32)
+
+Follow-ups from PR #31's review. No public signature changed.
+
+### Fixed
+
+- `AuthProvider.tsx` v1.2.0 — a sign-in during a failed cookie mint now shows
+  `'live'`; a mint whose session changed under it sets no state. The
+  `initialSession` path labels the session as a cookie session only when no
+  live token exists, and a new `initialSession` object with the same id no
+  longer re-runs the mint.
+- `token-manager.ts` v1.5.0 — a server-wins `noteCookieSession()` drops the old
+  session's access token. A `clearSession()` that starts while `setSession()`
+  stores its refresh token waits for that store, so the sign-out leaves no
+  refresh token; the overtaken install notifies no one. A rejected IndexedDB
+  wipe still broadcasts and notifies listeners, then rejects.
+- `session-watcher.ts` v1.3.0 and `session-events.ts` v0.2.0 — `session.revoked`
+  is emitted after the clear, with `stale: true` when a sign-in superseded it.
+  The SSE revoke now clears only the session that was current when it arrived.
+
 ## [1.1.0-rc.22] — 2026-10-14 — cookie-only sessions and silent no-token refresh
 
 Closes the SDK gaps CalExp5 PR #881 had to work around in app code.

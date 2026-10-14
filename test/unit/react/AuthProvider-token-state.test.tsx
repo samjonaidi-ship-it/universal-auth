@@ -1,4 +1,8 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/react/AuthProvider-token-state.test.tsx | v1.2.0 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/react/AuthProvider-token-state.test.tsx | v1.3.0 | 2026-10-14 | BB
+// v1.3.0 (rc.23, AuthProvider v1.2.0, issue #32): a sign-in during a failed
+//   mint reports 'live'; a sign-out during it leaves 'none'; an initialSession
+//   does not relabel a live token session; a new initialSession object with
+//   the same session id does not re-run the mint.
 // rc.22 (AuthProvider v1.1.0) — gaps 2 + 5 from CalExp5 #881:
 //   hydrate() used to report 'authenticated' with nothing to tell a consumer
 //   that no access token exists. It now tries one mint, then reports
@@ -15,6 +19,7 @@ import type { Session } from '../../../src/types/api.js';
 import { configureClient, __resetClientForTests } from '../../../src/core/client.js';
 import {
   __resetTokenManagerForTests,
+  clearSession,
   getSessionScope,
   registerRefreshCallback,
   setSession,
@@ -253,5 +258,117 @@ describe('AuthProvider — tokenState (rc.22)', () => {
     await waitFor(() => expect(screen.getByTestId('status').textContent).toBe('authenticated'));
     expect(screen.getByTestId('token').textContent).toBe('live');
     expect(getSessionScope()).toMatchObject({ sessionId: 'sess-token-1', source: 'token' });
+  });
+
+  it('issue #32: a sign-in during a failed mint reports live and keeps the new session', async () => {
+    registerRefreshCallback(async () => {
+      // B signs in while the mint for cookie session A is in flight; then
+      // A's refresh fails transiently.
+      await setSession({
+        accessToken: 'at-B',
+        refreshToken: 'rt-B',
+        expiresAt: Date.now() + 15 * 60_000,
+        sessionId: 'sess-B',
+      });
+      throw new AuthSdkError('HTTP_503', 'bff down');
+    });
+    let meCalls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input instanceof Request ? input.url : input);
+        if (url.includes('/auth/v1/me') && ++meCalls > 1) return jsonResp(200, meBody('sess-B'));
+        if (url.includes('/auth/v1/me')) {
+          await storeRefreshToken('rt-A', Date.now() + 86_400_000);
+          return jsonResp(200, meBody('sess-A'));
+        }
+        return jsonResp(404, { error: 'not_stubbed' });
+      })
+    );
+
+    render(
+      <AuthProvider>
+        <StatusProbe />
+      </AuthProvider>
+    );
+
+    await waitFor(() => expect(screen.getByTestId('status').textContent).toBe('authenticated'));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.getByTestId('token').textContent).toBe('live');
+    expect(getSessionScope()).toMatchObject({ sessionId: 'sess-B', source: 'token' });
+  });
+
+  it('issue #32: a sign-out during a failed mint stays signed out (none, not refresh_error)', async () => {
+    registerRefreshCallback(async () => {
+      await clearSession();
+      throw new AuthSdkError('HTTP_503', 'bff down');
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input instanceof Request ? input.url : input);
+        if (url.includes('/auth/v1/me')) {
+          await storeRefreshToken('rt-A', Date.now() + 86_400_000);
+          return jsonResp(200, meBody('sess-A'));
+        }
+        return jsonResp(404, { error: 'not_stubbed' });
+      })
+    );
+
+    render(
+      <AuthProvider>
+        <StatusProbe />
+      </AuthProvider>
+    );
+
+    await waitFor(() => expect(screen.getByTestId('token').textContent).toBe('none'));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.getByTestId('token').textContent).toBe('none');
+    expect(screen.getByTestId('status').textContent).toBe('anonymous');
+  });
+
+  it('issue #32: an initialSession does not relabel a live token session', async () => {
+    await setSession({
+      accessToken: 'at-B',
+      refreshToken: 'rt-B',
+      expiresAt: Date.now() + 15 * 60_000,
+      sessionId: 'sess-B',
+    });
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResp(404, { error: 'not_stubbed' })));
+
+    render(
+      <AuthProvider initialSession={meBody('sess-A')}>
+        <StatusProbe />
+      </AuthProvider>
+    );
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(getSessionScope()).toMatchObject({ sessionId: 'sess-B', source: 'token' });
+  });
+
+  it('issue #32: a new initialSession object with the same session id does not re-run the mint', async () => {
+    await storeRefreshToken('rt-ssr', Date.now() + 86_400_000);
+    const refresh = vi.fn(async () => {
+      throw new AuthSdkError('HTTP_503', 'bff down');
+    });
+    registerRefreshCallback(refresh);
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResp(404, { error: 'not_stubbed' })));
+
+    const { rerender } = render(
+      <AuthProvider initialSession={meBody('sess-ssr-3')}>
+        <StatusProbe />
+      </AuthProvider>
+    );
+    await waitFor(() => expect(screen.getByTestId('token').textContent).toBe('refresh_error'));
+    expect(refresh).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <AuthProvider initialSession={meBody('sess-ssr-3')}>
+        <StatusProbe />
+      </AuthProvider>
+    );
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(refresh).toHaveBeenCalledTimes(1);
   });
 });

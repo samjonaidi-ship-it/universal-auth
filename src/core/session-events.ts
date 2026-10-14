@@ -1,4 +1,7 @@
-// @samjonaidi-ship-it/universal-auth | src/core/session-events.ts | v0.1.0 | 2026-05-06 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/session-events.ts | v0.2.0 | 2026-10-14 | BB
+// v0.2.0 (rc.23, issue #32): a `session.revoked` event clears only the session
+//   that was current when it arrived (clearSessionIfCurrent), and the event
+//   is emitted after the clear, with stale: true when a sign-in superseded it.
 // SSE (Server-Sent Events) lifecycle for session events. Replaces the
 // 60-second `/auth/v1/me` polling in `session-watcher.ts` when the browser
 // supports `EventSource` (Chrome / Firefox / Edge / Safari ≥ 16).
@@ -33,7 +36,7 @@
 
 import { getClientConfig } from './client.js';
 import { emit } from './event-reporter.js';
-import { clearSession } from './token-manager.js';
+import { clearSessionIfCurrent, getSessionScope } from './token-manager.js';
 import { refreshEntitlements } from './entitlements.js';
 
 // ── Constants ─────────────────────────────────────────────────────────────
@@ -131,10 +134,12 @@ function openEventSource(apiBaseUrl: string): void {
 
   es.addEventListener('session.revoked', ((ev: MessageEvent) => {
     const payload = parseEventData(ev.data);
-    void emit('session.revoked', { reason: 'server', ...payload });
     // Mirror session-watcher revocation path: tear down local session, then
     // close the stream so we don't immediately reconnect to a dead session.
-    void clearSession();
+    // v0.2.0 (issue #32): the clear is scoped to the session current when the
+    // event arrived, and the event is emitted after it (stale: true when a
+    // sign-in superseded the clear).
+    void revokeAndReport(payload, getSessionScope());
     stopSessionEvents();
   }) as EventListener);
 
@@ -190,6 +195,24 @@ function openEventSource(apiBaseUrl: string): void {
       eventSource = null;
       openEventSource(apiBaseUrl);
     }, delay);
+  });
+}
+
+async function revokeAndReport(
+  payload: Record<string, unknown>,
+  scope: ReturnType<typeof getSessionScope>
+): Promise<void> {
+  // A rejected wipe has still cleared memory and told tabs and listeners.
+  let cleared: boolean;
+  try {
+    cleared = await clearSessionIfCurrent(scope);
+  } catch {
+    cleared = true;
+  }
+  void emit('session.revoked', {
+    reason: 'server',
+    ...payload,
+    ...(cleared ? {} : { stale: true }),
   });
 }
 
