@@ -17,9 +17,11 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
   `noteCookieSession()` ignores the session id a pending sign-out is signing
   out (an unscoped SSR note can no longer bring it back). The stand-down after
   another tab's sign-in now decides by where the held session came from: a
-  token session is the adopted sign-in and is kept; a cookie-noted session
-  gives way to the sign-in this tab ignored; a cookie note for the signed-out
-  session with no sign-in to adopt finishes the clear.
+  token session is the adopted sign-in and is kept; a cookie note for another
+  session is kept (a newer `/me`), unless the ignored sign-in is that same
+  session, which is then adopted with its token; a cookie note for the
+  signed-out session gives way to the ignored sign-in, or, with none, finishes
+  the clear.
 
 ## [1.1.0-rc.25] — 2026-10-14 — cross-tab sign-out keeps a newer sign-in
 

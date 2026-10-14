@@ -9,7 +9,10 @@
 //       held null                 + update -> adopt the update
 //       held null                 + none   -> report the clear
 //       held from a token         + any    -> already adopted; no clear
-//       held = other, cookie      + any    -> keep it (newer /me); no clear
+//       held = other, cookie      + none   -> keep it (newer /me); no clear
+//       held = other, cookie      + update for another id -> keep it
+//       held = other, cookie      + update for that id    -> adopt the update
+//                                   (same session, now with its token)
 //       held = signed-out, cookie + update -> adopt the update
 //       held = signed-out, cookie + none   -> drop it; report the clear
 //     "update" = the newest ignored session_updated for another session.
@@ -818,11 +821,14 @@ async function clearSessionAndReport(): Promise<boolean> {
       const update = own.update !== null && own.update.sessionId !== signedOut ? own.update : null;
       if (supersededBySignIn && !reported && clearCount === myClears && installCount === myInstall) {
         const held = state.sessionId;
-        if (held !== null && (sessionSource === 'token' || held !== signedOut)) {
+        const keepHeld =
+          sessionSource === 'token' || (held !== signedOut && update?.sessionId !== held);
+        if (held !== null && keepHeld) {
           // v1.6.7 (Devin PR #36 r2): the sign-in removed the marker before it
           // broadcast, so this tab already adopted it; do not report a clear
           // or stop that session's event stream. A cookie note for another
-          // session is the server's newer word; it is kept too.
+          // session is the server's newer word; it is kept too, unless the
+          // sign-in is that same session (then adopt it for its token).
           adoptedSignIn = true;
         } else if (update !== null) {
           state.accessToken = update.accessToken;

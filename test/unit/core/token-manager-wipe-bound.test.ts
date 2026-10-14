@@ -805,6 +805,45 @@ describe('token-manager — wipe bound and locally-revoked marker (issue #33)', 
     expect(await storage.getRefreshToken()).toBe('rt-B');
   });
 
+  it.each([
+    // [noted id, expected scope] — sign-out of A superseded by B's sign-in.
+    ['A', { sessionId: 'B', source: 'token' }], // issue #37: the signed-out id gives way
+    ['B', { sessionId: 'B', source: 'token' }], // same session: adopt it with its token
+    ['C', { sessionId: 'C', source: 'cookie' }], // another id: the newer /me is kept
+  ] as const)('issue #37: a stand-down after a cookie note for %s ends on the right session', async (noted, scope) => {
+    __setWipeTimeoutMsForTests(5_000);
+    installFakeLocks();
+    await setSession(tokens('A'));
+    const peer = new BroadcastChannel('bb-universal-auth-session');
+    let letGo!: () => void;
+    const gate = new Promise<void>((r) => (letGo = r));
+    const busy = otherTab(() => gate);
+    const tabB = otherTab(async () => {
+      await storage.storeRefreshToken('rt-B', Date.now() + 60_000);
+      peer.postMessage({ type: 'session_updated', accessToken: 'at-B', accessExpiresAt: Date.now() + 60_000, sessionId: 'B' });
+      await new Promise((r) => setTimeout(r, 10));
+      noteCookieSession(noted);
+    });
+    const unblock = blockLocalStorage();
+    let cleared!: boolean;
+    try {
+      const clearing = clearSessionIfCurrent(getSessionScope());
+      await new Promise((r) => setTimeout(r, 10));
+      letGo();
+      await busy;
+      await tabB;
+      cleared = await clearing;
+    } finally {
+      unblock();
+    }
+    peer.close();
+
+    expect(vi.mocked(storage.clearAllSessionState)).not.toHaveBeenCalled();
+    expect(await storage.getRefreshToken()).toBe('rt-B');
+    expect(getSessionScope()).toMatchObject(scope);
+    expect(cleared).toBe(false);
+  });
+
   it('issue #37: a cookie note for the signed-out session during a superseded sign-out does not keep it', async () => {
     __setWipeTimeoutMsForTests(5_000);
     installFakeLocks();
