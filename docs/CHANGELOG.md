@@ -27,6 +27,10 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
   A cold tab opens its BroadcastChannel when it signs out, and adopts a
   sign-in it ignored once its sign-out stands down, never after the wipe
   timeout has already reported the sign-out.
+- `token-manager.ts` v1.6.7 (Devin round 2, PR #36): each pending sign-out
+  keeps its own record, so two overlapping sign-outs with localStorage blocked
+  still keep another tab's newer sign-in. A sign-out whose tab already adopted
+  that sign-in reports no clear and leaves its session-event stream running.
 
 ## [1.1.0-rc.24] — 2026-10-14 — session-scope debt (issue #33 items 2–6)
 

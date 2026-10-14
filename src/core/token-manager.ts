@@ -1,4 +1,13 @@
-// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.6.6 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.6.7 | 2026-10-14 | BB
+// v1.6.7 (rc.25, Devin round 2, PR #36):
+//   - Each pending sign-out keeps its own record (signed-out session, row at
+//     sign-out, ignored sign-in). An older wipe that settles no longer erases
+//     the record a newer, overlapping sign-out needs, and that sign-out
+//     inherits the session and row of the one it overlaps (memory is already
+//     cleared), so it still keeps another tab's newer sign-in.
+//   - A stand-down where this tab already adopted the sign-in (the marker was
+//     removed before the broadcast) reports no clear: no listeners, no
+//     session-event stop, and clearSessionIfCurrent() returns false.
 // v1.6.6 (rc.25, Devin round 1, PR #36):
 //   - Blocked localStorage: the marker then lives only in the signing-out
 //     tab's memory, so another tab's sign-in cannot remove it. The wipe then
@@ -299,11 +308,18 @@ const REVOKED_MARKER_KEY = 'bb-universal-auth-revoked';
 // v1.6.1: the marker holds its writer's own value, so only that writer can
 // remove it on success. Memory copy only where localStorage throws.
 let memoryRevokedMarker: string | null = null;
-// v1.6.6: the session the pending sign-out signs out, and the newest
+// v1.6.6: the session a pending sign-out signs out, and the newest
 // session_updated for a DIFFERENT session ignored while it was pending. A
 // refresh of the signed-out session (same id) is never kept (see header).
-let signOutSessionId: string | null = null;
-let ignoredUpdate: { accessToken: string; accessExpiresAt: number; sessionId: string } | null = null;
+// v1.6.7 (Devin PR #36 r2): one record per sign-out, so an older wipe that
+// settles never erases the evidence a newer, overlapping sign-out needs.
+type IgnoredUpdate = { accessToken: string; accessExpiresAt: number; sessionId: string };
+interface PendingSignOut {
+  signedOut: string | null;
+  rowAtSignOut: Promise<string | null> | null;
+  update: IgnoredUpdate | null;
+}
+const pendingSignOuts = new Set<PendingSignOut>();
 
 /** Race a wipe against WIPE_TIMEOUT_MS; the wipe itself keeps running. */
 function withWipeTimeout(wipe: Promise<void>): Promise<void> {
@@ -497,12 +513,14 @@ function handleBroadcast(raw: unknown): void {
         // v1.6.6: kept when it names another session (a sign-in, not a
         // rotation of the one being signed out); adopted if the sign-out
         // stands down.
-        if (raw.sessionId === signOutSessionId) return;
-        ignoredUpdate = {
+        const update: IgnoredUpdate = {
           accessToken: raw.accessToken,
           accessExpiresAt: raw.accessExpiresAt,
           sessionId: raw.sessionId,
         };
+        for (const pending of pendingSignOuts) {
+          if (raw.sessionId !== pending.signedOut) pending.update = update;
+        }
         return;
       }
       // Another tab refreshed; adopt its access token without re-fetching
@@ -724,15 +742,23 @@ async function clearSessionAndReport(): Promise<boolean> {
   setRevokedMarker(marker);
   // v1.6.6: listen before waiting, so a cold tab hears another tab's sign-in.
   getBroadcastChannel();
-  ignoredUpdate = null;
-  signOutSessionId = sessionAtSignOut;
   const myClears = clearCount;
+  // v1.6.7 (Devin PR #36 r2): a sign-out that overlaps a pending one (memory
+  // already cleared) signs out the same session, from the same row.
+  let newest: PendingSignOut | null = null;
+  for (const pending of pendingSignOuts) newest = pending;
+  const signedOut = sessionAtSignOut ?? newest?.signedOut ?? null;
   // v1.6.6: memory-only marker (localStorage refused it): other tabs cannot
   // see or remove it. A changed row counts as another tab's sign-in only
   // with a session_updated for a different session (see header); a known
   // session is required, so a cold tab and a rotation still wipe.
-  const markerIsLocal = memoryRevokedMarker === marker && sessionAtSignOut !== null;
-  const rowAtSignOut = markerIsLocal ? getRefreshTokenRowId().catch(() => null) : null;
+  const markerIsLocal = memoryRevokedMarker === marker && signedOut !== null;
+  const rowAtSignOut = !markerIsLocal
+    ? null
+    : (sessionAtSignOut === null ? newest?.rowAtSignOut : null) ??
+      getRefreshTokenRowId().catch(() => null);
+  const own: PendingSignOut = { signedOut, rowAtSignOut, update: null };
+  pendingSignOuts.add(own);
   const previousWipe = pendingClear;
   const installBefore = pendingInstall;
   // v1.6.5: set when the wipe stood down because another tab's sign-in
@@ -754,7 +780,7 @@ async function clearSessionAndReport(): Promise<boolean> {
       if (rowAtSignOut !== null) {
         const before = await rowAtSignOut;
         const rowNow = await getRefreshTokenRowId().catch(() => null);
-        if (rowNow !== null && rowNow !== before && ignoredUpdate !== null) {
+        if (rowNow !== null && rowNow !== before && own.update !== null) {
           supersededBySignIn = true;
           return;
         }
@@ -767,22 +793,18 @@ async function clearSessionAndReport(): Promise<boolean> {
   // v1.6.6: set once this clear has reported; a later stand-down (after the
   // timeout) does not sign the tab back in behind the caller.
   let reported = false;
-  const settle = (): void => {
-    if (clearCount === myClears) signOutSessionId = null;
-  };
   void wipe.then(
     () => {
       clearRevokedMarker(marker);
-      settle();
+      pendingSignOuts.delete(own);
       // v1.6.6: the sign-in that superseded this sign-out was ignored while
       // the marker was set; adopt it now, unless this tab moved on since.
-      const update = ignoredUpdate;
-      ignoredUpdate = null;
+      const update = own.update;
       if (
         supersededBySignIn &&
         !reported &&
         update !== null &&
-        update.sessionId !== sessionAtSignOut &&
+        update.sessionId !== signedOut &&
         clearCount === myClears &&
         installCount === myInstall &&
         state.sessionId === null
@@ -792,11 +814,21 @@ async function clearSessionAndReport(): Promise<boolean> {
         adoptSessionId(update.sessionId, 'token');
         adoptedSignIn = true;
         notifyListeners();
+      } else if (
+        supersededBySignIn &&
+        !reported &&
+        clearCount === myClears &&
+        installCount === myInstall &&
+        state.sessionId !== null
+      ) {
+        // v1.6.7 (Devin PR #36 r2): the sign-in removed the marker before it
+        // broadcast, so this tab already adopted it; do not report a clear
+        // or stop that session's event stream.
+        adoptedSignIn = true;
       }
     },
     () => {
-      settle();
-      if (clearCount === myClears) ignoredUpdate = null;
+      pendingSignOuts.delete(own);
     }
   );
   // v1.6.0: pendingClear tracks the wipe until it really settles, but this
@@ -1466,8 +1498,7 @@ export function __resetTokenManagerForTests(): void {
   refreshClearGeneration = null;
   wipeTimeoutMs = DEFAULT_WIPE_TIMEOUT_MS;
   clearRevokedMarker();
-  signOutSessionId = null;
-  ignoredUpdate = null;
+  pendingSignOuts.clear();
   warnedMissingRefreshExpiresAt = false;
   warnedNoNavigatorLocks = false;
   if (broadcastChannel !== null) {

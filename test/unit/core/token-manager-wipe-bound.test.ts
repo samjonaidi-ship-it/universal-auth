@@ -1,4 +1,7 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/core/token-manager-wipe-bound.test.ts | v1.6.2 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/token-manager-wipe-bound.test.ts | v1.6.3 | 2026-10-14 | BB
+// v1.6.3 (Devin PR #36 r2): two overlapping sign-outs with localStorage
+// blocked keep another tab's newer sign-in; a cold tab that already adopted
+// the sign-in (marker removed before the broadcast) does not report a clear.
 // v1.6.2 (pre-push review on r1): a rotation in another tab (same session id)
 // still wipes with localStorage blocked; a stand-down after the wipe timeout
 // keeps the sign-in row but does not adopt it.
@@ -53,6 +56,8 @@ import {
   onTokenUnavailable,
   registerRefreshCallback,
   getCurrentSessionId,
+  getSessionScope,
+  clearSessionIfCurrent,
   __setWipeTimeoutMsForTests,
   __resetTokenManagerForTests,
 } from '../../../src/core/token-manager.js';
@@ -731,5 +736,68 @@ describe('token-manager — wipe bound and locally-revoked marker (issue #33)', 
     expect(vi.mocked(storage.clearAllSessionState)).not.toHaveBeenCalled();
     expect(await storage.getRefreshToken()).toBe('rt-B');
     expect(getCurrentSessionId()).toBeNull();
+  });
+
+  it('Devin PR #36 r2: two overlapping sign-outs with localStorage blocked keep a newer sign-in from another tab', async () => {
+    __setWipeTimeoutMsForTests(5_000);
+    installFakeLocks();
+    await setSession(tokens('A'));
+    const peer = new BroadcastChannel('bb-universal-auth-session');
+    let letGo!: () => void;
+    const gate = new Promise<void>((r) => (letGo = r));
+    const busy = otherTab(() => gate);
+    const tabB = otherTab(async () => {
+      await storage.storeRefreshToken('rt-B', Date.now() + 60_000);
+      peer.postMessage({ type: 'session_updated', accessToken: 'at-B', accessExpiresAt: Date.now() + 60_000, sessionId: 'B' });
+      await new Promise((r) => setTimeout(r, 10)); // A hears it while both markers are pending
+    });
+    const unblock = blockLocalStorage();
+    try {
+      const first = clearSession();
+      const second = clearSession(); // memory is already cleared
+      await new Promise((r) => setTimeout(r, 10));
+      letGo();
+      await busy;
+      await tabB;
+      await first;
+      await second;
+    } finally {
+      unblock();
+    }
+    await new Promise((r) => setTimeout(r, 10));
+    peer.close();
+
+    expect(vi.mocked(storage.clearAllSessionState)).not.toHaveBeenCalled();
+    expect(await storage.getRefreshToken()).toBe('rt-B');
+    expect(getCurrentSessionId()).toBe('B');
+  });
+
+  it('Devin PR #36 r2: a cold tab that already adopted the newer sign-in does not report a clear', async () => {
+    __setWipeTimeoutMsForTests(5_000);
+    installFakeLocks();
+    await storage.storeRefreshToken('rt-A', Date.now() + 60_000);
+    const peer = new BroadcastChannel('bb-universal-auth-session');
+    let letGo!: () => void;
+    const gate = new Promise<void>((r) => (letGo = r));
+    const busy = otherTab(() => gate);
+    // Like setSession: the marker goes before the broadcast, so A adopts B at once.
+    const tabB = otherTab(async () => {
+      await storage.storeRefreshToken('rt-B', Date.now() + 60_000);
+      localStorage.removeItem(MARKER);
+      peer.postMessage({ type: 'session_updated', accessToken: 'at-B', accessExpiresAt: Date.now() + 60_000, sessionId: 'B' });
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    const clearing = clearSessionIfCurrent(getSessionScope());
+    await new Promise((r) => setTimeout(r, 10));
+    letGo();
+    await busy;
+    await tabB;
+    const cleared = await clearing;
+    peer.close();
+
+    // false = the caller (session watcher) keeps B's event stream running.
+    expect(cleared).toBe(false);
+    expect(getCurrentSessionId()).toBe('B');
+    expect(await storage.getRefreshToken()).toBe('rt-B');
   });
 });
