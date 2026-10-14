@@ -14,6 +14,19 @@
 //     consumer uses to drop a session-expired event from a replaced session.
 //   - isTerminalRefreshError() is exported. DEVICE_UNRECOGNIZED is documented
 //     as NOT terminal (see the function).
+//   - Devin round 1 (PR #31): clearSession() no longer wipes a session
+//     installed while its IndexedDB clear runs (setSession() waits for the
+//     wipe; the clear skips keypair delete / broadcast / notify once the
+//     generation moved); clearSessionIfCurrent(scope) checks and clears in
+//     one step. noteCookieSession() follows the server when /me names a
+//     different session. A no-refresh-token result that races a sign-in
+//     returns the new token and does not fire onTokenUnavailable.
+//   - Pre-push review (PR #31): the clear stands down only for a setSession()
+//     install (installCount), not for any generation bump (a late /me from
+//     the old cookie must not cancel a sign-out). clearSessionIfCurrent()
+//     returns whether the clear really ran. Overlapping wipes are chained.
+//     noteCookieSession(id, scope) drops a /me reply that a session change
+//     overtook. The raced-null early return needs a real install.
 //   - Doc comments corrected: the terminal set is three codes (the v1.2.0
 //     notes said two); getAccessToken() re-throws a failed refresh (it said
 //     "returns null").
@@ -154,6 +167,12 @@ export interface SessionScope {
 
 let generation = 0;
 let sessionSource: SessionSource | null = null;
+// The storage wipe of a clearSession() still running. setSession() waits for
+// it, so an install during a clear is not deleted by that clear.
+let pendingClear: Promise<void> | null = null;
+// Counts setSession() installs. A clear compares it, not the generation:
+// only a real sign-in during the wipe may make the clear stand down.
+let installCount = 0;
 
 function adoptSessionId(id: string | null, source: SessionSource | null): void {
   if (id !== state.sessionId) generation++;
@@ -335,8 +354,13 @@ export async function setSession(tokens: SessionTokens): Promise<void> {
   // Always a new generation: a fresh install is a new session even when the
   // server re-uses the id.
   generation++;
+  installCount++;
   state.sessionId = tokens.sessionId;
   sessionSource = 'token';
+
+  // A clear that began before this install must finish its wipe first, or
+  // the wipe would delete this session's refresh token (Devin, PR #31).
+  if (pendingClear !== null) await pendingClear.catch(() => {});
 
   const refreshExpiresAt = tokens.refreshExpiresAt ?? Date.now() + DEFAULT_REFRESH_TTL_MS;
   await storeRefreshToken(tokens.refreshToken, refreshExpiresAt);
@@ -364,15 +388,39 @@ export async function setSession(tokens: SessionTokens): Promise<void> {
  * session-events, which calls back into clearSession on session.revoked.
  */
 export async function clearSession(): Promise<void> {
+  await clearSessionAndReport();
+}
+
+/** clearSession(); true unless a setSession() during the wipe superseded it. */
+async function clearSessionAndReport(): Promise<boolean> {
   state.accessToken = null;
   state.accessExpiresAt = 0;
   generation++;
   state.sessionId = null;
   sessionSource = null;
   state.inFlightRefresh = null;
+  const myInstall = installCount;
 
-  await clearAllSessionState();
-  await deleteKeypair();
+  // v1.4.0: a setSession() that lands while the wipe runs owns the device
+  // from then on. It waits for this wipe (pendingClear) before storing its
+  // refresh token; this clear then keeps the new session's DPoP keypair and
+  // does not tell tabs or listeners that the new session was cleared. Any
+  // other session change (e.g. a late /me naming the old cookie session)
+  // does not cancel the sign-out. Wipes are chained, so pendingClear always
+  // covers every wipe still running.
+  const previousWipe = pendingClear;
+  const wipe = (async () => {
+    if (previousWipe !== null) await previousWipe.catch(() => {});
+    await clearAllSessionState();
+    if (installCount === myInstall) await deleteKeypair();
+  })();
+  pendingClear = wipe;
+  try {
+    await wipe;
+  } finally {
+    if (pendingClear === wipe) pendingClear = null;
+  }
+  if (installCount !== myInstall) return false;
   broadcast({ type: 'session_cleared' });
   notifyListeners();
 
@@ -382,6 +430,7 @@ export async function clearSession(): Promise<void> {
   } catch {
     // Module not loaded (e.g., older bundle) — ignore.
   }
+  return true;
 }
 
 /**
@@ -523,8 +572,15 @@ async function performRefresh(): Promise<string | null> {
     // round-trip starts. See the note at the catch block below — this is
     // what lets a stale response tell "still mine" from "superseded".
     const sessionIdAtStart = state.sessionId;
+    const installsAtStart = installCount;
 
     const rt = await getRefreshToken();
+    if (rt === null && installCount !== installsAtStart && hasLiveAccessToken()) {
+      // A setSession() landed during the lookup: the null is about the old
+      // session. Hand back the new token; no event. Any other change (a /me
+      // naming a cookie session, a clear) still reports the missing token.
+      return state.accessToken;
+    }
     if (rt === null) {
       // No refresh token: nothing to mint from. Return null (the documented
       // getAccessToken() contract) but SAY so. Before v1.4.0 this was silent,
@@ -811,17 +867,43 @@ export function isSessionScopeCurrent(scope: Pick<SessionScope, 'generation'>): 
 }
 
 /**
+ * v1.4.0: clear the session only if `scope` is still the current one.
+ * Returns true when it cleared; false when the scope was stale, or when a
+ * setSession() during the wipe superseded the clear. Used by the session
+ * watcher so a revoke that a replaced session produced cannot sign out the
+ * new one, and so it stops polling only when it really signed out.
+ */
+export async function clearSessionIfCurrent(
+  scope: Pick<SessionScope, 'generation'>
+): Promise<boolean> {
+  if (!isSessionScopeCurrent(scope)) return false;
+  return clearSessionAndReport();
+}
+
+/**
  * v1.4.0: record the session id of a cookie-authenticated session, read from
  * /auth/v1/me's `session_meta.session_id`. This gives a cookie-only session
- * an id and a generation, so its events can be scoped. A token-installed
- * session always wins: a different id is ignored while one is held. Does not
- * notify session listeners (the signed-in identity did not change).
- * Called by AuthProvider after /me succeeds.
+ * an id and a generation, so its events can be scoped. When /me names a
+ * session other than the one held, the server wins: the scope moves to the
+ * cookie session (new generation, source 'cookie'). Does not notify session
+ * listeners and does not touch tokens.
+ * Called by AuthProvider after /me succeeds. Pass the scope captured before
+ * the /me request: a reply that a sign-in or sign-out overtook is dropped,
+ * so it cannot relabel the new session with the old id.
  */
-export function noteCookieSession(sessionId: string | null | undefined): void {
+export function noteCookieSession(
+  sessionId: string | null | undefined,
+  scopeAtRequest?: Pick<SessionScope, 'generation'>
+): void {
   if (typeof sessionId !== 'string' || sessionId.length === 0) return;
+  if (scopeAtRequest !== undefined && !isSessionScopeCurrent(scopeAtRequest)) return;
   if (sessionId === state.sessionId) return;
-  if (state.sessionId !== null && sessionSource === 'token') return;
+  // /me is the server's word on which session this browser holds. A
+  // different id means the local token session is not the one the cookie
+  // authenticates (e.g. token session A expired here, B signed in on a
+  // sibling subdomain), so the scope follows the server (Devin, PR #31).
+  // Tokens are left alone: a later refresh re-adopts its own id, which
+  // moves the generation again.
   adoptSessionId(sessionId, 'cookie');
 }
 
@@ -860,6 +942,8 @@ export function __resetTokenManagerForTests(): void {
   tokenUnavailableFiredFor = null;
   generation = 0;
   sessionSource = null;
+  pendingClear = null;
+  installCount = 0;
   warnedMissingRefreshExpiresAt = false;
   warnedNoNavigatorLocks = false;
   if (broadcastChannel !== null) {

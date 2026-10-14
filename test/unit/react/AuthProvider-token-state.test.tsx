@@ -1,11 +1,14 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/react/AuthProvider-token-state.test.tsx | v1.0.0 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/react/AuthProvider-token-state.test.tsx | v1.2.0 | 2026-10-14 | BB
 // rc.22 (AuthProvider v1.1.0) — gaps 2 + 5 from CalExp5 #881:
 //   hydrate() used to report 'authenticated' with nothing to tell a consumer
 //   that no access token exists. It now tries one mint, then reports
 //   tokenState 'cookie_only' honestly, and records the cookie session's id.
+// v1.2.0 (pre-push review, PR #31): a /me reply overtaken by a sign-in does
+//   not relabel the new session; a terminal mint error is 'cookie_only'; an
+//   initialSession with a refresh token mints one.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { useContext, type ReactNode } from 'react';
 import { AuthProvider, StatusContext } from '../../../src/react/AuthProvider.js';
 import type { Session } from '../../../src/types/api.js';
@@ -13,9 +16,11 @@ import { configureClient, __resetClientForTests } from '../../../src/core/client
 import {
   __resetTokenManagerForTests,
   getSessionScope,
+  registerRefreshCallback,
   setSession,
 } from '../../../src/core/token-manager.js';
-import { __resetDbForTests } from '../../../src/core/storage.js';
+import { __resetDbForTests, storeRefreshToken } from '../../../src/core/storage.js';
+import { AuthSdkError } from '../../../src/errors.js';
 
 const BASE = 'https://ct-bff.test.example.com';
 
@@ -80,6 +85,147 @@ describe('AuthProvider — tokenState (rc.22)', () => {
     await waitFor(() => expect(screen.getByTestId('status').textContent).toBe('authenticated'));
     expect(screen.getByTestId('token').textContent).toBe('cookie_only');
     expect(getSessionScope()).toMatchObject({ sessionId: 'sess-cookie-1', source: 'cookie' });
+  });
+
+  it('Devin round 1: a failing mint (transient) reports refresh_error, not cookie_only', async () => {
+    registerRefreshCallback(async () => {
+      throw new AuthSdkError('HTTP_503', 'bff down');
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input instanceof Request ? input.url : input);
+        if (url.includes('/auth/v1/me')) {
+          // The client asks for a bearer BEFORE /me (none yet, so /me goes on
+          // the cookie). A refresh token appears now, so hydrate's one mint
+          // reaches the refresh callback, which fails transiently.
+          await storeRefreshToken('rt-orphan', Date.now() + 86_400_000);
+          return jsonResp(200, meBody('sess-cookie-2'));
+        }
+        return jsonResp(404, { error: 'not_stubbed' });
+      })
+    );
+
+    render(
+      <AuthProvider>
+        <StatusProbe />
+      </AuthProvider>
+    );
+
+    await waitFor(() => expect(screen.getByTestId('status').textContent).toBe('authenticated'));
+    expect(screen.getByTestId('token').textContent).toBe('refresh_error');
+  });
+
+  it('Devin round 1: going offline then online keeps a cookie-only session signed in', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input instanceof Request ? input.url : input);
+        if (url.includes('/auth/v1/me')) return jsonResp(200, meBody('sess-cookie-3'));
+        return jsonResp(404, { error: 'not_stubbed' });
+      })
+    );
+
+    render(
+      <AuthProvider>
+        <StatusProbe />
+      </AuthProvider>
+    );
+    await waitFor(() => expect(screen.getByTestId('token').textContent).toBe('cookie_only'));
+
+    act(() => {
+      window.dispatchEvent(new Event('offline'));
+      window.dispatchEvent(new Event('online'));
+    });
+    expect(screen.getByTestId('status').textContent).not.toBe('anonymous');
+  });
+
+  it('Devin round 1: an initialSession with no bearer reports cookie_only and is scoped', async () => {
+    render(
+      <AuthProvider initialSession={meBody('sess-ssr-1')}>
+        <StatusProbe />
+      </AuthProvider>
+    );
+    expect(screen.getByTestId('token').textContent).toBe('cookie_only');
+    await waitFor(() =>
+      expect(getSessionScope()).toMatchObject({ sessionId: 'sess-ssr-1', source: 'cookie' })
+    );
+  });
+
+  it('review: a /me reply that a sign-in overtook does not relabel the new session', async () => {
+    let meCalls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input instanceof Request ? input.url : input);
+        if (url.includes('/auth/v1/me') && ++meCalls > 1) return jsonResp(200, meBody('sess-B'));
+        if (url.includes('/auth/v1/me')) {
+          // B signs in while the first /me (answering for cookie session A)
+          // is in flight. Later /me calls (B's own re-fetch) answer for B.
+          await setSession({
+            accessToken: 'at-B',
+            refreshToken: 'rt-B',
+            expiresAt: Date.now() + 15 * 60_000,
+            sessionId: 'sess-B',
+          });
+          return jsonResp(200, meBody('sess-A'));
+        }
+        return jsonResp(404, { error: 'not_stubbed' });
+      })
+    );
+
+    render(
+      <AuthProvider>
+        <StatusProbe />
+      </AuthProvider>
+    );
+
+    await waitFor(() => expect(screen.getByTestId('status').textContent).toBe('authenticated'));
+    expect(getSessionScope()).toMatchObject({ sessionId: 'sess-B', source: 'token' });
+  });
+
+  it('review: a terminal mint error reports cookie_only, not the retryable refresh_error', async () => {
+    registerRefreshCallback(async () => {
+      throw new AuthSdkError('AUTH_SESSION_EXPIRED', 'refresh token expired');
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input instanceof Request ? input.url : input);
+        if (url.includes('/auth/v1/me')) {
+          await storeRefreshToken('rt-dead', Date.now() + 86_400_000);
+          return jsonResp(200, meBody('sess-cookie-4'));
+        }
+        return jsonResp(404, { error: 'not_stubbed' });
+      })
+    );
+
+    render(
+      <AuthProvider>
+        <StatusProbe />
+      </AuthProvider>
+    );
+
+    await waitFor(() => expect(screen.getByTestId('status').textContent).toBe('authenticated'));
+    expect(screen.getByTestId('token').textContent).toBe('cookie_only');
+  });
+
+  it('review: an initialSession with a refresh token on this origin mints one (live)', async () => {
+    await storeRefreshToken('rt-ssr', Date.now() + 86_400_000);
+    registerRefreshCallback(async () => ({
+      access_token: 'at-ssr',
+      refresh_token: 'rt-ssr-2',
+      expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
+      session_id: 'sess-ssr-2',
+    }));
+
+    render(
+      <AuthProvider initialSession={meBody('sess-ssr-2')}>
+        <StatusProbe />
+      </AuthProvider>
+    );
+
+    await waitFor(() => expect(screen.getByTestId('token').textContent).toBe('live'));
   });
 
   it('a token session reports tokenState live and keeps its own session id', async () => {

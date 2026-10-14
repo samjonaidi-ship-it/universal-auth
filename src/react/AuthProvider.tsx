@@ -8,6 +8,14 @@
 //     noteCookieSession(), so cookie-only sessions have a scope too.
 //   status stays 'authenticated' for a cookie-only session: the cookie is a
 //   real session (D10 cross-subdomain SSO) and existing consumers rely on it.
+//   Devin round 1 (PR #31): tokenState 'refresh_error' when the mint throws
+//   (transient, not "no refresh token"); online/offline no longer flips a
+//   cookie session to anonymous; an initialSession with no bearer reports
+//   'cookie_only' and records its session id.
+//   Pre-push review (PR #31): /me's session id is recorded only if no session
+//   change overtook the request; a terminal mint error reports 'cookie_only'
+//   (not the retryable 'refresh_error'); an initialSession with no bearer
+//   tries one mint too.
 // React provider with 3-context split per §8.4.
 //
 // Why split:
@@ -24,12 +32,15 @@ import {
   useMemo,
   useCallback,
   useReducer,
+  useRef,
   type ReactNode,
 } from 'react';
 import {
   onSessionChange,
   hasLiveAccessToken,
   getAccessToken,
+  getSessionScope,
+  isTerminalRefreshError,
   noteCookieSession,
 } from '../core/token-manager.js';
 import {
@@ -73,14 +84,33 @@ export interface EntitlementsContextValue {
  *   cookie_only — /me succeeded on the session cookie, but no token could be
  *                 minted (no refresh token on this origin). Cookie-authed
  *                 calls work; bearer-only calls will not;
+ *   refresh_error — /me succeeded on the cookie, but the mint attempt failed
+ *                 (network, 5xx, a non-terminal refresh error). Transient: the
+ *                 next getAccessToken() retries;
  *   none        — no session, or not hydrated yet.
  */
-export type TokenState = 'live' | 'cookie_only' | 'none';
+export type TokenState = 'live' | 'cookie_only' | 'refresh_error' | 'none';
 
 export interface StatusContextValue {
   status: AuthStatus;
   /** v1.1.0 — see TokenState. */
   tokenState: TokenState;
+}
+
+/**
+ * One mint attempt for a session that has no bearer token yet. Null from
+ * getAccessToken() means no refresh token on this origin (onTokenUnavailable
+ * has fired). A terminal refresh error means the refresh token is dead, so
+ * retrying cannot help; any other throw is transient.
+ */
+async function mintTokenState(): Promise<TokenState> {
+  if (hasLiveAccessToken()) return 'live';
+  try {
+    await getAccessToken();
+  } catch (err) {
+    return isTerminalRefreshError(err) ? 'cookie_only' : 'refresh_error';
+  }
+  return hasLiveAccessToken() ? 'live' : 'cookie_only';
 }
 
 // ── Contexts ──────────────────────────────────────────────────────────────
@@ -148,14 +178,33 @@ export function AuthProvider({
     return 'authenticated';
   });
 
-  const [tokenState, setTokenState] = useState<TokenState>(() =>
-    hasLiveAccessToken() ? 'live' : 'none'
-  );
+  const [tokenState, setTokenStateRaw] = useState<TokenState>(() => {
+    if (hasLiveAccessToken()) return 'live';
+    // An SSR session with no bearer is a cookie session (Devin, PR #31).
+    return initialSession !== undefined ? 'cookie_only' : 'none';
+  });
+  // The online/offline handler reads the latest value without re-binding.
+  const tokenStateRef = useRef<TokenState>(tokenState);
+  const setTokenState = useCallback((next: TokenState): void => {
+    tokenStateRef.current = next;
+    setTokenStateRaw(next);
+  }, []);
 
   // ── Hydration ──────────────────────────────────────────────────────────
 
   useEffect(() => {
-    if (initialSession !== undefined) return;
+    if (initialSession !== undefined) {
+      // No /me round-trip: scope the SSR session from its own metadata.
+      noteCookieSession(initialSession.session_meta?.session_id);
+      if (hasLiveAccessToken()) return;
+      let cancelledMint = false;
+      void mintTokenState().then((next) => {
+        if (!cancelledMint) setTokenState(next);
+      });
+      return () => {
+        cancelledMint = true;
+      };
+    }
     let cancelled = false;
 
     async function hydrate(): Promise<void> {
@@ -164,23 +213,16 @@ export function AuthProvider({
       // the user just hopped from controltower.bb.com to express.bb.com.
       // The client sends `credentials: 'include'`, so the cookie travels.
       try {
+        const scopeAtRequest = getSessionScope();
         const { data } = await get<Session>('/auth/v1/me');
         if (cancelled) return;
-        // v1.1.0: give a cookie session an id + generation (no-op when a
-        // token session is already installed).
-        noteCookieSession(data.session_meta?.session_id);
-        if (!hasLiveAccessToken()) {
-          // Cookie alive, no local token: try to mint one, once. Null means
-          // no refresh token on this origin (onTokenUnavailable has fired).
-          // A throw is a transient refresh failure; the next request retries.
-          try {
-            await getAccessToken();
-          } catch {
-            // fall through to the honest report below
-          }
-          if (cancelled) return;
-        }
-        setTokenState(hasLiveAccessToken() ? 'live' : 'cookie_only');
+        // v1.1.0: give a cookie session an id + generation. Dropped if a
+        // sign-in or sign-out happened while /me was in flight.
+        noteCookieSession(data.session_meta?.session_id, scopeAtRequest);
+        // Cookie alive, no local token: try to mint one, once.
+        const next = await mintTokenState();
+        if (cancelled) return;
+        setTokenState(next);
         applySession(data);
         // Backfill entitlements cache
         void refreshEntitlements();
@@ -204,7 +246,7 @@ export function AuthProvider({
     return () => {
       cancelled = true;
     };
-  }, [initialSession]);
+  }, [initialSession, setTokenState]);
 
   // ── Session-change subscription ────────────────────────────────────────
 
@@ -240,7 +282,7 @@ export function AuthProvider({
       })();
     });
     return unsubscribe;
-  }, []);
+  }, [setTokenState]);
 
   // ── Entitlements-cache subscription ────────────────────────────────────
   //
@@ -260,7 +302,11 @@ export function AuthProvider({
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
     function update(): void {
-      if (!hasLiveAccessToken()) {
+      const cookieSession =
+        tokenStateRef.current === 'cookie_only' || tokenStateRef.current === 'refresh_error';
+      // A cookie session has no bearer token by design; going on/offline
+      // must not sign it out (Devin, PR #31).
+      if (!hasLiveAccessToken() && !cookieSession) {
         setStatus('anonymous');
         return;
       }

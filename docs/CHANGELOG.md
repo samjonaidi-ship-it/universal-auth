@@ -29,8 +29,9 @@ Every change is additive; no public signature changed.
   `setSession`/`clearSession` and every session-id change starts a new
   generation. Cookie-only sessions take the `/me` `session_meta.session_id`
   (internal `noteCookieSession`), with `source: 'cookie'`.
-- React: `TokenState = 'live' | 'cookie_only' | 'none'` on `useAuth()` and
-  `StatusContext`.
+- React: `TokenState = 'live' | 'cookie_only' | 'refresh_error' | 'none'` on
+  `useAuth()` and `StatusContext`. `refresh_error` = the cookie is alive but
+  the mint failed transiently (network, 5xx); the next request retries.
 
 ### Fixed
 
@@ -44,6 +45,31 @@ Every change is additive; no public signature changed.
 - `session-watcher.ts` v1.2.0 — a `/me` revoke is scoped to the session it
   polled for. A late 401 for a replaced session no longer clears the new
   one; `session.revoked` carries `session_id`, `generation` and `stale`.
+- Devin round 1 (PR #31):
+  - `clearSession()` awaits its IndexedDB wipe. A `setSession()` that lands
+    during it now waits for the wipe, keeps its refresh token and DPoP
+    keypair, and is not broadcast or notified as cleared. The watcher clears
+    through `clearSessionIfCurrent(scope)`.
+  - A "no refresh token" answer that races a sign-in returns the new token
+    and fires no `onTokenUnavailable` event.
+  - `noteCookieSession()`: when `/me` names a different session than the one
+    held, the scope follows the server (source `cookie`).
+  - `AuthProvider`: online/offline no longer flips a cookie session to
+    `anonymous`; an `initialSession` with no bearer reports `cookie_only`
+    and records its session id.
+- Pre-push review of round 1 (PR #31):
+  - Only a `setSession()` install during the wipe makes a clear stand down.
+    A late `/me` naming the old cookie session no longer cancels a sign-out.
+  - `clearSessionIfCurrent()` returns `false` when a sign-in superseded the
+    clear, so the watcher keeps polling the new session.
+  - Overlapping wipes are chained; a sign-in waits for all of them.
+  - The raced "no refresh token" early return needs a real install with a
+    live token; otherwise `onTokenUnavailable` still fires.
+  - `noteCookieSession(id, scope?)` drops a `/me` reply that a sign-in or
+    sign-out overtook. `AuthProvider` passes the scope it captured.
+  - `AuthProvider`: a terminal mint error reports `cookie_only`, not the
+    retryable `refresh_error`; an `initialSession` with no bearer tries one
+    mint.
 
 ### Known limit
 

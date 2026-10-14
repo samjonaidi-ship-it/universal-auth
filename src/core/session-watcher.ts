@@ -4,7 +4,11 @@
 //   generation, and clearSession() runs only if that session is still the
 //   current one. Before, a poll that left under session A and came back 401
 //   after a sign-in as B cleared B (the gap CalExp5 #881 patched with
-//   isReplacedSessionExpiry).
+//   isReplacedSessionExpiry). Devin round 1 (PR #31): the clear goes through
+//   clearSessionIfCurrent(scope), and a sign-in that lands during the clear's
+//   IndexedDB wipe keeps its refresh token, keypair and listeners.
+//   Pre-push review: clearSessionIfCurrent() returns false when that sign-in
+//   superseded the clear, so the watcher keeps polling the new session.
 // Background session validator — polls `/auth/v1/me` while the tab is active,
 // so admin-forced revocations propagate to the UI within ~1 poll interval.
 //
@@ -22,7 +26,7 @@
 
 import { get } from './client.js';
 import { AuthSessionRevoked, AuthSessionExpired, AuthSdkError } from '../errors.js';
-import { clearSession, getSessionScope, isSessionScopeCurrent } from './token-manager.js';
+import { clearSessionIfCurrent, getSessionScope, isSessionScopeCurrent } from './token-manager.js';
 import { refreshEntitlements } from './entitlements.js';
 import { emit } from './event-reporter.js';
 import { startSessionEvents, stopSessionEvents } from './session-events.js';
@@ -199,7 +203,10 @@ async function handleRevoked(
     ...(current ? {} : { stale: true }),
   });
   if (!current) return;
-  await clearSession();
+  // Re-checked inside clearSessionIfCurrent (the emit above can yield), and
+  // clearSession() itself spares a session installed during its wipe. It
+  // returns false then, and the watcher must keep polling that new session.
+  if (!(await clearSessionIfCurrent(scope))) return;
   stopSessionWatcher();
 }
 

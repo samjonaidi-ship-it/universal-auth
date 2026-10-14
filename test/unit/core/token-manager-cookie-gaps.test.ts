@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/core/token-manager-cookie-gaps.test.ts | v1.0.0 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/token-manager-cookie-gaps.test.ts | v1.1.0 | 2026-10-14 | BB
 // rc.22 — the SDK gaps CalExp5 #881 had to work around:
 //   gap 1  no refresh token → silent null      → onTokenUnavailable + AuthNoRefreshToken
 //   gap 4  DEVICE_UNRECOGNIZED terminal?       → no; isTerminalRefreshError exported
@@ -173,7 +173,7 @@ describe('token-manager — rc.22 cookie-session gaps', () => {
       expect(getSessionScope().generation).toBe(after.generation);
     });
 
-    it('noteCookieSession ignores empty input and never overrides a token session', async () => {
+    it('noteCookieSession ignores empty input and the id already held', async () => {
       noteCookieSession(undefined);
       noteCookieSession('');
       expect(getSessionScope().sessionId).toBeNull();
@@ -185,8 +185,25 @@ describe('token-manager — rc.22 cookie-session gaps', () => {
         sessionId: 'sess-token',
       });
       const g = getSessionGeneration();
-      noteCookieSession('sess-other');
+      noteCookieSession('sess-token');
       expect(getSessionScope()).toEqual({ sessionId: 'sess-token', generation: g, source: 'token' });
+    });
+
+    it('Devin round 1: /me naming a different session moves the scope to it (server wins)', async () => {
+      await setSession({
+        accessToken: 'at-stale',
+        refreshToken: 'rt-stale',
+        expiresAt: Date.now() + 15 * 60_000,
+        sessionId: 'sess-stale-token',
+      });
+      const before = getSessionScope();
+      noteCookieSession('sess-cookie-now');
+      expect(getSessionScope()).toEqual({
+        sessionId: 'sess-cookie-now',
+        generation: before.generation + 1,
+        source: 'cookie',
+      });
+      expect(isSessionScopeCurrent(before)).toBe(false);
     });
 
     it('a refresh that returns a different session id moves the generation', async () => {
