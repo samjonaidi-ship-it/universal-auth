@@ -1,4 +1,10 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/core/token-manager-wipe-bound.test.ts | v1.6.0 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/token-manager-wipe-bound.test.ts | v1.6.2 | 2026-10-14 | BB
+// v1.6.2 (pre-push review on r1): a rotation in another tab (same session id)
+// still wipes with localStorage blocked; a stand-down after the wipe timeout
+// keeps the sign-in row but does not adopt it.
+// v1.6.1 (Devin PR #36 r1): blocked localStorage keeps and adopts a newer
+// sign-in from another tab; a cold tab hears it. blockLocalStorage() replaces
+// a Storage.prototype spy that never reached happy-dom localStorage.
 // v1.6.0 (pre-push review on rc.25): a sign-out in another tab during this
 // tab's store keeps its marker and wipes (real setSession); session_updated
 // is ignored while a sign-out is pending; a refused marker write still wipes.
@@ -95,6 +101,24 @@ function otherTab<T>(work: () => Promise<T>): Promise<T> {
 function jwtWithJkt(jkt: string): string {
   const b64url = (v: string): string => btoa(v).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   return `${b64url('{"alg":"ES256","typ":"JWT"}')}.${b64url(JSON.stringify({ sub: 't', cnf: { jkt } }))}.sig`;
+}
+
+/**
+ * localStorage throws on every access (blocked storage, private mode). A spy
+ * on Storage.prototype.setItem does not reach happy-dom's localStorage.
+ */
+function blockLocalStorage(): () => void {
+  const own = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    get() {
+      throw new DOMException('blocked', 'SecurityError');
+    },
+  });
+  return () => {
+    if (own) Object.defineProperty(globalThis, 'localStorage', own);
+    else delete (globalThis as { localStorage?: unknown }).localStorage;
+  };
 }
 
 /** The next wipe hangs until release(); release(true) makes it fail. */
@@ -576,16 +600,136 @@ describe('token-manager — wipe bound and locally-revoked marker (issue #33)', 
 
   it('pre-push review: a sign-out still wipes when localStorage refuses the marker', async () => {
     await setSession(tokens('A'));
-    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
-      throw new DOMException('quota', 'QuotaExceededError');
-    });
+    const unblock = blockLocalStorage();
     try {
       await clearSession();
     } finally {
-      setItem.mockRestore();
+      unblock();
     }
 
     expect(vi.mocked(storage.clearAllSessionState)).toHaveBeenCalledTimes(1);
     expect(await storage.getRefreshToken()).toBeNull();
+  });
+  it('Devin PR #36 r1: with localStorage blocked, a sign-out keeps a newer sign-in from another tab and adopts it', async () => {
+    __setWipeTimeoutMsForTests(5_000); // the store queue takes longer than 30 ms
+    installFakeLocks();
+    await setSession(tokens('A'));
+    const peer = new BroadcastChannel('bb-universal-auth-session');
+    let letGo!: () => void;
+    const gate = new Promise<void>((r) => (letGo = r));
+    const busy = otherTab(() => gate);
+    // Tab B signs in; its store queues first. It cannot see A's memory marker.
+    const tabB = otherTab(async () => {
+      await storage.storeRefreshToken('rt-B', Date.now() + 60_000);
+      peer.postMessage({ type: 'session_updated', accessToken: 'at-B', accessExpiresAt: Date.now() + 60_000, sessionId: 'B' });
+      await new Promise((r) => setTimeout(r, 10)); // A hears it while its marker is set
+    });
+    const unblock = blockLocalStorage();
+    let clearing: Promise<void>;
+    try {
+      clearing = clearSession(); // A's wipe queues behind B's store
+      await new Promise((r) => setTimeout(r, 10));
+      letGo();
+      await busy;
+      await tabB;
+      await clearing;
+    } finally {
+      unblock();
+    }
+    await new Promise((r) => setTimeout(r, 10));
+    peer.close();
+
+    expect(vi.mocked(storage.clearAllSessionState)).not.toHaveBeenCalled();
+    expect(await storage.getRefreshToken()).toBe('rt-B');
+    expect(getCurrentSessionId()).toBe('B');
+  });
+
+  it('Devin PR #36 r1: a cold tab whose sign-out stands down hears the newer sign-in', async () => {
+    __setWipeTimeoutMsForTests(5_000); // the store queue takes longer than 30 ms
+    installFakeLocks();
+    // Cookie-only tab: no setSession here, so its channel was never opened.
+    await storage.storeRefreshToken('rt-A', Date.now() + 60_000);
+    const peer = new BroadcastChannel('bb-universal-auth-session');
+    let letGo!: () => void;
+    const gate = new Promise<void>((r) => (letGo = r));
+    const busy = otherTab(() => gate);
+    const tabB = otherTab(async () => {
+      await storage.storeRefreshToken('rt-B', Date.now() + 60_000);
+      localStorage.removeItem(MARKER);
+      peer.postMessage({ type: 'session_updated', accessToken: 'at-B', accessExpiresAt: Date.now() + 60_000, sessionId: 'B' });
+    });
+    const clearing = clearSession();
+    letGo();
+    await busy;
+    await tabB;
+    await clearing;
+    await new Promise((r) => setTimeout(r, 10));
+    peer.close();
+
+    expect(await storage.getRefreshToken()).toBe('rt-B');
+    expect(getCurrentSessionId()).toBe('B');
+  });
+
+  it('pre-push review on r1: with localStorage blocked, a rotation in another tab does not stop the sign-out', async () => {
+    __setWipeTimeoutMsForTests(5_000);
+    installFakeLocks();
+    await setSession(tokens('A'));
+    const peer = new BroadcastChannel('bb-universal-auth-session');
+    let letGo!: () => void;
+    const gate = new Promise<void>((r) => (letGo = r));
+    const busy = otherTab(() => gate);
+    // Tab C refreshes session A: a new row, the same session id.
+    const tabC = otherTab(async () => {
+      await storage.storeRefreshToken('rt-A2', Date.now() + 60_000);
+      peer.postMessage({ type: 'session_updated', accessToken: 'at-A2', accessExpiresAt: Date.now() + 60_000, sessionId: 'A' });
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    const unblock = blockLocalStorage();
+    try {
+      const clearing = clearSession();
+      await new Promise((r) => setTimeout(r, 10));
+      letGo();
+      await busy;
+      await tabC;
+      await clearing;
+    } finally {
+      unblock();
+    }
+    await new Promise((r) => setTimeout(r, 10));
+    peer.close();
+
+    expect(vi.mocked(storage.clearAllSessionState)).toHaveBeenCalledTimes(1);
+    expect(await storage.getRefreshToken()).toBeNull();
+    expect(getCurrentSessionId()).toBeNull();
+  });
+
+  it('pre-push review on r1: a sign-in that supersedes the sign-out after the timeout is kept but not adopted', async () => {
+    __setWipeTimeoutMsForTests(30);
+    installFakeLocks();
+    await setSession(tokens('A'));
+    const peer = new BroadcastChannel('bb-universal-auth-session');
+    let letGo!: () => void;
+    const gate = new Promise<void>((r) => (letGo = r));
+    const busy = otherTab(() => gate);
+    const tabB = otherTab(async () => {
+      await storage.storeRefreshToken('rt-B', Date.now() + 60_000);
+      peer.postMessage({ type: 'session_updated', accessToken: 'at-B', accessExpiresAt: Date.now() + 60_000, sessionId: 'B' });
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    const unblock = blockLocalStorage();
+    try {
+      await expect(clearSession()).rejects.toBeInstanceOf(SessionWipeTimeout);
+      letGo();
+      await busy;
+      await tabB;
+      await new Promise((r) => setTimeout(r, 30));
+    } finally {
+      unblock();
+    }
+    peer.close();
+
+    expect(vi.mocked(storage.clearAllSessionState)).not.toHaveBeenCalled();
+    expect(await storage.getRefreshToken()).toBe('rt-B');
+    expect(getCurrentSessionId()).toBeNull();
   });
 });

@@ -20,6 +20,13 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
   lock and wipes only while it still holds its own value. When a sign-in
   removed it, the wipe keeps the store and does not broadcast
   `session_cleared` (other tabs adopted that sign-in).
+- `token-manager.ts` v1.6.6 (Devin round 1, PR #36): with localStorage blocked,
+  the marker lives only in the signing-out tab. The wipe then keeps the stored
+  row only when it changed AND a session_updated arrived for a different
+  session; a rotation of the signed-out session still wipes (fail closed).
+  A cold tab opens its BroadcastChannel when it signs out, and adopts a
+  sign-in it ignored once its sign-out stands down, never after the wipe
+  timeout has already reported the sign-out.
 
 ## [1.1.0-rc.24] — 2026-10-14 — session-scope debt (issue #33 items 2–6)
 
