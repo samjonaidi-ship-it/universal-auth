@@ -1,4 +1,6 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/core/session-events-scope.test.ts | v1.1.0 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/session-events-scope.test.ts | v1.2.0 | 2026-10-14 | BB
+// v1.2.0 (session-events v0.3.1): a revoke naming a session_id clears a
+// session that has no local id yet; a server `stale` key is dropped.
 // v1.1.0 (session-events v0.3.0, pre-push review): a revoke naming another
 // session_id clears nothing; a stale revoke reopens the stream; a failed
 // wipe is reported as wipe_failed: true.
@@ -176,6 +178,35 @@ describe('session-events — revoke is scoped and reported after the clear', () 
     expect(payload).not.toHaveProperty('stale');
     expect(getCurrentSessionId()).toBeNull();
     expect(MockEventSource.instances).toHaveLength(1);
+  });
+
+  it('review r2: a revoke naming a session_id clears a session with no local id yet', async () => {
+    // Refresh-token-only session: /me has not run, so the scope has no id.
+    await storage.storeRefreshToken('rt-cookie', Date.now() + 86_400_000);
+    startSessionEvents();
+    MockEventSource.instances[0]!.dispatch('session.revoked', { reason: 'admin_revoke', session_id: 'sess-X' });
+
+    await vi.waitFor(() =>
+      expect(emit).toHaveBeenCalledWith('session.revoked', expect.objectContaining({ session_id: 'sess-X' }))
+    );
+    const payload = vi.mocked(emit).mock.calls.find((c) => c[0] === 'session.revoked')?.[1];
+    expect(payload).not.toHaveProperty('stale');
+    expect(storage.clearAllSessionState).toHaveBeenCalled();
+    expect(await storage.getRefreshToken()).toBeNull();
+  });
+
+  it('review r2: a server-sent stale key does not mislabel a revoke that cleared', async () => {
+    await setSession(tokens('sess-A'));
+    startSessionEvents();
+    MockEventSource.instances[0]!.dispatch('session.revoked', { reason: 'admin_revoke', stale: true, wipe_failed: true });
+
+    await vi.waitFor(() =>
+      expect(emit).toHaveBeenCalledWith('session.revoked', expect.objectContaining({ reason: 'admin_revoke' }))
+    );
+    const payload = vi.mocked(emit).mock.calls.find((c) => c[0] === 'session.revoked')?.[1];
+    expect(payload).not.toHaveProperty('stale');
+    expect(payload).not.toHaveProperty('wipe_failed');
+    expect(getCurrentSessionId()).toBeNull();
   });
 
   it('review: a failed IndexedDB wipe is reported as wipe_failed', async () => {

@@ -36,7 +36,9 @@ Follow-ups from PR #31's review. No public signature changed.
     naming a cookie session no longer silences it.
   - `session-events.ts` v0.3.0 — a revoke whose payload names another
     `session_id` clears nothing (`stale: true`). A stale revoke reopens the
-    stream for the session that is current now.
+    stream for the session that is current now. v0.3.1: a revoke that names
+    a `session_id` still clears a session with no local id yet, and a
+    server-sent `stale` / `wipe_failed` key is dropped.
   - `session-watcher.ts` v1.3.1 and `session-events.ts` v0.3.0 — a failed
     IndexedDB wipe adds `wipe_failed: true` to `session.revoked`.
 

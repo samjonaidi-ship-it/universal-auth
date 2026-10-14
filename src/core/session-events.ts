@@ -1,4 +1,7 @@
-// @samjonaidi-ship-it/universal-auth | src/core/session-events.ts | v0.3.0 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/session-events.ts | v0.3.1 | 2026-10-14 | BB
+// v0.3.1 (pre-push review, round 2): a revoke naming a session_id applies when
+//   the local session has no id yet. A server `stale` / `wipe_failed` key is
+//   dropped; the SDK sets those flags itself.
 // v0.3.0 (rc.23, pre-push review): a revoke whose payload names another
 //   session_id is stale and clears nothing. A stale revoke reopens the stream
 //   for the session that is current now. A failed IndexedDB wipe is reported
@@ -211,9 +214,16 @@ async function revokeAndReport(
   // v0.3.0: the server fans a revoke out to every stream of the identity
   // (SSE_DESIGN §6.3). A payload that names another session is about that
   // session, not this one.
+  // v0.3.1: a session with no local id yet (cookie-only, /me not back) cannot
+  // be ruled out, so the revoke applies to it.
   const named = payload.session_id;
   const otherSession =
-    typeof named === 'string' && named.length > 0 && named !== scope.sessionId;
+    typeof named === 'string' &&
+    named.length > 0 &&
+    scope.sessionId !== null &&
+    named !== scope.sessionId;
+  // The SDK sets these two flags itself; a server value must not mislabel them.
+  const { stale: _stale, wipe_failed: _wipeFailed, ...serverFields } = payload;
   // A rejected wipe has still cleared memory and told tabs and listeners, so
   // it counts as cleared; the event says the wipe failed.
   let cleared = false;
@@ -228,7 +238,7 @@ async function revokeAndReport(
   }
   void emit('session.revoked', {
     reason: 'server',
-    ...payload,
+    ...serverFields,
     ...(cleared ? {} : { stale: true }),
     ...(wipeFailed ? { wipe_failed: true } : {}),
   });
