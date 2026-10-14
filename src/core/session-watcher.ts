@@ -1,4 +1,9 @@
-// @samjonaidi-ship-it/universal-auth | src/core/session-watcher.ts | v1.2.0 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/session-watcher.ts | v1.3.1 | 2026-10-14 | BB
+// v1.3.1 (pre-push review): a failed IndexedDB wipe is reported as
+//   wipe_failed: true on `session.revoked`, so a half-done sign-out is visible.
+// v1.3.0 (rc.23, issue #32): `session.revoked` is emitted AFTER the clear,
+//   with stale: true when a sign-in superseded the clear. Before, the event
+//   went out first and could announce a sign-out that did not happen.
 // v1.2.0 (rc.22): a revoked/expired /me poll is scoped to the session it
 //   started under. The `session.revoked` event carries session_id and
 //   generation, and clearSession() runs only if that session is still the
@@ -26,7 +31,7 @@
 
 import { get } from './client.js';
 import { AuthSessionRevoked, AuthSessionExpired, AuthSdkError } from '../errors.js';
-import { clearSessionIfCurrent, getSessionScope, isSessionScopeCurrent } from './token-manager.js';
+import { clearSessionIfCurrent, getSessionScope } from './token-manager.js';
 import { refreshEntitlements } from './entitlements.js';
 import { emit } from './event-reporter.js';
 import { startSessionEvents, stopSessionEvents } from './session-events.js';
@@ -195,19 +200,28 @@ async function handleRevoked(
   reason: 'server' | 'expired',
   scope: ReturnType<typeof getSessionScope>
 ): Promise<void> {
-  const current = isSessionScopeCurrent(scope);
+  // v1.3.0 (issue #32): clear first, then report. The event says stale when
+  // the clear did not happen: the session changed before the poll came back,
+  // or a sign-in during the clear's wipe superseded it (clearSessionIfCurrent
+  // returns false then, and the watcher keeps polling that new session).
+  // A rejected wipe has still cleared memory and told tabs and listeners, so
+  // it counts as cleared; the event says the wipe failed (v1.3.1).
+  let cleared: boolean;
+  let wipeFailed = false;
+  try {
+    cleared = await clearSessionIfCurrent(scope);
+  } catch {
+    cleared = true;
+    wipeFailed = true;
+  }
   void emit('session.revoked', {
     reason,
     session_id: scope.sessionId,
     generation: scope.generation,
-    ...(current ? {} : { stale: true }),
+    ...(cleared ? {} : { stale: true }),
+    ...(wipeFailed ? { wipe_failed: true } : {}),
   });
-  if (!current) return;
-  // Re-checked inside clearSessionIfCurrent (the emit above can yield), and
-  // clearSession() itself spares a session installed during its wipe. It
-  // returns false then, and the watcher must keep polling that new session.
-  if (!(await clearSessionIfCurrent(scope))) return;
-  stopSessionWatcher();
+  if (cleared) stopSessionWatcher();
 }
 
 function isRevocationCode(code: string): boolean {

@@ -1,4 +1,25 @@
-// @samjonaidi-ship-it/universal-auth | src/react/AuthProvider.tsx | v1.1.0 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/AuthProvider.tsx | v1.2.4 | 2026-10-14 | BB
+// v1.2.4 (Devin round 3, PR #34): hydrate's /me check is rewritten from a
+//   case table. Any sign-in or sign-out during /me drops the reply, even one
+//   that keeps the same session id (getSessionEpoch). The request's own
+//   refresh still applies when it adopted the id the reply names.
+// v1.2.3 (Devin round 2, PR #34): a refresh run by hydrate's own /me moves
+//   the generation too. The reply still applies when the session now current
+//   is the one it names; a sign-out (no id) or a sign-in (another id) drops it.
+// v1.2.2 (Devin, PR #34): hydrate drops a /me reply that a sign-in or
+//   sign-out overtook, before it notes, mints or applies it. Before, a
+//   sign-out during /me let the old reply restore the signed-out identity.
+// v1.2.1 (pre-push review): hydrate applies its /me reply only when the
+//   session it minted for is still current. A sign-in during the mint gives
+//   'live', and the session listener applies that session's own /me. The
+//   initialSession effect labels a live token session 'live'.
+// v1.2.0 (rc.23, issue #32): the mint is scoped to the session it started
+//   under. A sign-in that lands during a failed mint reports 'live' (its own
+//   token), and a mint that a sign-in or sign-out overtook sets nothing; its
+//   own terminal refresh clear still reports 'cookie_only'. The initialSession
+//   note runs only with no live token, so it cannot relabel a newer token
+//   sign-in. The initialSession effect is keyed on the session id, so a new
+//   object with the same session does not re-run the mint.
 // v1.1.0 (rc.22): status 'authenticated' no longer hides a missing token.
 //   - StatusContext adds `tokenState`: 'live' | 'cookie_only' | 'none'.
 //   - After /me succeeds with no in-memory token, hydrate tries ONE mint
@@ -39,8 +60,11 @@ import {
   onSessionChange,
   hasLiveAccessToken,
   getAccessToken,
+  getSessionEpoch,
   getSessionScope,
   isTerminalRefreshError,
+  isRefreshClearCurrent,
+  isSessionScopeCurrent,
   noteCookieSession,
 } from '../core/token-manager.js';
 import {
@@ -102,15 +126,28 @@ export interface StatusContextValue {
  * getAccessToken() means no refresh token on this origin (onTokenUnavailable
  * has fired). A terminal refresh error means the refresh token is dead, so
  * retrying cannot help; any other throw is transient.
+ *
+ * v1.2.0 (issue #32): returns null when a sign-in or sign-out overtook the
+ * mint; the caller then sets nothing (the session listener owns that change).
+ * A live token after the mint is 'live' whatever the mint did: it is the
+ * token of a sign-in that landed meanwhile. The mint's own terminal refresh
+ * clear moves the session too; that move still reports 'cookie_only'.
  */
-async function mintTokenState(): Promise<TokenState> {
+async function mintTokenState(): Promise<TokenState | null> {
   if (hasLiveAccessToken()) return 'live';
+  const scope = getSessionScope();
+  let failed = false;
+  let failure: unknown = null;
   try {
     await getAccessToken();
   } catch (err) {
-    return isTerminalRefreshError(err) ? 'cookie_only' : 'refresh_error';
+    failed = true;
+    failure = err;
   }
-  return hasLiveAccessToken() ? 'live' : 'cookie_only';
+  if (hasLiveAccessToken()) return 'live';
+  if (!isSessionScopeCurrent(scope) && !isRefreshClearCurrent()) return null;
+  if (!failed) return 'cookie_only';
+  return isTerminalRefreshError(failure) ? 'cookie_only' : 'refresh_error';
 }
 
 // ── Contexts ──────────────────────────────────────────────────────────────
@@ -192,14 +229,24 @@ export function AuthProvider({
 
   // ── Hydration ──────────────────────────────────────────────────────────
 
+  // v1.2.0: keyed on the session id, not the object. A parent that passes a
+  // new initialSession object each render must not re-run the mint.
+  const hasInitialSession = initialSession !== undefined;
+  const initialSessionId = initialSession?.session_meta?.session_id;
+
   useEffect(() => {
-    if (initialSession !== undefined) {
+    if (hasInitialSession) {
+      // A live token is a newer token sign-in: the SSR snapshot must not
+      // relabel it with its own id, and there is nothing to mint (issue #32).
+      if (hasLiveAccessToken()) {
+        setTokenState('live');
+        return;
+      }
       // No /me round-trip: scope the SSR session from its own metadata.
-      noteCookieSession(initialSession.session_meta?.session_id);
-      if (hasLiveAccessToken()) return;
+      noteCookieSession(initialSessionId);
       let cancelledMint = false;
       void mintTokenState().then((next) => {
-        if (!cancelledMint) setTokenState(next);
+        if (!cancelledMint && next !== null) setTokenState(next);
       });
       return () => {
         cancelledMint = true;
@@ -214,15 +261,44 @@ export function AuthProvider({
       // The client sends `credentials: 'include'`, so the cookie travels.
       try {
         const scopeAtRequest = getSessionScope();
+        const epochAtRequest = getSessionEpoch();
         const { data } = await get<Session>('/auth/v1/me');
         if (cancelled) return;
+        // v1.2.2 (Devin, PR #34): a sign-in or sign-out during /me owns the
+        // session now; this reply is about the old one. Stop before it is
+        // noted, minted or applied (scopeAtMint below would read the new scope).
+        // v1.2.3: the request's own token refresh can adopt the reply's session
+        // id and move the generation; that reply is still about this session.
+        // v1.2.4 case table (round 3: one rule, not more patches):
+        //   sign-out during /me (clearSession)          -> epoch moved -> drop
+        //   sign-in, other id (setSession)              -> epoch moved -> drop
+        //   sign-in, same id (setSession)               -> epoch moved -> drop
+        //   other tab signs out (broadcast, id null)    -> scope moved, id differs -> drop
+        //   own refresh adopts the reply's id           -> epoch same, id matches -> apply
+        //   nothing changed                             -> scope current -> apply
+        //   mint moves the scope                        -> scopeAtMint check below
+        if (getSessionEpoch() !== epochAtRequest) return;
+        const replyId = data.session_meta?.session_id;
+        const replyIsCurrent =
+          typeof replyId === 'string' && replyId.length > 0 && getSessionScope().sessionId === replyId;
+        if (!isSessionScopeCurrent(scopeAtRequest) && !replyIsCurrent) return;
         // v1.1.0: give a cookie session an id + generation. Dropped if a
         // sign-in or sign-out happened while /me was in flight.
         noteCookieSession(data.session_meta?.session_id, scopeAtRequest);
+        const scopeAtMint = getSessionScope();
         // Cookie alive, no local token: try to mint one, once.
         const next = await mintTokenState();
         if (cancelled) return;
+        // v1.2.0: a sign-in or sign-out overtook the mint. This /me reply
+        // is about the old session; the session listener owns the new one.
+        if (next === null) return;
         setTokenState(next);
+        // v1.2.1: 'live' can be a sign-in that landed during the mint, or a
+        // refresh that adopted another session id. Either way the session
+        // moved and notified the listener, which applies its own /me. This
+        // reply would overwrite that identity. The mint's own terminal clear
+        // keeps the cookie session, so its reply still applies.
+        if (!isSessionScopeCurrent(scopeAtMint) && !isRefreshClearCurrent()) return;
         applySession(data);
         // Backfill entitlements cache
         void refreshEntitlements();
@@ -246,7 +322,7 @@ export function AuthProvider({
     return () => {
       cancelled = true;
     };
-  }, [initialSession, setTokenState]);
+  }, [hasInitialSession, initialSessionId, setTokenState]);
 
   // ── Session-change subscription ────────────────────────────────────────
 

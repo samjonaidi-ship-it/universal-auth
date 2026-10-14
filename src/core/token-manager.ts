@@ -1,4 +1,32 @@
-// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.4.0 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.5.3 | 2026-10-14 | BB
+// v1.5.3 (Devin round 3, PR #34): getSessionEpoch() counts setSession() and
+//   clearSession() calls. AuthProvider's hydrate uses it to tell its own
+//   token refresh apart from a sign-in or sign-out during /me.
+// v1.5.2 (Devin, PR #34): setSession() also stands down when its access token
+//   is no longer in memory (a server-wins /me dropped it, or a refresh
+//   replaced it). Before, the install notified after a cookie note dropped
+//   its token, so AuthProvider read 'no live token' and showed anonymous,
+//   and other tabs got the dropped token.
+// v1.5.1 (pre-push review): setSession() stands down only for a clearSession()
+//   or a newer setSession() that began during its store (clearCount /
+//   installCount). Before, any generation bump did, so a /me naming a cookie
+//   session during the store left tabs and listeners untold.
+// v1.5.0 (rc.23, issue #32 - follow-ups from PR #31's review):
+//   - noteCookieSession(): when /me names a different session (server wins),
+//     the in-memory access token is dropped too. It belonged to the old
+//     session; the new scope must not hand it out. A later getAccessToken()
+//     refreshes, and the refresh re-adopts its own session id.
+//   - A clearSession() that starts while setSession() is storing its refresh
+//     token now waits for that store before it wipes (pendingInstall), so a
+//     sign-out cannot leave the install's refresh token on disk. setSession()
+//     skips its broadcast + notify when the session changed during its store.
+//   - A rejected IndexedDB wipe no longer skips the broadcast, the listeners
+//     and the SSE stop: memory is already cleared, so tabs and listeners are
+//     told, and then the error is re-thrown.
+//   - isRefreshClearCurrent(): true while the current generation is the one a
+//     terminal refresh clear produced. AuthProvider uses it to tell its own
+//     mint's clear apart from a sign-in / sign-out that overtook the mint.
+//     Internal: not exported from the package index.
 // v1.4.0 (rc.22, gaps found by CalExp5 #881's "no session token" loop):
 //   - No refresh token is no longer silent. performRefresh() still returns
 //     null (getAccessToken() keeps its contract), but it now fires
@@ -173,6 +201,13 @@ let pendingClear: Promise<void> | null = null;
 // Counts setSession() installs. A clear compares it, not the generation:
 // only a real sign-in during the wipe may make the clear stand down.
 let installCount = 0;
+// Counts clearSession() calls. setSession() compares it (v1.5.1).
+let clearCount = 0;
+// The refresh-token store of a setSession() still running. A clear waits for
+// the installs that began before it, so its wipe runs after their store.
+let pendingInstall: Promise<void> | null = null;
+// The generation a terminal refresh clear produced (see isRefreshClearCurrent).
+let refreshClearGeneration: number | null = null;
 
 function adoptSessionId(id: string | null, source: SessionSource | null): void {
   if (id !== state.sessionId) generation++;
@@ -355,15 +390,46 @@ export async function setSession(tokens: SessionTokens): Promise<void> {
   // server re-uses the id.
   generation++;
   installCount++;
+  const myInstall = installCount;
+  const myClears = clearCount;
   state.sessionId = tokens.sessionId;
   sessionSource = 'token';
 
   // A clear that began before this install must finish its wipe first, or
-  // the wipe would delete this session's refresh token (Devin, PR #31).
-  if (pendingClear !== null) await pendingClear.catch(() => {});
-
+  // the wipe would delete this session's refresh token (Devin, PR #31). An
+  // earlier install must finish its store first, so the stores keep order.
+  // v1.5.0: a clear that begins during this store waits for it in turn
+  // (pendingInstall). Each side waits only for work that started before it.
+  const clearBefore = pendingClear;
+  const installBefore = pendingInstall;
   const refreshExpiresAt = tokens.refreshExpiresAt ?? Date.now() + DEFAULT_REFRESH_TTL_MS;
-  await storeRefreshToken(tokens.refreshToken, refreshExpiresAt);
+  const install = (async () => {
+    if (clearBefore !== null) await clearBefore.catch(() => {});
+    if (installBefore !== null) await installBefore.catch(() => {});
+    await storeRefreshToken(tokens.refreshToken, refreshExpiresAt);
+  })();
+  pendingInstall = install;
+  try {
+    await install;
+  } finally {
+    if (pendingInstall === install) pendingInstall = null;
+  }
+
+  // v1.5.0: a sign-out or a newer sign-in during the store owns the session
+  // now. Telling tabs and listeners about this one would undo it.
+  // v1.5.1: only those two. Any other session move (a /me naming a cookie
+  // session, a refresh adopting an id) is not a reason to stay silent.
+  // v1.5.2: or the install's token is gone from memory (a server-wins /me
+  // dropped it, or a refresh replaced it and notified on its own). Then this
+  // install no longer describes the session, and its notify would read as a
+  // sign-out.
+  if (
+    installCount !== myInstall ||
+    clearCount !== myClears ||
+    state.accessToken !== tokens.accessToken
+  ) {
+    return;
+  }
 
   broadcast({
     type: 'session_updated',
@@ -399,6 +465,7 @@ async function clearSessionAndReport(): Promise<boolean> {
   state.sessionId = null;
   sessionSource = null;
   state.inFlightRefresh = null;
+  clearCount++;
   const myInstall = installCount;
 
   // v1.4.0: a setSession() that lands while the wipe runs owns the device
@@ -408,19 +475,32 @@ async function clearSessionAndReport(): Promise<boolean> {
   // other session change (e.g. a late /me naming the old cookie session)
   // does not cancel the sign-out. Wipes are chained, so pendingClear always
   // covers every wipe still running.
+  // v1.5.0: an install whose refresh-token store is still running finishes
+  // it first; otherwise the store could land after the wipe and survive the
+  // sign-out.
   const previousWipe = pendingClear;
+  const installBefore = pendingInstall;
   const wipe = (async () => {
     if (previousWipe !== null) await previousWipe.catch(() => {});
+    if (installBefore !== null) await installBefore.catch(() => {});
     await clearAllSessionState();
     if (installCount === myInstall) await deleteKeypair();
   })();
   pendingClear = wipe;
+  let wipeFailed = false;
+  let wipeError: unknown = null;
   try {
     await wipe;
+  } catch (err) {
+    wipeFailed = true;
+    wipeError = err;
   } finally {
     if (pendingClear === wipe) pendingClear = null;
   }
+  // A sign-in during the wipe owns the device now; it is not "cleared".
   if (installCount !== myInstall) return false;
+  // v1.5.0: memory is already cleared, so tabs and listeners hear about it
+  // even when the IndexedDB wipe failed. The failure is re-thrown after.
   broadcast({ type: 'session_cleared' });
   notifyListeners();
 
@@ -430,6 +510,7 @@ async function clearSessionAndReport(): Promise<boolean> {
   } catch {
     // Module not loaded (e.g., older bundle) — ignore.
   }
+  if (wipeFailed) throw wipeError;
   return true;
 }
 
@@ -723,6 +804,7 @@ async function performRefresh(): Promise<string | null> {
           state.accessToken = null;
           state.accessExpiresAt = 0;
           adoptSessionId(null, null);
+          refreshClearGeneration = generation;
           broadcast({ type: 'session_cleared' });
           notifyListeners();
         }
@@ -881,12 +963,34 @@ export async function clearSessionIfCurrent(
 }
 
 /**
+ * v1.5.0 (internal): true while the current generation is the one a terminal
+ * refresh clear produced, i.e. nothing changed the session after that clear.
+ * AuthProvider's mint uses it: its own failed refresh moves the generation,
+ * and that move must not read as "a sign-in or sign-out overtook the mint".
+ */
+export function isRefreshClearCurrent(): boolean {
+  return refreshClearGeneration !== null && refreshClearGeneration === generation;
+}
+
+/**
+ * v1.5.3 (internal): a count of setSession() and clearSession() calls. It
+ * moves on every sign-in or sign-out, including a sign-in that keeps the same
+ * session id, and never on a token refresh or a cookie note. AuthProvider
+ * compares it across /me so a reply that a sign-in or sign-out overtook is
+ * dropped, while its own refresh's id adoption is not.
+ */
+export function getSessionEpoch(): number {
+  return installCount + clearCount;
+}
+
+/**
  * v1.4.0: record the session id of a cookie-authenticated session, read from
  * /auth/v1/me's `session_meta.session_id`. This gives a cookie-only session
  * an id and a generation, so its events can be scoped. When /me names a
  * session other than the one held, the server wins: the scope moves to the
  * cookie session (new generation, source 'cookie'). Does not notify session
- * listeners and does not touch tokens.
+ * listeners. v1.5.0: it drops the in-memory access token then, because that
+ * token belongs to the old session; the stored refresh token is kept.
  * Called by AuthProvider after /me succeeds. Pass the scope captured before
  * the /me request: a reply that a sign-in or sign-out overtook is dropped,
  * so it cannot relabel the new session with the old id.
@@ -902,8 +1006,11 @@ export function noteCookieSession(
   // different id means the local token session is not the one the cookie
   // authenticates (e.g. token session A expired here, B signed in on a
   // sibling subdomain), so the scope follows the server (Devin, PR #31).
-  // Tokens are left alone: a later refresh re-adopts its own id, which
-  // moves the generation again.
+  // v1.5.0: the access token is the old session's, so it goes too; the new
+  // scope must not hand it out. The refresh token stays: a later refresh
+  // re-adopts its own id, which moves the generation again.
+  state.accessToken = null;
+  state.accessExpiresAt = 0;
   adoptSessionId(sessionId, 'cookie');
 }
 
@@ -944,6 +1051,9 @@ export function __resetTokenManagerForTests(): void {
   sessionSource = null;
   pendingClear = null;
   installCount = 0;
+  clearCount = 0;
+  pendingInstall = null;
+  refreshClearGeneration = null;
   warnedMissingRefreshExpiresAt = false;
   warnedNoNavigatorLocks = false;
   if (broadcastChannel !== null) {

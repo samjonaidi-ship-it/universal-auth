@@ -8,6 +8,57 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
 
 > **Note on v1.1.0-rc.3 (2026-05-06):** rc.3 landed on `main` but failed CI on 3 lint errors before it could be tagged or published. v1.1.0-rc.4 is the same code with those 3 errors resolved + coverage threshold reconciled with measured coverage. Public consumer path for the v1.1 line is rc.1 → rc.4 (rc.2 and rc.3 were never published).
 
+## [1.1.0-rc.23] — 2026-10-14 — session-scope race fixes (issue #32)
+
+Follow-ups from PR #31's review. No public signature changed.
+
+### Fixed
+
+- `AuthProvider.tsx` v1.2.0 — a sign-in during a failed cookie mint now shows
+  `'live'`; a mint whose session changed under it sets no state. The
+  `initialSession` path labels the session as a cookie session only when no
+  live token exists, and a new `initialSession` object with the same id no
+  longer re-runs the mint.
+- `token-manager.ts` v1.5.0 — a server-wins `noteCookieSession()` drops the old
+  session's access token. A `clearSession()` that starts while `setSession()`
+  stores its refresh token waits for that store, so the sign-out leaves no
+  refresh token; the overtaken install notifies no one. A rejected IndexedDB
+  wipe still broadcasts and notifies listeners, then rejects.
+- `session-watcher.ts` v1.3.0 and `session-events.ts` v0.2.0 — `session.revoked`
+  is emitted after the clear, with `stale: true` when a sign-in superseded it.
+  The SSE revoke now clears only the session that was current when it arrived.
+- Pre-push review of this release:
+  - `AuthProvider.tsx` v1.2.1 — the hydrate no longer applies the old
+    session's `/me` over a sign-in that landed during the mint. An
+    `initialSession` with a live token reports `'live'`.
+  - `token-manager.ts` v1.5.1 — `setSession()` stays silent only when a
+    `clearSession()` or a newer `setSession()` began during its store. A `/me`
+    naming a cookie session no longer silences it.
+  - `session-events.ts` v0.3.0 — a revoke whose payload names another
+    `session_id` clears nothing (`stale: true`). A stale revoke reopens the
+    stream for the session that is current now. v0.3.1: a revoke that names
+    a `session_id` still clears a session with no local id yet, and a
+    server-sent `stale` / `wipe_failed` key is dropped.
+  - `session-watcher.ts` v1.3.1 and `session-events.ts` v0.3.0 — a failed
+    IndexedDB wipe adds `wipe_failed: true` to `session.revoked`.
+- Devin review of PR #34:
+  - `AuthProvider.tsx` v1.2.2 — the hydrate drops a `/me` reply that a sign-in
+    or sign-out overtook, before it notes, mints or applies it. Before, a
+    sign-out during `/me` let the late reply restore the signed-out identity.
+  - `token-manager.ts` v1.5.2 — `setSession()` also stays silent when its
+    access token is gone from memory by the end of its store (a server-wins
+    `/me` dropped it). Before, its notify read as a sign-out, and it
+    broadcast a token the session no longer holds.
+  - `AuthProvider.tsx` v1.2.3 (round 2) — a refresh run by the hydrate's own
+    `/me` also moves the generation; the reply still applies when the
+    current session is the one it names.
+  - `AuthProvider.tsx` v1.2.4 / `token-manager.ts` v1.5.3 (round 3) — the
+    hydrate's `/me` check is rewritten from a case table. A new
+    `getSessionEpoch()` counts `setSession()` and `clearSession()` calls; any
+    sign-in or sign-out during `/me` drops the reply, even a sign-in that
+    keeps the same session id. Before, that same-id sign-in let the old reply
+    overwrite the new session's identity.
+
 ## [1.1.0-rc.22] — 2026-10-14 — cookie-only sessions and silent no-token refresh
 
 Closes the SDK gaps CalExp5 PR #881 had to work around in app code.
