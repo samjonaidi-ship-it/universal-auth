@@ -1,4 +1,6 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/react/AuthProvider-token-state.test.tsx | v1.5.0 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/react/AuthProvider-token-state.test.tsx | v1.6.0 | 2026-10-14 | BB
+// v1.6.0 (AuthProvider v1.2.3, Devin round 2): a /me whose own token refresh
+//   adopted its session still applies when the listener's /me fails.
 // v1.5.0 (AuthProvider v1.2.2, Devin PR #34): a sign-out while hydrate's /me
 //   is in flight stays signed out; the late reply is dropped.
 // v1.4.0 (AuthProvider v1.2.1, pre-push review): hydrate does not apply the
@@ -454,5 +456,38 @@ describe('AuthProvider — tokenState (rc.22)', () => {
     expect(screen.getByTestId('who').textContent).toBe('nobody');
     expect(screen.getByTestId('status').textContent).not.toBe('authenticated');
     expect(getSessionScope().sessionId).toBeNull();
+  });
+
+  it('Devin round 2: a /me whose own refresh adopted its session still applies', async () => {
+    await storeRefreshToken('rt-A', Date.now() + 86_400_000);
+    registerRefreshCallback(async () => ({
+      access_token: 'at-A',
+      refresh_token: 'rt-A-2',
+      expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
+      session_id: 'sess-A',
+    }));
+    let meCalls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input instanceof Request ? input.url : input);
+        // The refresh notifies first, so the listener's /me is call 1: it
+        // fails. Hydrate's own /me (call 2) succeeds.
+        if (url.includes('/auth/v1/me') && ++meCalls === 1) throw new TypeError('network down');
+        if (url.includes('/auth/v1/me')) return jsonResp(200, meFor('sess-A', 'alice'));
+        return jsonResp(404, { error: 'not_stubbed' });
+      })
+    );
+
+    render(
+      <AuthProvider>
+        <StatusProbe />
+        <IdentityProbe />
+      </AuthProvider>
+    );
+
+    await waitFor(() => expect(screen.getByTestId('who').textContent).toBe('alice'));
+    expect(screen.getByTestId('status').textContent).toBe('authenticated');
+    expect(meCalls).toBeGreaterThan(1);
   });
 });

@@ -1,4 +1,7 @@
-// @samjonaidi-ship-it/universal-auth | src/react/AuthProvider.tsx | v1.2.2 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/AuthProvider.tsx | v1.2.3 | 2026-10-14 | BB
+// v1.2.3 (Devin round 2, PR #34): a refresh run by hydrate's own /me moves
+//   the generation too. The reply still applies when the session now current
+//   is the one it names; a sign-out (no id) or a sign-in (another id) drops it.
 // v1.2.2 (Devin, PR #34): hydrate drops a /me reply that a sign-in or
 //   sign-out overtook, before it notes, mints or applies it. Before, a
 //   sign-out during /me let the old reply restore the signed-out identity.
@@ -258,7 +261,12 @@ export function AuthProvider({
         // v1.2.2 (Devin, PR #34): a sign-in or sign-out during /me owns the
         // session now; this reply is about the old one. Stop before it is
         // noted, minted or applied (scopeAtMint below would read the new scope).
-        if (!isSessionScopeCurrent(scopeAtRequest)) return;
+        // v1.2.3: the request's own token refresh can adopt the reply's session
+        // id and move the generation; that reply is still about this session.
+        const replyId = data.session_meta?.session_id;
+        const replyIsCurrent =
+          typeof replyId === 'string' && replyId.length > 0 && getSessionScope().sessionId === replyId;
+        if (!isSessionScopeCurrent(scopeAtRequest) && !replyIsCurrent) return;
         // v1.1.0: give a cookie session an id + generation. Dropped if a
         // sign-in or sign-out happened while /me was in flight.
         noteCookieSession(data.session_meta?.session_id, scopeAtRequest);

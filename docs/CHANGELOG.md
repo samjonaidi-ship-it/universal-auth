@@ -49,6 +49,9 @@ Follow-ups from PR #31's review. No public signature changed.
     access token is gone from memory by the end of its store (a server-wins
     `/me` dropped it). Before, its notify read as a sign-out, and it
     broadcast a token the session no longer holds.
+  - `AuthProvider.tsx` v1.2.3 (round 2) — a refresh run by the hydrate's own
+    `/me` also moves the generation; the reply still applies when the
+    current session is the one it names.
 
 ## [1.1.0-rc.22] — 2026-10-14 — cookie-only sessions and silent no-token refresh
 
