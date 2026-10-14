@@ -1,4 +1,7 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/core/token-manager-wipe-bound.test.ts | v1.3.0 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/token-manager-wipe-bound.test.ts | v1.4.0 | 2026-10-14 | BB
+// v1.4.0 (token-manager v1.6.4, Devin round 3, PR #35): a refresh token that
+// expires while its refresh is on the wire is still this refresh's row: a
+// good rotation is stored, and a terminal error still clears it.
 // v1.3.0 (token-manager v1.6.3, Devin round 2, PR #35): a refresh hands out
 // its token only after its store; a DPoP mismatch or terminal error never
 // clears a session another tab signed in meanwhile; a sign-in in this tab
@@ -352,25 +355,22 @@ describe('token-manager — wipe bound and locally-revoked marker (issue #33)', 
     const { jwkThumbprint } = await import('../../../src/core/dpop/thumbprint.js');
     const pair = await getOrCreateKeypair();
     const localJkt = await jwkThumbprint(await crypto.subtle.exportKey('jwk', pair.publicKey));
-    registerRefreshCallback(async () => ({
-      access_token: jwtWithJkt(localJkt.split('').reverse().join('')),
-      expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
-      session_id: 'A',
-    }));
+    // Tab B signs in while A's refresh request is in flight (v1.6.4: A reads
+    // its token under the store lock, so B must come after that read).
+    registerRefreshCallback(async () => {
+      await otherTab(async () => {
+        await storage.storeRefreshToken('rt-B', Date.now() + 60_000);
+      });
+      return {
+        access_token: jwtWithJkt(localJkt.split('').reverse().join('')),
+        expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
+        session_id: 'A',
+      };
+    });
     const changes = vi.fn();
     onSessionChange(changes);
-    let letGo!: () => void;
-    const gate = new Promise<void>((r) => (letGo = r));
-    // Tab B signs in: it holds the store lock while A's refresh comes back.
-    const tabB = otherTab(async () => {
-      await gate;
-      await storage.storeRefreshToken('rt-B', Date.now() + 60_000);
-    });
 
     const refreshing = getAccessToken();
-    await new Promise((r) => setTimeout(r, 20));
-    letGo();
-    await tabB;
 
     await expect(refreshing).resolves.toBeNull();
     expect(await storage.getRefreshToken()).toBe('rt-B');
@@ -421,5 +421,36 @@ describe('token-manager — wipe bound and locally-revoked marker (issue #33)', 
     expect(await getAccessToken()).toBe('at-B');
     expect(getCurrentSessionId()).toBe('B');
     expect(await storage.getRefreshToken()).toBe('rt-B');
+  });
+  it('Devin PR #35 r3: a rotation is stored when the old token expired during the request', async () => {
+    await setSession({ ...tokens('A'), expiresAt: Date.now() - 1, refreshExpiresAt: Date.now() + 40 });
+    registerRefreshCallback(async () => {
+      await new Promise((r) => setTimeout(r, 80)); // rt-A expires on the wire
+      return {
+        access_token: 'at-A2',
+        expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
+        session_id: 'A',
+        refresh_token: 'rt-A2',
+        refresh_expires_at: new Date(Date.now() + 60 * 60_000).toISOString(),
+      };
+    });
+
+    expect(await getAccessToken()).toBe('at-A2');
+    expect(await storage.getRefreshToken()).toBe('rt-A2');
+    expect(getCurrentSessionId()).toBe('A');
+  });
+
+  it('Devin PR #35 r3: a terminal error clears the session when the token expired during the request', async () => {
+    await setSession({ ...tokens('A'), expiresAt: Date.now() - 1, refreshExpiresAt: Date.now() + 40 });
+    registerRefreshCallback(async () => {
+      await new Promise((r) => setTimeout(r, 80));
+      throw Object.assign(new Error('revoked'), { code: 'AUTH_SESSION_REVOKED' });
+    });
+    const changes = vi.fn();
+    onSessionChange(changes);
+
+    await expect(getAccessToken()).rejects.toMatchObject({ code: 'AUTH_SESSION_REVOKED' });
+    expect(getCurrentSessionId()).toBeNull();
+    expect(changes).toHaveBeenCalled();
   });
 });

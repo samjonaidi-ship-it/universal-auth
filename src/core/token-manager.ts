@@ -1,4 +1,19 @@
-// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.6.3 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.6.4 | 2026-10-14 | BB
+// v1.6.4 (rc.24, Devin round 3, PR #35): performRefresh() decides ownership by
+//   the stored row's identity (storage getRefreshTokenRowId(), the row's IV),
+//   not by re-reading the token. A re-read ran the expiry check, so a token
+//   that expired during a successful refresh read as "not mine" and the
+//   rotation was lost. The token and its row id are read together under the
+//   store lock. Case table, checked under the store lock before any write:
+//     signed out (any tab)          -> write nothing; success/mismatch: null;
+//                                      terminal: rethrow, no clear
+//     sign-in (this tab or another) -> write nothing; success/mismatch: the
+//                                      new session's live token or null;
+//                                      terminal: rethrow, no clear
+//     row gone (another tab cleared)-> success: nothing, null; mismatch and
+//                                      terminal: clear memory, tell tabs, throw
+//     row same (even if expired)    -> success: store + adopt + broadcast;
+//                                      mismatch/terminal: clear row + memory
 // v1.6.3 (rc.24, Devin round 2, PR #35): performRefresh() writes to the store
 //   only when the refresh still owns it. Under the store lock it re-checks:
 //   no sign-out, no setSession() in this tab, and the stored refresh token is
@@ -138,6 +153,7 @@
 
 import {
   getRefreshToken,
+  getRefreshTokenRowId,
   storeRefreshToken,
   clearRefreshToken,
   clearAllSessionState,
@@ -849,7 +865,20 @@ async function performRefresh(): Promise<string | null> {
       return null;
     }
 
-    const rt = await getRefreshToken();
+    // v1.6.4: the token and its row id are read together, under the store
+    // lock, so no other tab's store can land between the two reads.
+    const { rt, rowId } = await runUnderStoreLock(async () => {
+      const token = await getRefreshToken();
+      return { rt: token, rowId: token === null ? null : await getRefreshTokenRowId() };
+    });
+    // v1.6.4: who owns the stored row now. Call it under the store lock only.
+    const ownerNow = async (): Promise<'signed_out' | 'superseded' | 'row_gone' | 'mine'> => {
+      const id = await getRefreshTokenRowId();
+      if (signedOutSince()) return 'signed_out';
+      if (installCount !== installsAtStart) return 'superseded';
+      if (id === null) return 'row_gone';
+      return id === rowId ? 'mine' : 'superseded';
+    };
     if (rt === null && installCount !== installsAtStart && hasLiveAccessToken()) {
       // A setSession() landed during the lookup: the null is about the old
       // session. Hand back the new token; no event. Any other change (a /me
@@ -890,8 +919,9 @@ async function performRefresh(): Promise<string | null> {
         // v1.6.3: clear only the session this refresh was for. A sign-in or
         // sign-out (any tab) while the lock was awaited owns the store now.
         const cleared = await runUnderStoreLock(async () => {
-          if (!stillMineHere() || (await getRefreshToken()) !== rt) return false;
-          await clearRefreshToken();
+          const owner = await ownerNow();
+          if (owner === 'signed_out' || owner === 'superseded') return false;
+          if (owner === 'mine') await clearRefreshToken();
           if (!stillMineHere()) return false;
           state.accessToken = null;
           state.accessExpiresAt = 0;
@@ -939,17 +969,16 @@ async function performRefresh(): Promise<string | null> {
       // adoption; a sign-out after it nulls state.accessToken itself.
       const ttl = refreshExpiresAt;
       const adopted = await runUnderStoreLock(async () => {
-        if (!stillMineHere()) return false;
+        // v1.6.4: only the row this refresh read; an expired row is still it.
+        if ((await ownerNow()) !== 'mine') return false;
         if (ttl !== null) {
-          const stored = await getRefreshToken();
-          if (stored !== rt || !stillMineHere()) return false;
           if (result.refresh_token !== undefined) {
             // Rotated token — persist new ciphertext + new TTL.
             await storeRefreshToken(result.refresh_token, ttl);
           } else {
-            // Server extended TTL without rotating — re-encrypt the existing
-            // refresh token under the new expiry so subsequent reads see it.
-            await storeRefreshToken(stored, ttl);
+            // Server extended TTL without rotating — re-encrypt the token this
+            // refresh used (the row is still it) under the new expiry.
+            await storeRefreshToken(rt, ttl);
           }
           if (!stillMineHere()) return false;
         }
@@ -1030,8 +1059,9 @@ async function performRefresh(): Promise<string | null> {
         const cleared =
           !staleness &&
           (await runUnderStoreLock(async () => {
-            if (!stillMineHere() || (await getRefreshToken()) !== rt) return false;
-            await clearRefreshToken();
+            const owner = await ownerNow();
+            if (owner === 'signed_out' || owner === 'superseded') return false;
+            if (owner === 'mine') await clearRefreshToken();
             if (!stillMineHere() || state.sessionId !== sessionIdAtStart) return false;
             state.accessToken = null;
             state.accessExpiresAt = 0;

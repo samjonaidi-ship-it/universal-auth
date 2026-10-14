@@ -57,6 +57,15 @@ decided on the issue: no code change.
   this tab, and that the stored refresh token is still the one used. Another
   tab's sign-in meanwhile is no longer deleted or overwritten. A refresh that
   lost its session returns null (or the new session's live token).
+- Devin round 3, PR #35: a refresh decides whether it still owns the stored
+  refresh token by the row's identity (its random IV, new storage
+  `getRefreshTokenRowId()`), read with the token under the store lock. Round 2
+  re-read the token instead, and that read deletes an expired row: a token
+  that expired while its refresh was on the wire made a good rotation look
+  lost, so the rotation was discarded and the user signed out. The success,
+  `CNF_JKT_MISMATCH` and terminal-error paths now share one case table
+  (signed out / sign-in / row gone / row same), documented in the
+  `token-manager.ts` v1.6.4 header.
 
 ### Known limits
 
