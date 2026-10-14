@@ -40,12 +40,23 @@ decided on the issue: no code change.
   call still fails closed). Item 6: the `session.revoked` event carries only
   `reason`, `session_id`, `generation`, `revoke_scope`, `stale`,
   `wipe_failed`; an unsafe server reason becomes `'server'`.
+- Devin, PR #35: every refresh-token store and every wipe runs under one
+  origin-wide `navigator.locks` lock (`bb-auth-session-store`), in request
+  order. A late wipe in one tab can no longer delete the refresh token another
+  tab stored meanwhile. A retry wipe re-reads the marker under the lock and
+  stands down when a sign-in removed it.
+- Devin, PR #35 (SEC): a sign-out during a refresh (its own tab or another
+  tab's `session_cleared`) makes the refresh discard its result. It adopts,
+  stores and broadcasts nothing, so it cannot restore a signed-out session.
 
 ### Known limits
 
 - The marker is per origin: every tab of the app fails closed until a sign-in
   or a good wipe.
 - `setSession()` still waits, unbounded, for a hung earlier wipe (unchanged).
+  Across tabs, a wipe that never settles now also holds the store lock until
+  its tab closes, so another tab's sign-in waits for it too.
+- Without `navigator.locks` the stores and wipes are ordered only inside a tab.
 
 ## [1.1.0-rc.23] — 2026-10-14 — session-scope race fixes (issue #32)
 

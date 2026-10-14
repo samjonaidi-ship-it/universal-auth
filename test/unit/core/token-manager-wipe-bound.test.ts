@@ -1,4 +1,8 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/core/token-manager-wipe-bound.test.ts | v1.1.0 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/token-manager-wipe-bound.test.ts | v1.2.0 | 2026-10-14 | BB
+// v1.2.0 (token-manager v1.6.2, Devin PR #35): stores and wipes share one
+// origin-wide lock, so a late wipe never deletes another tab's newer refresh
+// token, and a retry wipe stands down when a sign-in removed the marker; a
+// sign-out during a refresh makes the refresh discard its result.
 // v1.1.0 (token-manager v1.6.1): the marker has an owner. A sign-in in another
 // tab during a hung wipe is not re-marked by the late timeout; a wipe that
 // succeeds after its bound removes its own marker, never a newer one.
@@ -14,7 +18,11 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 vi.mock('../../../src/core/storage.js', async (importOriginal) => {
   const real = await importOriginal<typeof import('../../../src/core/storage.js')>();
-  return { ...real, clearAllSessionState: vi.fn(real.clearAllSessionState) };
+  return {
+    ...real,
+    clearAllSessionState: vi.fn(real.clearAllSessionState),
+    getRefreshToken: vi.fn(real.getRefreshToken),
+  };
 });
 
 import {
@@ -24,6 +32,7 @@ import {
   onSessionChange,
   onTokenUnavailable,
   registerRefreshCallback,
+  getCurrentSessionId,
   __setWipeTimeoutMsForTests,
   __resetTokenManagerForTests,
 } from '../../../src/core/token-manager.js';
@@ -38,6 +47,35 @@ const tokens = (id: string) => ({
   expiresAt: Date.now() + 15 * 60_000,
   sessionId: id,
 });
+
+/**
+ * A FIFO exclusive navigator.locks, shared by every "tab" in this test (one
+ * origin). happy-dom has none.
+ */
+function installFakeLocks(): void {
+  const tails = new Map<string, Promise<unknown>>();
+  const locks = {
+    request<T>(name: string, _opts: unknown, cb: () => Promise<T>): Promise<T> {
+      const prev = tails.get(name) ?? Promise.resolve();
+      const run = prev.then(() => cb());
+      tails.set(name, run.catch(() => {}));
+      return run;
+    },
+  };
+  Object.defineProperty(navigator, 'locks', { value: locks, configurable: true });
+}
+
+function removeFakeLocks(): void {
+  delete (navigator as unknown as { locks?: unknown }).locks;
+}
+
+/** Run `work` as another tab would: under the shared store lock. */
+function otherTab<T>(work: () => Promise<T>): Promise<T> {
+  const locks = (navigator as unknown as {
+    locks: { request<R>(n: string, o: unknown, cb: () => Promise<R>): Promise<R> };
+  }).locks;
+  return locks.request('bb-auth-session-store', { mode: 'exclusive' }, work);
+}
 
 /** The next wipe hangs until release(); release(true) makes it fail. */
 function hangNextWipe(): { release: (fail?: boolean) => void } {
@@ -62,6 +100,7 @@ describe('token-manager — wipe bound and locally-revoked marker (issue #33)', 
 
   afterEach(() => {
     __resetTokenManagerForTests();
+    removeFakeLocks();
   });
 
   it('item 4: a hung wipe rejects with SessionWipeTimeout, and listeners still hear the clear', async () => {
@@ -173,5 +212,100 @@ describe('token-manager — wipe bound and locally-revoked marker (issue #33)', 
     release();
     await new Promise((r) => setTimeout(r, 20));
     expect(localStorage.getItem(MARKER)).toBe('other-tab-sign-out');
+  });
+
+  it('Devin PR #35: a late wipe does not delete the refresh token another tab stored meanwhile', async () => {
+    installFakeLocks();
+    await setSession(tokens('A'));
+    const real = await vi.importActual<typeof import('../../../src/core/storage.js')>(
+      '../../../src/core/storage.js'
+    );
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    let wiped = false;
+    // Tab A's wipe is slow to start (IndexedDB blocked), then really wipes.
+    vi.mocked(storage.clearAllSessionState).mockImplementationOnce(async () => {
+      await held;
+      await real.clearAllSessionState();
+      wiped = true;
+    });
+    await expect(clearSession()).rejects.toBeInstanceOf(SessionWipeTimeout);
+
+    // Tab B signs in after A's bound: its store asks for the lock after A's wipe.
+    const tabB = otherTab(() => storage.storeRefreshToken('rt-B', Date.now() + 60_000));
+    // Unordered, B's store would finish here, before A's wipe runs.
+    await new Promise((r) => setTimeout(r, 30));
+    release();
+    await tabB;
+    await vi.waitFor(() => expect(wiped).toBe(true));
+
+    expect(await storage.getRefreshToken()).toBe('rt-B');
+  });
+
+  it('Devin PR #35: a retry wipe stands down when another tab signed in before it got the lock', async () => {
+    installFakeLocks();
+    await setSession(tokens('A'));
+    const { release } = hangNextWipe();
+    await expect(clearSession()).rejects.toBeInstanceOf(SessionWipeTimeout);
+    release(true); // tab A's wipe fails: the marker stays
+    await new Promise((r) => setTimeout(r, 0));
+    expect(localStorage.getItem(MARKER)).not.toBeNull();
+    registerRefreshCallback(async () => {
+      throw new Error('must not refresh');
+    });
+
+    // Tab B holds the store lock while A's next refresh queues its retry wipe.
+    let letGo!: () => void;
+    const gate = new Promise<void>((r) => (letGo = r));
+    const tabB = otherTab(async () => {
+      await gate;
+      await storage.storeRefreshToken('rt-B', Date.now() + 60_000);
+      localStorage.removeItem(MARKER); // B's setSession removes the marker
+    });
+    const refreshing = getAccessToken();
+    await new Promise((r) => setTimeout(r, 5));
+    letGo();
+    await tabB;
+    await refreshing;
+
+    expect(await storage.getRefreshToken()).toBe('rt-B');
+  });
+
+  it('Devin PR #35: a sign-out during the refresh call does not restore the session', async () => {
+    await setSession({ ...tokens('A'), expiresAt: Date.now() - 1 });
+    const changes = vi.fn();
+    registerRefreshCallback(async () => {
+      await clearSession(); // the user signs out while the refresh is on the wire
+      changes.mockClear();
+      return {
+        access_token: 'at-A2',
+        expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
+        session_id: 'A',
+        refresh_token: 'rt-A2',
+        refresh_expires_at: new Date(Date.now() + 60_000).toISOString(),
+      };
+    });
+    onSessionChange(changes);
+
+    expect(await getAccessToken()).toBeNull();
+    expect(getCurrentSessionId()).toBeNull();
+    expect(await storage.getRefreshToken()).toBeNull();
+    expect(changes).not.toHaveBeenCalled();
+  });
+
+  it('Devin PR #35: a sign-out during the refresh-token read does not refresh', async () => {
+    await setSession({ ...tokens('A'), expiresAt: Date.now() - 1 });
+    const refresh = vi.fn(async () => {
+      throw new Error('must not refresh after a sign-out');
+    });
+    registerRefreshCallback(refresh);
+    vi.mocked(storage.getRefreshToken).mockImplementationOnce(async () => {
+      // The read returns the token while a sign-out starts in parallel.
+      void clearSession().catch(() => {});
+      return 'rt-A';
+    });
+
+    expect(await getAccessToken()).toBeNull();
+    expect(refresh).not.toHaveBeenCalled();
   });
 });

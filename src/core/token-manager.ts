@@ -1,4 +1,14 @@
-// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.6.1 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.6.2 | 2026-10-14 | BB
+// v1.6.2 (rc.24, Devin PR #35):
+//   - Every refresh-token store and every wipe runs under one origin-wide
+//     navigator.locks lock (STORE_LOCK_NAME), in request order. pendingClear
+//     only ordered them inside one tab, so a late wipe in tab A could delete
+//     the refresh token tab B stored meanwhile. A retry wipe also re-reads the
+//     marker under the lock and stands down when a sign-in removed it.
+//   - performRefresh() counts sign-outs (signOutCount: this tab's clears and
+//     other tabs' session_cleared). A sign-out during the refresh-token read or
+//     the refresh call makes the refresh discard its result: it adopts,
+//     stores and broadcasts nothing, so it cannot restore a signed-out session.
 // v1.6.1 (rc.24, pre-push review): the locally-revoked marker carries its
 // writer's value, is written when the wipe starts, and is removed only by that
 // wipe's own success (also a late one). A late timeout in one tab can no longer
@@ -218,6 +228,8 @@ let pendingClear: Promise<void> | null = null;
 let installCount = 0;
 // Counts clearSession() calls. setSession() compares it (v1.5.1).
 let clearCount = 0;
+// v1.6.2: sign-outs seen by this tab, its own and other tabs' (performRefresh).
+let signOutCount = 0;
 // The refresh-token store of a setSession() still running. A clear waits for
 // the installs that began before it, so its wipe runs after their store.
 let pendingInstall: Promise<void> | null = null;
@@ -323,8 +335,13 @@ async function retryLocallyRevokedWipe(): Promise<void> {
     if (previousWipe !== null) await previousWipe.catch(() => {});
     if (installBefore !== null) await installBefore.catch(() => {});
     if (installCount !== myInstall) return;
-    await clearAllSessionState();
-    if (installCount === myInstall) await deleteKeypair();
+    await runUnderStoreLock(async () => {
+      // v1.6.2: a sign-in in another tab removed the marker before this
+      // wipe got the lock. Its refresh token is not ours to delete.
+      if (readRevokedMarker() !== owner) return;
+      await clearAllSessionState();
+      if (installCount === myInstall) await deleteKeypair();
+    });
   })();
   trackWipe(wipe);
   // A retry that settles after its bound still removes the marker it read.
@@ -364,6 +381,8 @@ let warnedNoNavigatorLocks = false;
 
 const BROADCAST_CHANNEL_NAME = 'bb-universal-auth-session';
 const REFRESH_LOCK_NAME = 'bb-auth-refresh';
+// v1.6.2: orders refresh-token stores and wipes across tabs (see header).
+const STORE_LOCK_NAME = 'bb-auth-session-store';
 
 type BroadcastMessage =
   | { type: 'session_updated'; accessToken: string; accessExpiresAt: number; sessionId: string }
@@ -419,6 +438,7 @@ function handleBroadcast(raw: unknown): void {
       notifyListeners();
       break;
     case 'session_cleared':
+      signOutCount++;
       state.accessToken = null;
       state.accessExpiresAt = 0;
       adoptSessionId(null, null);
@@ -538,7 +558,7 @@ export async function setSession(tokens: SessionTokens): Promise<void> {
   const install = (async () => {
     if (clearBefore !== null) await clearBefore.catch(() => {});
     if (installBefore !== null) await installBefore.catch(() => {});
-    await storeRefreshToken(tokens.refreshToken, refreshExpiresAt);
+    await runUnderStoreLock(() => storeRefreshToken(tokens.refreshToken, refreshExpiresAt));
   })();
   pendingInstall = install;
   try {
@@ -601,6 +621,7 @@ async function clearSessionAndReport(): Promise<boolean> {
   sessionSource = null;
   state.inFlightRefresh = null;
   clearCount++;
+  signOutCount++;
   const myInstall = installCount;
 
   // v1.4.0: a setSession() that lands while the wipe runs owns the device
@@ -624,8 +645,10 @@ async function clearSessionAndReport(): Promise<boolean> {
   const wipe = (async () => {
     if (previousWipe !== null) await previousWipe.catch(() => {});
     if (installBefore !== null) await installBefore.catch(() => {});
-    await clearAllSessionState();
-    if (installCount === myInstall) await deleteKeypair();
+    await runUnderStoreLock(async () => {
+      await clearAllSessionState();
+      if (installCount === myInstall) await deleteKeypair();
+    });
   })();
   void wipe.then(
     () => clearRevokedMarker(marker),
@@ -802,6 +825,10 @@ async function performRefresh(): Promise<string | null> {
     // what lets a stale response tell "still mine" from "superseded".
     const sessionIdAtStart = state.sessionId;
     const installsAtStart = installCount;
+    // v1.6.2: a sign-out from here on means this refresh must not restore
+    // the session (Devin, PR #35).
+    const signOutsAtStart = signOutCount;
+    const signedOutSince = (): boolean => signOutCount !== signOutsAtStart || isLocallyRevoked();
 
     // v1.6.0: a sign-out whose wipe failed may have left a refresh token on
     // disk. Never refresh with it: retry the wipe, then report no token.
@@ -818,6 +845,10 @@ async function performRefresh(): Promise<string | null> {
       // session. Hand back the new token; no event. Any other change (a /me
       // naming a cookie session, a clear) still reports the missing token.
       return state.accessToken;
+    }
+    if (rt !== null && signedOutSince()) {
+      // A sign-out began during the lookup: the token read is a survivor.
+      return null;
     }
     if (rt === null) {
       // No refresh token: nothing to mint from. Return null (the documented
@@ -840,9 +871,13 @@ async function performRefresh(): Promise<string | null> {
       // catches BFF mis-config (e.g., key rotation drift) one round-trip
       // earlier than waiting for the next request to fail server-side.
       // JWT parse errors (opaque tokens, no `cnf` claim) are non-fatal.
+      // v1.6.2: a sign-out during the call wins. Adopt, store and broadcast
+      // nothing; the server-side session is left to its own expiry.
+      if (signedOutSince()) return null;
+
       const verifyResult = await verifyAccessTokenJktBinding(result.access_token);
       if (verifyResult === 'mismatch') {
-        await clearRefreshToken();
+        await runUnderStoreLock(clearRefreshToken);
         state.accessToken = null;
         state.accessExpiresAt = 0;
         adoptSessionId(null, null);
@@ -884,16 +919,38 @@ async function performRefresh(): Promise<string | null> {
         refreshExpiresAt = Date.now() + DEFAULT_REFRESH_TTL_MS;
       }
 
-      if (result.refresh_token !== undefined && refreshExpiresAt !== null) {
-        // Rotated token — persist new ciphertext + new TTL.
-        await storeRefreshToken(result.refresh_token, refreshExpiresAt);
-      } else if (refreshExpiresAt !== null) {
-        // Server extended TTL without rotating — re-encrypt the existing
-        // refresh token under the new expiry so subsequent reads see it.
-        const existing = await getRefreshToken();
-        if (existing !== null) {
-          await storeRefreshToken(existing, refreshExpiresAt);
+      // v1.6.2: the store re-checks for a sign-out under the store lock, so
+      // a wipe that asked for the lock first is never undone by this store.
+      let storeSignedOut = false;
+      if (refreshExpiresAt !== null) {
+        const ttl = refreshExpiresAt;
+        await runUnderStoreLock(async () => {
+          if (signedOutSince()) {
+            storeSignedOut = true;
+            return;
+          }
+          if (result.refresh_token !== undefined) {
+            // Rotated token — persist new ciphertext + new TTL.
+            await storeRefreshToken(result.refresh_token, ttl);
+          } else {
+            // Server extended TTL without rotating — re-encrypt the existing
+            // refresh token under the new expiry so subsequent reads see it.
+            const existing = await getRefreshToken();
+            if (existing !== null) {
+              await storeRefreshToken(existing, ttl);
+            }
+          }
+        });
+      }
+      if (storeSignedOut || signedOutSince()) {
+        // Signed out while this refresh was adopting: undo the adoption
+        // quietly; the sign-out has already told tabs and listeners.
+        if (state.accessToken === result.access_token) {
+          state.accessToken = null;
+          state.accessExpiresAt = 0;
+          adoptSessionId(null, null);
         }
+        return null;
       }
 
       broadcast({
@@ -957,7 +1014,7 @@ async function performRefresh(): Promise<string | null> {
       const staleness = state.sessionId !== sessionIdAtStart;
       if (isTerminalRefreshError(err)) {
         if (!staleness) {
-          await clearRefreshToken();
+          await runUnderStoreLock(clearRefreshToken);
           state.accessToken = null;
           state.accessExpiresAt = 0;
           adoptSessionId(null, null);
@@ -1068,6 +1125,19 @@ async function runUnderRefreshLock<T>(work: () => Promise<T>): Promise<T> {
     return work();
   }
   return nav.locks.request(REFRESH_LOCK_NAME, { mode: 'exclusive' }, work);
+}
+
+/**
+ * v1.6.2: run a refresh-token store or a wipe under the origin-wide store
+ * lock, in request order across tabs. Without navigator.locks it runs as-is
+ * (runUnderRefreshLock already reports that once).
+ */
+async function runUnderStoreLock<T>(work: () => Promise<T>): Promise<T> {
+  const nav = (typeof navigator !== 'undefined' ? navigator : undefined) as
+    | NavigatorWithLocks
+    | undefined;
+  if (nav?.locks?.request === undefined) return work();
+  return nav.locks.request(STORE_LOCK_NAME, { mode: 'exclusive' }, work);
 }
 
 /**
@@ -1214,6 +1284,7 @@ export function __resetTokenManagerForTests(): void {
   pendingClear = null;
   installCount = 0;
   clearCount = 0;
+  signOutCount = 0;
   pendingInstall = null;
   refreshClearGeneration = null;
   wipeTimeoutMs = DEFAULT_WIPE_TIMEOUT_MS;
