@@ -8,6 +8,20 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
 
 > **Note on v1.1.0-rc.3 (2026-05-06):** rc.3 landed on `main` but failed CI on 3 lint errors before it could be tagged or published. v1.1.0-rc.4 is the same code with those 3 errors resolved + coverage threshold reconciled with measured coverage. Public consumer path for the v1.1 line is rc.1 → rc.4 (rc.2 and rc.3 were never published).
 
+## [1.1.0-rc.26] — 2026-10-14 — a cookie note during a superseded sign-out keeps the newer sign-in
+
+### Fixed
+
+- `token-manager.ts` v1.6.8 (issue #37, Devin note on PR #36): tab A signs
+  out, tab B signs in while A's marker is set, and the SSR `/me` note
+  (`noteCookieSession()` with no scope) brings back session A before A's wipe
+  stands down. A then kept the signed-out cookie session instead of adopting
+  B. Now `noteCookieSession()` ignores the id a pending sign-out is signing
+  out, and the stand-down decides by what the tab holds: a token session is
+  kept; a cookie session gives way to the heard sign-in; the signed-out
+  session itself is replaced by the sign-in, or the clear finishes and
+  reports.
+
 ## [1.1.0-rc.25] — 2026-10-14 — cross-tab sign-out keeps a newer sign-in
 
 ### Fixed

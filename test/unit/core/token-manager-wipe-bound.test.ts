@@ -1,4 +1,7 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/core/token-manager-wipe-bound.test.ts | v1.6.3 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/token-manager-wipe-bound.test.ts | v1.6.4 | 2026-10-14 | BB
+// v1.6.4 (issue #37): a cookie note (the SSR /me, no scope) during a
+// superseded sign-out: a note for the signed-out session is ignored, and a
+// cookie session other than the heard sign-in gives way to that sign-in.
 // v1.6.3 (Devin PR #36 r2): two overlapping sign-outs with localStorage
 // blocked keep another tab's newer sign-in; a cold tab that already adopted
 // the sign-in (marker removed before the broadcast) does not report a clear.
@@ -58,6 +61,7 @@ import {
   getCurrentSessionId,
   getSessionScope,
   clearSessionIfCurrent,
+  noteCookieSession,
   __setWipeTimeoutMsForTests,
   __resetTokenManagerForTests,
 } from '../../../src/core/token-manager.js';
@@ -799,5 +803,61 @@ describe('token-manager — wipe bound and locally-revoked marker (issue #33)', 
     expect(cleared).toBe(false);
     expect(getCurrentSessionId()).toBe('B');
     expect(await storage.getRefreshToken()).toBe('rt-B');
+  });
+
+  /** Tab B signs in while A signs out; `during` runs after A heard B, before A's wipe. */
+  async function supersededSignOut(during: () => void): Promise<void> {
+    __setWipeTimeoutMsForTests(5_000); // the store queue takes longer than 30 ms
+    installFakeLocks();
+    await setSession(tokens('A'));
+    const peer = new BroadcastChannel('bb-universal-auth-session');
+    let letGo!: () => void;
+    const gate = new Promise<void>((r) => (letGo = r));
+    const busy = otherTab(() => gate);
+    const tabB = otherTab(async () => {
+      await storage.storeRefreshToken('rt-B', Date.now() + 60_000);
+      peer.postMessage({ type: 'session_updated', accessToken: 'at-B', accessExpiresAt: Date.now() + 60_000, sessionId: 'B' });
+      await new Promise((r) => setTimeout(r, 10)); // A hears it while its marker is set
+    });
+    const unblock = blockLocalStorage();
+    try {
+      const clearing = clearSession(); // A's wipe queues behind B's store
+      await new Promise((r) => setTimeout(r, 10));
+      letGo();
+      await tabB;
+      during();
+      await busy;
+      await clearing;
+    } finally {
+      unblock();
+    }
+    await new Promise((r) => setTimeout(r, 10));
+    peer.close();
+  }
+
+  it('issue #37: a cookie note for the signed-out session during a superseded sign-out still adopts the newer sign-in', async () => {
+    await supersededSignOut(() => noteCookieSession('A')); // the SSR /me: no scope
+    expect(vi.mocked(storage.clearAllSessionState)).not.toHaveBeenCalled();
+    expect(await storage.getRefreshToken()).toBe('rt-B');
+    expect(getCurrentSessionId()).toBe('B');
+  });
+
+  it('issue #37: a cookie session other than the heard sign-in gives way to that sign-in', async () => {
+    await supersededSignOut(() => noteCookieSession('C'));
+    expect(await storage.getRefreshToken()).toBe('rt-B');
+    expect(getCurrentSessionId()).toBe('B');
+  });
+
+  it('issue #37: a pending sign-out ignores a cookie note for the session it signs out', async () => {
+    await setSession(tokens('A'));
+    const wipe = hangNextWipe();
+    const clearing = clearSession();
+    await new Promise((r) => setTimeout(r, 0));
+    noteCookieSession('A');
+    expect(getCurrentSessionId()).toBeNull();
+    noteCookieSession('C'); // another session is not blocked
+    expect(getCurrentSessionId()).toBe('C');
+    wipe.release();
+    await clearing.catch(() => {});
   });
 });

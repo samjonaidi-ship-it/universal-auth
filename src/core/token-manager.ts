@@ -1,4 +1,16 @@
-// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.6.7 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.6.8 | 2026-10-14 | BB
+// v1.6.8 (rc.26, issue #37, Devin note on PR #36): a cookie note during a
+//   superseded sign-out no longer keeps the signed-out session.
+//   - noteCookieSession() ignores the id a pending sign-out is signing out
+//     (the SSR /me note passes no scope, so the scope check missed it).
+//   - The stand-down decides by what this tab holds (signed-out session A,
+//     ignored sign-in B with an id other than A):
+//       nothing held               -> adopt B, else report the clear
+//       token session, not A       -> already adopted: no clear
+//       cookie session, not A      -> adopt B if heard, else keep it: no clear
+//       A (came back)              -> adopt B if heard, else finish the clear
+//     Before, any held id read as "already adopted", so a cookie note for A
+//     kept the signed-out session instead of adopting B.
 // v1.6.7 (rc.25, Devin round 2, PR #36):
 //   - Each pending sign-out keeps its own record (signed-out session, row at
 //     sign-out, ignored sign-in). An older wipe that settles no longer erases
@@ -799,32 +811,31 @@ async function clearSessionAndReport(): Promise<boolean> {
       pendingSignOuts.delete(own);
       // v1.6.6: the sign-in that superseded this sign-out was ignored while
       // the marker was set; adopt it now, unless this tab moved on since.
-      const update = own.update;
-      if (
-        supersededBySignIn &&
-        !reported &&
-        update !== null &&
-        update.sessionId !== signedOut &&
-        clearCount === myClears &&
-        installCount === myInstall &&
-        state.sessionId === null
-      ) {
+      if (!supersededBySignIn || reported || clearCount !== myClears || installCount !== myInstall) {
+        return;
+      }
+      // v1.6.8 (issue #37): what this tab holds now decides (see header).
+      const update = own.update !== null && own.update.sessionId !== signedOut ? own.update : null;
+      const held = state.sessionId;
+      const heldOther = held !== null && held !== signedOut;
+      if (heldOther && (sessionSource === 'token' || update === null)) {
+        // v1.6.7 (Devin PR #36 r2): the sign-in removed the marker before it
+        // broadcast, so this tab already adopted it; do not report a clear
+        // or stop that session's event stream. v1.6.8: also a cookie session
+        // /me named that is not the signed-out one, when no sign-in was heard.
+        adoptedSignIn = true;
+      } else if (update !== null) {
         state.accessToken = update.accessToken;
         state.accessExpiresAt = update.accessExpiresAt;
         adoptSessionId(update.sessionId, 'token');
         adoptedSignIn = true;
         notifyListeners();
-      } else if (
-        supersededBySignIn &&
-        !reported &&
-        clearCount === myClears &&
-        installCount === myInstall &&
-        state.sessionId !== null
-      ) {
-        // v1.6.7 (Devin PR #36 r2): the sign-in removed the marker before it
-        // broadcast, so this tab already adopted it; do not report a clear
-        // or stop that session's event stream.
-        adoptedSignIn = true;
+      } else if (held !== null) {
+        // v1.6.8: the signed-out session came back (a cookie note) and no
+        // sign-in was heard: finish the clear, which then reports.
+        state.accessToken = null;
+        state.accessExpiresAt = 0;
+        adoptSessionId(null, null);
       }
     },
     () => {
@@ -1438,6 +1449,11 @@ export function noteCookieSession(
   if (typeof sessionId !== 'string' || sessionId.length === 0) return;
   if (scopeAtRequest !== undefined && !isSessionScopeCurrent(scopeAtRequest)) return;
   if (sessionId === state.sessionId) return;
+  // v1.6.8 (issue #37): a pending sign-out is signing this session out; a
+  // /me (often the SSR one, with no scope) must not bring it back.
+  for (const pending of pendingSignOuts) {
+    if (pending.signedOut === sessionId) return;
+  }
   // /me is the server's word on which session this browser holds. A
   // different id means the local token session is not the one the cookie
   // authenticates (e.g. token session A expired here, B signed in on a
