@@ -1,4 +1,6 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/react/AuthProvider-token-state.test.tsx | v1.6.0 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/react/AuthProvider-token-state.test.tsx | v1.7.0 | 2026-10-14 | BB
+// v1.7.0 (AuthProvider v1.2.4, Devin round 3): a sign-in that keeps the same
+//   session id during hydrate's /me drops the old reply; the new identity stays.
 // v1.6.0 (AuthProvider v1.2.3, Devin round 2): a /me whose own token refresh
 //   adopted its session still applies when the listener's /me fails.
 // v1.5.0 (AuthProvider v1.2.2, Devin PR #34): a sign-out while hydrate's /me
@@ -489,5 +491,40 @@ describe('AuthProvider — tokenState (rc.22)', () => {
     await waitFor(() => expect(screen.getByTestId('who').textContent).toBe('alice'));
     expect(screen.getByTestId('status').textContent).toBe('authenticated');
     expect(meCalls).toBeGreaterThan(1);
+  });
+  it('Devin round 3: a same-id sign-in during the hydrate /me keeps the new identity', async () => {
+    let meCalls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input instanceof Request ? input.url : input);
+        if (url.includes('/auth/v1/me') && ++meCalls === 1) {
+          // A sign-in replaces the session but keeps its id. Its listener's
+          // /me (call 2) lands first; then the old reply comes back.
+          await setSession({
+            accessToken: 'at-A2',
+            refreshToken: 'rt-A2',
+            expiresAt: Date.now() + 15 * 60_000,
+            sessionId: 'sess-A',
+          });
+          await new Promise((r) => setTimeout(r, 40));
+          return jsonResp(200, meFor('sess-A', 'alice'));
+        }
+        if (url.includes('/auth/v1/me')) return jsonResp(200, meFor('sess-A', 'carol'));
+        return jsonResp(404, { error: 'not_stubbed' });
+      })
+    );
+
+    render(
+      <AuthProvider>
+        <StatusProbe />
+        <IdentityProbe />
+      </AuthProvider>
+    );
+
+    await waitFor(() => expect(screen.getByTestId('who').textContent).toBe('carol'));
+    await new Promise((r) => setTimeout(r, 100));
+    expect(screen.getByTestId('who').textContent).toBe('carol');
+    expect(meCalls).toBeGreaterThanOrEqual(2);
   });
 });

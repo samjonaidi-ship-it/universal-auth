@@ -52,6 +52,12 @@ Follow-ups from PR #31's review. No public signature changed.
   - `AuthProvider.tsx` v1.2.3 (round 2) — a refresh run by the hydrate's own
     `/me` also moves the generation; the reply still applies when the
     current session is the one it names.
+  - `AuthProvider.tsx` v1.2.4 / `token-manager.ts` v1.5.3 (round 3) — the
+    hydrate's `/me` check is rewritten from a case table. A new
+    `getSessionEpoch()` counts `setSession()` and `clearSession()` calls; any
+    sign-in or sign-out during `/me` drops the reply, even a sign-in that
+    keeps the same session id. Before, that same-id sign-in let the old reply
+    overwrite the new session's identity.
 
 ## [1.1.0-rc.22] — 2026-10-14 — cookie-only sessions and silent no-token refresh
 

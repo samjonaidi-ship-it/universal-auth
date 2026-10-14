@@ -1,4 +1,8 @@
-// @samjonaidi-ship-it/universal-auth | src/react/AuthProvider.tsx | v1.2.3 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/AuthProvider.tsx | v1.2.4 | 2026-10-14 | BB
+// v1.2.4 (Devin round 3, PR #34): hydrate's /me check is rewritten from a
+//   case table. Any sign-in or sign-out during /me drops the reply, even one
+//   that keeps the same session id (getSessionEpoch). The request's own
+//   refresh still applies when it adopted the id the reply names.
 // v1.2.3 (Devin round 2, PR #34): a refresh run by hydrate's own /me moves
 //   the generation too. The reply still applies when the session now current
 //   is the one it names; a sign-out (no id) or a sign-in (another id) drops it.
@@ -56,6 +60,7 @@ import {
   onSessionChange,
   hasLiveAccessToken,
   getAccessToken,
+  getSessionEpoch,
   getSessionScope,
   isTerminalRefreshError,
   isRefreshClearCurrent,
@@ -256,6 +261,7 @@ export function AuthProvider({
       // The client sends `credentials: 'include'`, so the cookie travels.
       try {
         const scopeAtRequest = getSessionScope();
+        const epochAtRequest = getSessionEpoch();
         const { data } = await get<Session>('/auth/v1/me');
         if (cancelled) return;
         // v1.2.2 (Devin, PR #34): a sign-in or sign-out during /me owns the
@@ -263,6 +269,15 @@ export function AuthProvider({
         // noted, minted or applied (scopeAtMint below would read the new scope).
         // v1.2.3: the request's own token refresh can adopt the reply's session
         // id and move the generation; that reply is still about this session.
+        // v1.2.4 case table (round 3: one rule, not more patches):
+        //   sign-out during /me (clearSession)          -> epoch moved -> drop
+        //   sign-in, other id (setSession)              -> epoch moved -> drop
+        //   sign-in, same id (setSession)               -> epoch moved -> drop
+        //   other tab signs out (broadcast, id null)    -> scope moved, id differs -> drop
+        //   own refresh adopts the reply's id           -> epoch same, id matches -> apply
+        //   nothing changed                             -> scope current -> apply
+        //   mint moves the scope                        -> scopeAtMint check below
+        if (getSessionEpoch() !== epochAtRequest) return;
         const replyId = data.session_meta?.session_id;
         const replyIsCurrent =
           typeof replyId === 'string' && replyId.length > 0 && getSessionScope().sessionId === replyId;

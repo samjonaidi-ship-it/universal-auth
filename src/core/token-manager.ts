@@ -1,4 +1,7 @@
-// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.5.2 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.5.3 | 2026-10-14 | BB
+// v1.5.3 (Devin round 3, PR #34): getSessionEpoch() counts setSession() and
+//   clearSession() calls. AuthProvider's hydrate uses it to tell its own
+//   token refresh apart from a sign-in or sign-out during /me.
 // v1.5.2 (Devin, PR #34): setSession() also stands down when its access token
 //   is no longer in memory (a server-wins /me dropped it, or a refresh
 //   replaced it). Before, the install notified after a cookie note dropped
@@ -967,6 +970,17 @@ export async function clearSessionIfCurrent(
  */
 export function isRefreshClearCurrent(): boolean {
   return refreshClearGeneration !== null && refreshClearGeneration === generation;
+}
+
+/**
+ * v1.5.3 (internal): a count of setSession() and clearSession() calls. It
+ * moves on every sign-in or sign-out, including a sign-in that keeps the same
+ * session id, and never on a token refresh or a cookie note. AuthProvider
+ * compares it across /me so a reply that a sign-in or sign-out overtook is
+ * dropped, while its own refresh's id adoption is not.
+ */
+export function getSessionEpoch(): number {
+  return installCount + clearCount;
 }
 
 /**
