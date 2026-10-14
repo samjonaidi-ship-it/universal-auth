@@ -8,6 +8,30 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
 
 > **Note on v1.1.0-rc.3 (2026-05-06):** rc.3 landed on `main` but failed CI on 3 lint errors before it could be tagged or published. v1.1.0-rc.4 is the same code with those 3 errors resolved + coverage threshold reconciled with measured coverage. Public consumer path for the v1.1 line is rc.1 → rc.4 (rc.2 and rc.3 were never published).
 
+## [1.1.0-rc.25] — 2026-10-14 — cross-tab sign-out keeps a newer sign-in
+
+### Fixed
+
+- `token-manager.ts` v1.6.5 (Devin on CalExp5 #909): a sign-out in tab A no
+  longer deletes the refresh token of a sign-in tab B made after it. B's
+  sign-in could take the store lock first; A's queued wipe then deleted B's
+  token. Now `setSession()` removes the locally-revoked marker inside the
+  store lock, and the `clearSession()` wipe re-reads the marker under the
+  lock and wipes only while it still holds its own value. When a sign-in
+  removed it, the wipe keeps the store and does not broadcast
+  `session_cleared` (other tabs adopted that sign-in).
+- `token-manager.ts` v1.6.6 (Devin round 1, PR #36): with localStorage blocked,
+  the marker lives only in the signing-out tab. The wipe then keeps the stored
+  row only when it changed AND a session_updated arrived for a different
+  session; a rotation of the signed-out session still wipes (fail closed).
+  A cold tab opens its BroadcastChannel when it signs out, and adopts a
+  sign-in it ignored once its sign-out stands down, never after the wipe
+  timeout has already reported the sign-out.
+- `token-manager.ts` v1.6.7 (Devin round 2, PR #36): each pending sign-out
+  keeps its own record, so two overlapping sign-outs with localStorage blocked
+  still keep another tab's newer sign-in. A sign-out whose tab already adopted
+  that sign-in reports no clear and leaves its session-event stream running.
+
 ## [1.1.0-rc.24] — 2026-10-14 — session-scope debt (issue #33 items 2–6)
 
 Item 1 (keep the old refresh token on a server-wins cookie session) was
