@@ -1,4 +1,18 @@
-// @samjonaidi-ship-it/universal-auth | src/core/session-events.ts | v0.3.1 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/session-events.ts | v0.4.0 | 2026-10-14 | BB
+// v0.4.0 (rc.24, issue #33 items 5 + 6):
+//   - The revoke target follows the CT BFF contract
+//     (bff/services/session-revoke-notify.js v1.2.0): scope 'identity' revokes
+//     every session; otherwise only the sessions named in session_id and
+//     session_ids. Before, session_ids was ignored, so a family revoke that
+//     listed this session under session_ids was read as stale.
+//   - A session with no local id yet (cookie-only, /me not back) no longer
+//     fails closed on a revoke that names sessions. The SDK asks /auth/v1/me
+//     which session this browser holds and clears only if it is named. If /me
+//     fails, it still fails closed.
+//   - The emitted event carries an allowlist of fields only: reason,
+//     session_id, generation, revoke_scope, stale, wipe_failed. A server
+//     reason passes only as a short [a-z0-9_.-] token; other server keys
+//     (identity_id, session_ids, anything new) are dropped.
 // v0.3.1 (pre-push review, round 2): a revoke naming a session_id applies when
 //   the local session has no id yet. A server `stale` / `wipe_failed` key is
 //   dropped; the SDK sets those flags itself.
@@ -41,9 +55,10 @@
 // no Last-Event-ID; the server falls through to live stream + 5-min ring
 // buffer replay (§4.4).
 
-import { getClientConfig } from './client.js';
+import { get, getClientConfig } from './client.js';
 import { emit } from './event-reporter.js';
-import { clearSessionIfCurrent, getSessionScope } from './token-manager.js';
+import { clearSessionIfCurrent, getSessionEpoch, getSessionScope } from './token-manager.js';
+import type { Session } from '../types/api.js';
 import { refreshEntitlements } from './entitlements.js';
 
 // ── Constants ─────────────────────────────────────────────────────────────
@@ -207,44 +222,111 @@ function openEventSource(apiBaseUrl: string): void {
   });
 }
 
+type RevokeScope = 'session' | 'family' | 'identity';
+
+interface RevokeTarget {
+  /** True when the revoke applies to every session of the identity. */
+  all: boolean;
+  /** The sessions the revoke names (session_id plus session_ids). */
+  ids: Set<string>;
+  scope: RevokeScope | null;
+}
+
+const MAX_ID_LEN = 256;
+const SERVER_REASON_RE = /^[a-z0-9_.-]{1,64}$/;
+
+function isSessionId(v: unknown): v is string {
+  return typeof v === 'string' && v.length > 0 && v.length <= MAX_ID_LEN;
+}
+
+/**
+ * v0.4.0: read who the revoke is for. 'identity' means all sessions. Any
+ * other scope means only the named ones. A payload that names nobody applies
+ * to everyone (fail closed), as before.
+ */
+function parseRevokeTarget(payload: Record<string, unknown>): RevokeTarget {
+  const raw = payload.scope;
+  const scope: RevokeScope | null =
+    raw === 'session' || raw === 'family' || raw === 'identity' ? raw : null;
+  const ids = new Set<string>();
+  if (isSessionId(payload.session_id)) ids.add(payload.session_id);
+  if (Array.isArray(payload.session_ids)) {
+    for (const v of payload.session_ids) if (isSessionId(v)) ids.add(v);
+  }
+  return { all: scope === 'identity' || ids.size === 0, ids, scope };
+}
+
+/**
+ * v0.4.0: no local session id yet. Ask the server which session this
+ * browser holds. Returns 'clear', 'stale', or 'live' (stale, and a session is
+ * still live, so its stream must reopen).
+ */
+async function resolveUnknownSession(
+  target: RevokeTarget,
+  epochAtArrival: number
+): Promise<'clear' | 'stale' | 'live'> {
+  let heldId: unknown;
+  try {
+    const { data } = await get<Session>('/auth/v1/me');
+    heldId = data?.session_meta?.session_id;
+  } catch {
+    // /me failed (revoked, expired, offline): we cannot rule this session
+    // out, so fail closed as before.
+    return getSessionEpoch() === epochAtArrival ? 'clear' : 'stale';
+  }
+  // A sign-in or sign-out during /me owns the session now.
+  if (getSessionEpoch() !== epochAtArrival) return 'stale';
+  if (!isSessionId(heldId)) return 'clear';
+  return target.ids.has(heldId) ? 'clear' : 'live';
+}
+
 async function revokeAndReport(
   payload: Record<string, unknown>,
   scope: ReturnType<typeof getSessionScope>
 ): Promise<void> {
   // v0.3.0: the server fans a revoke out to every stream of the identity
-  // (SSE_DESIGN §6.3). A payload that names another session is about that
-  // session, not this one.
-  // v0.3.1: a session with no local id yet (cookie-only, /me not back) cannot
-  // be ruled out, so the revoke applies to it.
-  const named = payload.session_id;
-  const otherSession =
-    typeof named === 'string' &&
-    named.length > 0 &&
-    scope.sessionId !== null &&
-    named !== scope.sessionId;
-  // The SDK sets these two flags itself; a server value must not mislabel them.
-  const { stale: _stale, wipe_failed: _wipeFailed, ...serverFields } = payload;
+  // (SSE_DESIGN §6.3). A payload that names other sessions is about them.
+  // v0.4.0: the named set is session_id plus session_ids; 'identity' is all.
+  const target = parseRevokeTarget(payload);
+  const epochAtArrival = getSessionEpoch();
+  let decision: 'clear' | 'stale' | 'live';
+  if (target.all) decision = 'clear';
+  else if (scope.sessionId !== null) decision = target.ids.has(scope.sessionId) ? 'clear' : 'stale';
+  else decision = await resolveUnknownSession(target, epochAtArrival);
+
   // A rejected wipe has still cleared memory and told tabs and listeners, so
   // it counts as cleared; the event says the wipe failed.
   let cleared = false;
   let wipeFailed = false;
-  if (!otherSession) {
+  if (decision === 'clear') {
+    // After a deferred /me the scope may have moved to the id /me named
+    // (AuthProvider notes it); that move is not a reason to keep the session.
+    const now = getSessionScope();
+    const clearScope =
+      scope.sessionId === null && (now.sessionId === null || target.all || target.ids.has(now.sessionId))
+        ? now
+        : scope;
     try {
-      cleared = await clearSessionIfCurrent(scope);
+      cleared = await clearSessionIfCurrent(clearScope);
     } catch {
       cleared = true;
       wipeFailed = true;
     }
   }
+  // v0.4.0 (issue #33 item 6): an allowlist, not a spread of the payload.
+  const serverReason = payload.reason;
+  const named = payload.session_id;
   void emit('session.revoked', {
-    reason: 'server',
-    ...serverFields,
+    reason: typeof serverReason === 'string' && SERVER_REASON_RE.test(serverReason) ? serverReason : 'server',
+    session_id: isSessionId(named) ? named : scope.sessionId,
+    generation: scope.generation,
+    ...(target.scope !== null ? { revoke_scope: target.scope } : {}),
     ...(cleared ? {} : { stale: true }),
     ...(wipeFailed ? { wipe_failed: true } : {}),
   });
   // The stream was closed on arrival. A stale revoke leaves a live session
   // behind, and that session still needs its revoke stream.
-  if (!cleared && getSessionScope().sessionId !== null) startSessionEvents();
+  if (!cleared && (getSessionScope().sessionId !== null || decision === 'live')) startSessionEvents();
 }
 
 function parseEventData(raw: unknown): Record<string, unknown> {

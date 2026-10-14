@@ -8,6 +8,74 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
 
 > **Note on v1.1.0-rc.3 (2026-05-06):** rc.3 landed on `main` but failed CI on 3 lint errors before it could be tagged or published. v1.1.0-rc.4 is the same code with those 3 errors resolved + coverage threshold reconciled with measured coverage. Public consumer path for the v1.1 line is rc.1 → rc.4 (rc.2 and rc.3 were never published).
 
+## [1.1.0-rc.24] — 2026-10-14 — session-scope debt (issue #33 items 2–6)
+
+Item 1 (keep the old refresh token on a server-wins cookie session) was
+decided on the issue: no code change.
+
+### Added
+
+- `SessionWipeTimeout` (code `SESSION_WIPE_TIMEOUT`), exported from the root.
+
+### Fixed
+
+- `token-manager.ts` v1.6.0 — item 4: the sign-out IndexedDB wipe is bounded
+  (5 s). A hung wipe makes `clearSession()` reject with `SessionWipeTimeout`;
+  memory is cleared and tabs and listeners are told first. Item 2: a failed or
+  timed-out wipe leaves a locally-revoked marker (localStorage
+  `bb-universal-auth-revoked`). While it is set, a refresh never uses the
+  surviving refresh token: it retries the wipe and reports
+  `no_refresh_token`. The marker holds its writer's own value: it is written
+  when the wipe starts and removed by that wipe's success (also a late one),
+  a good retry, or a sign-in in any tab. A late timeout in one tab cannot
+  re-mark a sign-in that another tab made meanwhile.
+- `AuthProvider.tsx` v1.3.0 — item 3: when a live token exists and
+  `initialSession` names another session, the provider asks `/auth/v1/me` and
+  shows the live identity. If that call fails, the provider shows no identity
+  (status `'loading'`) rather than the other session's. A sign-in or sign-out
+  during that call wins.
+- `session-events.ts` v0.4.0 — item 5: a revoke names `session_id` plus
+  `session_ids`; scope `identity` clears any session. With no local session id,
+  the SDK asks `/auth/v1/me` which session it holds before it clears (a failed
+  call still fails closed). Item 6: the `session.revoked` event carries only
+  `reason`, `session_id`, `generation`, `revoke_scope`, `stale`,
+  `wipe_failed`; an unsafe server reason becomes `'server'`.
+- Devin, PR #35: every refresh-token store and every wipe runs under one
+  origin-wide `navigator.locks` lock (`bb-auth-session-store`), in request
+  order. A late wipe in one tab can no longer delete the refresh token another
+  tab stored meanwhile. A retry wipe re-reads the marker under the lock and
+  stands down when a sign-in removed it.
+- Devin, PR #35 (SEC): a sign-out during a refresh (its own tab or another
+  tab's `session_cleared`) makes the refresh discard its result. It adopts,
+  stores and broadcasts nothing, so it cannot restore a signed-out session.
+- Devin round 2, PR #35 (SEC): a refresh adopts its access token only after
+  its store, in the same step as the sign-out check, so a concurrent
+  `getAccessToken()` never gets a token a sign-out discarded.
+- Devin round 2, PR #35: the rotation store, the `CNF_JKT_MISMATCH` clear and
+  the terminal-error clear write only while the refresh still owns the
+  session: under the store lock they re-check for a sign-out, a sign-in in
+  this tab, and that the stored refresh token is still the one used. Another
+  tab's sign-in meanwhile is no longer deleted or overwritten. A refresh that
+  lost its session returns null (or the new session's live token).
+- Devin round 3, PR #35: a refresh decides whether it still owns the stored
+  refresh token by the row's identity (its random IV, new storage
+  `getRefreshTokenRowId()`), read with the token under the store lock. Round 2
+  re-read the token instead, and that read deletes an expired row: a token
+  that expired while its refresh was on the wire made a good rotation look
+  lost, so the rotation was discarded and the user signed out. The success,
+  `CNF_JKT_MISMATCH` and terminal-error paths now share one case table
+  (signed out / sign-in / row gone / row same), documented in the
+  `token-manager.ts` v1.6.4 header.
+
+### Known limits
+
+- The marker is per origin: every tab of the app fails closed until a sign-in
+  or a good wipe.
+- `setSession()` still waits, unbounded, for a hung earlier wipe (unchanged).
+  Across tabs, a wipe that never settles now also holds the store lock until
+  its tab closes, so another tab's sign-in waits for it too.
+- Without `navigator.locks` the stores and wipes are ordered only inside a tab.
+
 ## [1.1.0-rc.23] — 2026-10-14 — session-scope race fixes (issue #32)
 
 Follow-ups from PR #31's review. No public signature changed.

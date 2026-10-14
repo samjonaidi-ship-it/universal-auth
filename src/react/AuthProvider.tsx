@@ -1,4 +1,10 @@
-// @samjonaidi-ship-it/universal-auth | src/react/AuthProvider.tsx | v1.2.4 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/AuthProvider.tsx | v1.3.1 | 2026-10-14 | BB
+// v1.3.1 (rc.24, pre-push review P1): a failed corrective /me drops the SSR
+// identity (status 'loading') instead of keeping another session's identity.
+// v1.3.0 (rc.24, issue #33 item 3): an initialSession whose id is not the
+//   live token's session no longer shows the SSR identity. The effect runs
+//   one /me for the live session and applies it, unless a sign-in or
+//   sign-out moved the epoch meanwhile.
 // v1.2.4 (Devin round 3, PR #34): hydrate's /me check is rewritten from a
 //   case table. Any sign-in or sign-out during /me drops the reply, even one
 //   that keeps the same session id (getSessionEpoch). The request's own
@@ -240,7 +246,37 @@ export function AuthProvider({
       // relabel it with its own id, and there is nothing to mint (issue #32).
       if (hasLiveAccessToken()) {
         setTokenState('live');
-        return;
+        // v1.3.0 (issue #33 item 3): the SSR identity belongs to another
+        // session (or an unknown one). Fetch /me once for the live session.
+        const liveId = getSessionScope().sessionId;
+        if (typeof liveId === 'string' && liveId.length > 0 && liveId === initialSessionId) return;
+        let cancelledMe = false;
+        const epochAtMe = getSessionEpoch();
+        void get<Session>('/auth/v1/me')
+          .then(({ data }) => {
+            // A sign-in or sign-out during /me owns the session now; the
+            // session listener applies its own /me.
+            if (cancelledMe || getSessionEpoch() !== epochAtMe || !hasLiveAccessToken()) return;
+            applySession(data);
+            void refreshEntitlements();
+          })
+          .catch(() => {
+            // v1.3.1 (pre-push review P1): the SSR identity is another
+            // session's, so never keep it beside this session's token. Show no
+            // identity ('loading'); the session listener applies /me on the
+            // next refresh. A sign-in or sign-out meanwhile owns the state.
+            if (cancelledMe || getSessionEpoch() !== epochAtMe || !hasLiveAccessToken()) return;
+            setIdentity(null);
+            setPersonas([]);
+            setPrimaryPersona(null);
+            setAgent(null);
+            setFeatures([]);
+            setAppAccess([]);
+            setStatus('loading');
+          });
+        return () => {
+          cancelledMe = true;
+        };
       }
       // No /me round-trip: scope the SSR session from its own metadata.
       noteCookieSession(initialSessionId);

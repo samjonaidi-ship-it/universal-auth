@@ -1,4 +1,7 @@
-// @samjonaidi-ship-it/universal-auth | src/core/storage.ts | v1.0.4 | 2026-09-06 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/storage.ts | v1.0.5 | 2026-10-14 | BB
+// v1.0.5 (universal-auth rc.24, Devin round 3, PR #35): getRefreshTokenRowId()
+//   names the stored row (its random IV) with no expiry check and no side
+//   effect, so a refresh can tell "my row" from "another session's row".
 // Encrypted IndexedDB storage — refresh token + event queue + offline queue backing store.
 //
 // Per spec:
@@ -358,6 +361,22 @@ function inferDecryptFailureReason(
   const msg = err instanceof Error ? err.message : '';
   if (/operation-specific reason|cipher|auth/i.test(msg)) return 'aes_gcm_auth_tag_failed';
   return 'aes_gcm_auth_tag_failed';
+}
+
+/**
+ * v1.0.5: an identity for the stored refresh-token row, or null when there is
+ * none. Every store encrypts under a fresh random IV, so the IV names one
+ * write. No expiry check, no decrypt, no delete: an expired row is still the
+ * same row (token-manager performRefresh uses this under its store lock).
+ */
+export async function getRefreshTokenRowId(): Promise<string | null> {
+  await ensureLegacyWipe();
+  const db = await getDb();
+  const row = (await db.get(STORE_REFRESH_TOKENS, REFRESH_KEY_ROW_KEY)) as
+    | RefreshTokenRow
+    | undefined;
+  if (!row || row.iv === undefined) return null;
+  return Array.from(row.iv, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 export async function clearRefreshToken(): Promise<void> {
