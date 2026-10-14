@@ -1,4 +1,6 @@
-// @samjonaidi-ship-it/universal-auth | src/react/AuthProvider.tsx | v1.3.0 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/AuthProvider.tsx | v1.3.1 | 2026-10-14 | BB
+// v1.3.1 (rc.24, pre-push review P1): a failed corrective /me drops the SSR
+// identity (status 'loading') instead of keeping another session's identity.
 // v1.3.0 (rc.24, issue #33 item 3): an initialSession whose id is not the
 //   live token's session no longer shows the SSR identity. The effect runs
 //   one /me for the live session and applies it, unless a sign-in or
@@ -259,7 +261,18 @@ export function AuthProvider({
             void refreshEntitlements();
           })
           .catch(() => {
-            // Keep the SSR snapshot; session-watcher handles revocations.
+            // v1.3.1 (pre-push review P1): the SSR identity is another
+            // session's, so never keep it beside this session's token. Show no
+            // identity ('loading'); the session listener applies /me on the
+            // next refresh. A sign-in or sign-out meanwhile owns the state.
+            if (cancelledMe || getSessionEpoch() !== epochAtMe || !hasLiveAccessToken()) return;
+            setIdentity(null);
+            setPersonas([]);
+            setPrimaryPersona(null);
+            setAgent(null);
+            setFeatures([]);
+            setAppAccess([]);
+            setStatus('loading');
           });
         return () => {
           cancelledMe = true;

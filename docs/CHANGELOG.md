@@ -22,13 +22,18 @@ decided on the issue: no code change.
 - `token-manager.ts` v1.6.0 — item 4: the sign-out IndexedDB wipe is bounded
   (5 s). A hung wipe makes `clearSession()` reject with `SessionWipeTimeout`;
   memory is cleared and tabs and listeners are told first. Item 2: a failed or
-  timed-out wipe sets a locally-revoked marker (localStorage
+  timed-out wipe leaves a locally-revoked marker (localStorage
   `bb-universal-auth-revoked`). While it is set, a refresh never uses the
   surviving refresh token: it retries the wipe and reports
-  `no_refresh_token`. A good retry or a sign-in clears the marker.
+  `no_refresh_token`. The marker holds its writer's own value: it is written
+  when the wipe starts and removed by that wipe's success (also a late one),
+  a good retry, or a sign-in in any tab. A late timeout in one tab cannot
+  re-mark a sign-in that another tab made meanwhile.
 - `AuthProvider.tsx` v1.3.0 — item 3: when a live token exists and
   `initialSession` names another session, the provider asks `/auth/v1/me` and
-  shows the live identity. A sign-in or sign-out during that call wins.
+  shows the live identity. If that call fails, the provider shows no identity
+  (status `'loading'`) rather than the other session's. A sign-in or sign-out
+  during that call wins.
 - `session-events.ts` v0.4.0 — item 5: a revoke names `session_id` plus
   `session_ids`; scope `identity` clears any session. With no local session id,
   the SDK asks `/auth/v1/me` which session it holds before it clears (a failed

@@ -1,4 +1,7 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/core/token-manager-wipe-bound.test.ts | v1.0.0 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/token-manager-wipe-bound.test.ts | v1.1.0 | 2026-10-14 | BB
+// v1.1.0 (token-manager v1.6.1): the marker has an owner. A sign-in in another
+// tab during a hung wipe is not re-marked by the late timeout; a wipe that
+// succeeds after its bound removes its own marker, never a newer one.
 // rc.24 (token-manager v1.6.0, issue #33):
 //   item 4  a hung IndexedDB wipe no longer hangs clearSession(): it rejects
 //           with SessionWipeTimeout after the bound, listeners still hear it;
@@ -71,7 +74,7 @@ describe('token-manager — wipe bound and locally-revoked marker (issue #33)', 
     await expect(clearSession()).rejects.toBeInstanceOf(SessionWipeTimeout);
     expect(Date.now() - started).toBeLessThan(1_000);
     expect(heard).toHaveBeenCalled();
-    expect(localStorage.getItem(MARKER)).toBe('1');
+    expect(localStorage.getItem(MARKER)).not.toBeNull();
     release();
   });
 
@@ -113,14 +116,14 @@ describe('token-manager — wipe bound and locally-revoked marker (issue #33)', 
 
     expect(await getAccessToken()).toBeNull();
     expect(refresh).not.toHaveBeenCalled();
-    expect(localStorage.getItem(MARKER)).toBe('1');
+    expect(localStorage.getItem(MARKER)).not.toBeNull();
   });
 
   it('item 2: a sign-in clears the marker and its token is used', async () => {
     await setSession(tokens('A'));
     const { release } = hangNextWipe();
     await expect(clearSession()).rejects.toBeInstanceOf(SessionWipeTimeout);
-    expect(localStorage.getItem(MARKER)).toBe('1');
+    expect(localStorage.getItem(MARKER)).not.toBeNull();
     release(true);
 
     await setSession(tokens('B'));
@@ -134,5 +137,41 @@ describe('token-manager — wipe bound and locally-revoked marker (issue #33)', 
     await setSession(tokens('A'));
     await clearSession();
     expect(localStorage.getItem(MARKER)).toBeNull();
+  });
+
+  it('another tab signs in during a hung wipe: the late timeout does not re-mark the device', async () => {
+    await setSession(tokens('A'));
+    const { release } = hangNextWipe();
+    const clearing = clearSession();
+    // The marker is written when the wipe starts.
+    expect(localStorage.getItem(MARKER)).not.toBeNull();
+    // Tab B signs in: its setSession removes the shared marker.
+    localStorage.removeItem(MARKER);
+
+    await expect(clearing).rejects.toBeInstanceOf(SessionWipeTimeout);
+    expect(localStorage.getItem(MARKER)).toBeNull();
+    release();
+  });
+
+  it('a wipe that succeeds after its bound removes its own marker', async () => {
+    await setSession(tokens('A'));
+    const { release } = hangNextWipe();
+    await expect(clearSession()).rejects.toBeInstanceOf(SessionWipeTimeout);
+    expect(localStorage.getItem(MARKER)).not.toBeNull();
+
+    release(); // the wipe succeeds, late
+    await vi.waitFor(() => expect(localStorage.getItem(MARKER)).toBeNull());
+  });
+
+  it('an older wipe that succeeds late keeps a newer sign-out marker', async () => {
+    await setSession(tokens('A'));
+    const { release } = hangNextWipe();
+    await expect(clearSession()).rejects.toBeInstanceOf(SessionWipeTimeout);
+    // Another tab starts its own sign-out and writes its own marker.
+    localStorage.setItem(MARKER, 'other-tab-sign-out');
+
+    release();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(localStorage.getItem(MARKER)).toBe('other-tab-sign-out');
   });
 });

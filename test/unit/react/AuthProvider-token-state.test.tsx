@@ -1,4 +1,5 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/react/AuthProvider-token-state.test.tsx | v1.8.0 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/react/AuthProvider-token-state.test.tsx | v1.8.1 | 2026-10-14 | BB
+// v1.8.1 (AuthProvider v1.3.1): a failed corrective /me drops the SSR identity.
 // v1.8.0 (AuthProvider v1.3.0, issue #33 item 3): an initialSession for
 //   another session than the live token's runs one /me and shows the live
 //   identity; the same session id runs no /me.
@@ -561,6 +562,35 @@ describe('AuthProvider — tokenState (rc.22)', () => {
     await waitFor(() => expect(screen.getByTestId('who').textContent).toBe('bob'));
     expect(screen.getByTestId('token').textContent).toBe('live');
     expect(getSessionScope()).toMatchObject({ sessionId: 'sess-B', source: 'token' });
+  });
+
+  it('issue #33 item 3: a failed corrective /me drops the other session identity', async () => {
+    await setSession({
+      accessToken: 'at-B',
+      refreshToken: 'rt-B',
+      expiresAt: Date.now() + 15 * 60_000,
+      sessionId: 'sess-B',
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input instanceof Request ? input.url : input);
+        if (url.includes('/auth/v1/me')) return jsonResp(403, { code: 'FORBIDDEN', message: 'no' });
+        return jsonResp(404, { error: 'not_stubbed' });
+      })
+    );
+
+    render(
+      <AuthProvider initialSession={meFor('sess-A', 'alice')}>
+        <StatusProbe />
+        <IdentityProbe />
+      </AuthProvider>
+    );
+
+    // alice is sess-A's identity; requests carry sess-B's token. Never both.
+    await waitFor(() => expect(screen.getByTestId('who').textContent).toBe('nobody'));
+    expect(screen.getByTestId('status').textContent).toBe('loading');
+    expect(screen.getByTestId('token').textContent).toBe('live');
   });
 
   it('issue #33 item 3: an initialSession for the live session runs no /me', async () => {

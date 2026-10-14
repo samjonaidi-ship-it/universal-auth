@@ -1,4 +1,8 @@
-// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.6.0 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.6.1 | 2026-10-14 | BB
+// v1.6.1 (rc.24, pre-push review): the locally-revoked marker carries its
+// writer's value, is written when the wipe starts, and is removed only by that
+// wipe's own success (also a late one). A late timeout in one tab can no longer
+// re-mark a sign-in another tab made meanwhile.
 // v1.6.0 (rc.24, issue #33 items 2 + 4):
 //   - The IndexedDB wipe of a clear is bounded (WIPE_TIMEOUT_MS). A wipe that
 //     does not settle in time fails the clear with SessionWipeTimeout, so a
@@ -225,8 +229,9 @@ let refreshClearGeneration: number | null = null;
 const DEFAULT_WIPE_TIMEOUT_MS = 5_000;
 let wipeTimeoutMs = DEFAULT_WIPE_TIMEOUT_MS;
 const REVOKED_MARKER_KEY = 'bb-universal-auth-revoked';
-// Memory copy of the marker, for runtimes where localStorage throws.
-let locallyRevoked = false;
+// v1.6.1: the marker holds its writer's own value, so only that writer can
+// remove it on success. Memory copy only where localStorage throws.
+let memoryRevokedMarker: string | null = null;
 
 /** Race a wipe against WIPE_TIMEOUT_MS; the wipe itself keeps running. */
 function withWipeTimeout(wipe: Promise<void>): Promise<void> {
@@ -240,31 +245,55 @@ function withWipeTimeout(wipe: Promise<void>): Promise<void> {
   return Promise.race([wipe, timeout]).finally(() => clearTimeout(timer));
 }
 
-function setRevokedMarker(): void {
-  locallyRevoked = true;
+function newRevokedMarkerValue(): string {
   try {
-    globalThis.localStorage?.setItem(REVOKED_MARKER_KEY, '1');
+    return globalThis.crypto.randomUUID();
   } catch {
-    // Storage blocked: the memory flag still covers this page.
+    return `${Date.now()}-${Math.random()}`;
   }
 }
 
-function clearRevokedMarker(): void {
-  locallyRevoked = false;
+function readRevokedMarker(): string | null {
+  let stored: string | null = null;
   try {
-    globalThis.localStorage?.removeItem(REVOKED_MARKER_KEY);
+    stored = globalThis.localStorage?.getItem(REVOKED_MARKER_KEY) ?? null;
+  } catch {
+    // Storage blocked: fall back to the memory copy.
+  }
+  return stored ?? memoryRevokedMarker;
+}
+
+function setRevokedMarker(value: string): void {
+  try {
+    const ls = globalThis.localStorage;
+    if (ls) {
+      ls.setItem(REVOKED_MARKER_KEY, value);
+      return;
+    }
+  } catch {
+    // Storage blocked: the memory copy still covers this page.
+  }
+  memoryRevokedMarker = value;
+}
+
+/**
+ * Remove the marker. With `owner`, only when it still holds that value: a
+ * newer sign-out's marker is not removed by an older wipe that settles late.
+ */
+function clearRevokedMarker(owner?: string | null): void {
+  if (owner === undefined || memoryRevokedMarker === owner) memoryRevokedMarker = null;
+  try {
+    const ls = globalThis.localStorage;
+    if (ls && (owner === undefined || ls.getItem(REVOKED_MARKER_KEY) === owner)) {
+      ls.removeItem(REVOKED_MARKER_KEY);
+    }
   } catch {
     // ignore
   }
 }
 
 function isLocallyRevoked(): boolean {
-  if (locallyRevoked) return true;
-  try {
-    return globalThis.localStorage?.getItem(REVOKED_MARKER_KEY) === '1';
-  } catch {
-    return false;
-  }
+  return readRevokedMarker() !== null;
 }
 
 /**
@@ -287,6 +316,7 @@ function trackWipe(wipe: Promise<void>): void {
  */
 async function retryLocallyRevokedWipe(): Promise<void> {
   const myInstall = installCount;
+  const owner = readRevokedMarker();
   const previousWipe = pendingClear;
   const installBefore = pendingInstall;
   const wipe = (async () => {
@@ -297,9 +327,15 @@ async function retryLocallyRevokedWipe(): Promise<void> {
     if (installCount === myInstall) await deleteKeypair();
   })();
   trackWipe(wipe);
+  // A retry that settles after its bound still removes the marker it read.
+  void wipe.then(
+    () => {
+      if (installCount === myInstall) clearRevokedMarker(owner);
+    },
+    () => {}
+  );
   try {
     await withWipeTimeout(wipe);
-    if (installCount === myInstall) clearRevokedMarker();
   } catch {
     // The marker stays; the next refresh retries.
   }
@@ -577,6 +613,12 @@ async function clearSessionAndReport(): Promise<boolean> {
   // v1.5.0: an install whose refresh-token store is still running finishes
   // it first; otherwise the store could land after the wipe and survive the
   // sign-out.
+  // v1.6.1 (pre-push review): the marker is written before the wipe starts,
+  // with this clear's own value, and removed only by this wipe's success
+  // (even one that settles after the bound). A late timeout no longer writes
+  // a marker over another tab's newer sign-in, which removed it.
+  const marker = newRevokedMarkerValue();
+  setRevokedMarker(marker);
   const previousWipe = pendingClear;
   const installBefore = pendingInstall;
   const wipe = (async () => {
@@ -585,6 +627,10 @@ async function clearSessionAndReport(): Promise<boolean> {
     await clearAllSessionState();
     if (installCount === myInstall) await deleteKeypair();
   })();
+  void wipe.then(
+    () => clearRevokedMarker(marker),
+    () => {}
+  );
   // v1.6.0: pendingClear tracks the wipe until it really settles, but this
   // clear waits at most WIPE_TIMEOUT_MS for it (issue #33 item 4).
   trackWipe(wipe);
@@ -598,9 +644,9 @@ async function clearSessionAndReport(): Promise<boolean> {
   }
   // A sign-in during the wipe owns the device now; it is not "cleared".
   if (installCount !== myInstall) return false;
-  // v1.6.0: a refresh token or keypair may have survived. The marker makes
-  // the next refresh retry the wipe instead of using them (issue #33 item 2).
-  if (wipeFailed) setRevokedMarker();
+  // v1.6.0: a refresh token or keypair may have survived. The marker (set
+  // above, still in place) makes the next refresh retry the wipe instead of
+  // using them (issue #33 item 2).
   // v1.5.0: memory is already cleared, so tabs and listeners hear about it
   // even when the IndexedDB wipe failed. The failure is re-thrown after.
   broadcast({ type: 'session_cleared' });
