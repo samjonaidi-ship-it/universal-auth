@@ -1,4 +1,12 @@
-// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.6.2 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.6.3 | 2026-10-14 | BB
+// v1.6.3 (rc.24, Devin round 2, PR #35): performRefresh() writes to the store
+//   only when the refresh still owns it. Under the store lock it re-checks:
+//   no sign-out, no setSession() in this tab, and the stored refresh token is
+//   still the one this refresh used (another tab's sign-in or sign-out
+//   replaces or removes it). This holds for the rotation store, the
+//   CNF_JKT_MISMATCH clear and the terminal-error clear. A refresh adopts
+//   its access token only after that check, in the same synchronous step, so
+//   a concurrent getAccessToken() never sees a token a sign-out discarded.
 // v1.6.2 (rc.24, Devin PR #35):
 //   - Every refresh-token store and every wipe runs under one origin-wide
 //     navigator.locks lock (STORE_LOCK_NAME), in request order. pendingClear
@@ -829,6 +837,8 @@ async function performRefresh(): Promise<string | null> {
     // the session (Devin, PR #35).
     const signOutsAtStart = signOutCount;
     const signedOutSince = (): boolean => signOutCount !== signOutsAtStart || isLocallyRevoked();
+    // v1.6.3: no sign-out and no setSession() in this tab since the start.
+    const stillMineHere = (): boolean => !signedOutSince() && installCount === installsAtStart;
 
     // v1.6.0: a sign-out whose wipe failed may have left a refresh token on
     // disk. Never refresh with it: retry the wipe, then report no token.
@@ -877,10 +887,18 @@ async function performRefresh(): Promise<string | null> {
 
       const verifyResult = await verifyAccessTokenJktBinding(result.access_token);
       if (verifyResult === 'mismatch') {
-        await runUnderStoreLock(clearRefreshToken);
-        state.accessToken = null;
-        state.accessExpiresAt = 0;
-        adoptSessionId(null, null);
+        // v1.6.3: clear only the session this refresh was for. A sign-in or
+        // sign-out (any tab) while the lock was awaited owns the store now.
+        const cleared = await runUnderStoreLock(async () => {
+          if (!stillMineHere() || (await getRefreshToken()) !== rt) return false;
+          await clearRefreshToken();
+          if (!stillMineHere()) return false;
+          state.accessToken = null;
+          state.accessExpiresAt = 0;
+          adoptSessionId(null, null);
+          return true;
+        });
+        if (!cleared) return signedOutSince() || !hasLiveAccessToken() ? null : state.accessToken;
         broadcast({ type: 'session_cleared' });
         notifyListeners();
         // rc.7 D7-fu(b): typed error class so consumers can
@@ -891,10 +909,6 @@ async function performRefresh(): Promise<string | null> {
           'refresh issued an access token bound to a different DPoP key',
         );
       }
-
-      state.accessToken = result.access_token;
-      state.accessExpiresAt = newExpiresAt;
-      adoptSessionId(result.session_id, 'token');
 
       // v1.0.1 (B7): use server-returned refresh_expires_at when present.
       // Legacy servers (pre-v1.0.1) won't return the field; fall back to
@@ -919,38 +933,35 @@ async function performRefresh(): Promise<string | null> {
         refreshExpiresAt = Date.now() + DEFAULT_REFRESH_TTL_MS;
       }
 
-      // v1.6.2: the store re-checks for a sign-out under the store lock, so
-      // a wipe that asked for the lock first is never undone by this store.
-      let storeSignedOut = false;
-      if (refreshExpiresAt !== null) {
-        const ttl = refreshExpiresAt;
-        await runUnderStoreLock(async () => {
-          if (signedOutSince()) {
-            storeSignedOut = true;
-            return;
-          }
+      // v1.6.3: store and adopt under the store lock, only while this refresh
+      // still owns the session (see header). The adoption is synchronous
+      // after the last await, so no sign-out can slip between check and
+      // adoption; a sign-out after it nulls state.accessToken itself.
+      const ttl = refreshExpiresAt;
+      const adopted = await runUnderStoreLock(async () => {
+        if (!stillMineHere()) return false;
+        if (ttl !== null) {
+          const stored = await getRefreshToken();
+          if (stored !== rt || !stillMineHere()) return false;
           if (result.refresh_token !== undefined) {
             // Rotated token — persist new ciphertext + new TTL.
             await storeRefreshToken(result.refresh_token, ttl);
           } else {
             // Server extended TTL without rotating — re-encrypt the existing
             // refresh token under the new expiry so subsequent reads see it.
-            const existing = await getRefreshToken();
-            if (existing !== null) {
-              await storeRefreshToken(existing, ttl);
-            }
+            await storeRefreshToken(stored, ttl);
           }
-        });
-      }
-      if (storeSignedOut || signedOutSince()) {
-        // Signed out while this refresh was adopting: undo the adoption
-        // quietly; the sign-out has already told tabs and listeners.
-        if (state.accessToken === result.access_token) {
-          state.accessToken = null;
-          state.accessExpiresAt = 0;
-          adoptSessionId(null, null);
+          if (!stillMineHere()) return false;
         }
-        return null;
+        state.accessToken = result.access_token;
+        state.accessExpiresAt = newExpiresAt;
+        adoptSessionId(result.session_id, 'token');
+        return true;
+      });
+      if (!adopted || state.accessToken !== result.access_token) {
+        // Signed out or superseded while this refresh ran: it restores
+        // nothing. The sign-out or sign-in has told tabs and listeners.
+        return signedOutSince() || !hasLiveAccessToken() ? null : state.accessToken;
       }
 
       broadcast({
@@ -1011,13 +1022,23 @@ async function performRefresh(): Promise<string | null> {
       // that has nothing to do with it — exactly the incident this guards
       // against: a stale session/refresh 401 must not evict the session that
       // superseded it.
-      const staleness = state.sessionId !== sessionIdAtStart;
+      // v1.6.3: a sign-out or a setSession() since the start is staleness too.
+      const staleness = state.sessionId !== sessionIdAtStart || !stillMineHere();
       if (isTerminalRefreshError(err)) {
-        if (!staleness) {
-          await runUnderStoreLock(clearRefreshToken);
-          state.accessToken = null;
-          state.accessExpiresAt = 0;
-          adoptSessionId(null, null);
+        // v1.6.3: the clear re-checks under the store lock, like the mismatch
+        // path: another tab's sign-in may have replaced the stored token.
+        const cleared =
+          !staleness &&
+          (await runUnderStoreLock(async () => {
+            if (!stillMineHere() || (await getRefreshToken()) !== rt) return false;
+            await clearRefreshToken();
+            if (!stillMineHere() || state.sessionId !== sessionIdAtStart) return false;
+            state.accessToken = null;
+            state.accessExpiresAt = 0;
+            adoptSessionId(null, null);
+            return true;
+          }));
+        if (cleared) {
           refreshClearGeneration = generation;
           broadcast({ type: 'session_cleared' });
           notifyListeners();

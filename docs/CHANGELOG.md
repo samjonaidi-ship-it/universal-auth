@@ -48,6 +48,15 @@ decided on the issue: no code change.
 - Devin, PR #35 (SEC): a sign-out during a refresh (its own tab or another
   tab's `session_cleared`) makes the refresh discard its result. It adopts,
   stores and broadcasts nothing, so it cannot restore a signed-out session.
+- Devin round 2, PR #35 (SEC): a refresh adopts its access token only after
+  its store, in the same step as the sign-out check, so a concurrent
+  `getAccessToken()` never gets a token a sign-out discarded.
+- Devin round 2, PR #35: the rotation store, the `CNF_JKT_MISMATCH` clear and
+  the terminal-error clear write only while the refresh still owns the
+  session: under the store lock they re-check for a sign-out, a sign-in in
+  this tab, and that the stored refresh token is still the one used. Another
+  tab's sign-in meanwhile is no longer deleted or overwritten. A refresh that
+  lost its session returns null (or the new session's live token).
 
 ### Known limits
 

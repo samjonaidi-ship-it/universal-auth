@@ -1,4 +1,8 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/core/token-manager-wipe-bound.test.ts | v1.2.0 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/token-manager-wipe-bound.test.ts | v1.3.0 | 2026-10-14 | BB
+// v1.3.0 (token-manager v1.6.3, Devin round 2, PR #35): a refresh hands out
+// its token only after its store; a DPoP mismatch or terminal error never
+// clears a session another tab signed in meanwhile; a sign-in in this tab
+// during the refresh call is not overwritten.
 // v1.2.0 (token-manager v1.6.2, Devin PR #35): stores and wipes share one
 // origin-wide lock, so a late wipe never deletes another tab's newer refresh
 // token, and a retry wipe stands down when a sign-in removed the marker; a
@@ -75,6 +79,12 @@ function otherTab<T>(work: () => Promise<T>): Promise<T> {
     locks: { request<R>(n: string, o: unknown, cb: () => Promise<R>): Promise<R> };
   }).locks;
   return locks.request('bb-auth-session-store', { mode: 'exclusive' }, work);
+}
+
+/** A JWT-like access token whose payload carries cnf.jkt (unsigned). */
+function jwtWithJkt(jkt: string): string {
+  const b64url = (v: string): string => btoa(v).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  return `${b64url('{"alg":"ES256","typ":"JWT"}')}.${b64url(JSON.stringify({ sub: 't', cnf: { jkt } }))}.sig`;
 }
 
 /** The next wipe hangs until release(); release(true) makes it fail. */
@@ -307,5 +317,109 @@ describe('token-manager — wipe bound and locally-revoked marker (issue #33)', 
 
     expect(await getAccessToken()).toBeNull();
     expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('Devin PR #35 r2: a refresh waiting on the store lock does not hand out its token', async () => {
+    installFakeLocks();
+    await setSession({ ...tokens('A'), expiresAt: Date.now() - 1 });
+    registerRefreshCallback(async () => ({
+      access_token: 'at-A2',
+      expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
+      session_id: 'A',
+      refresh_token: 'rt-A2',
+      refresh_expires_at: new Date(Date.now() + 60_000).toISOString(),
+    }));
+    let letGo!: () => void;
+    const gate = new Promise<void>((r) => (letGo = r));
+    const tabB = otherTab(() => gate); // another tab holds the store lock
+
+    const first = getAccessToken();
+    await new Promise((r) => setTimeout(r, 5)); // the refresh waits for the lock
+    const second = getAccessToken(); // a concurrent caller
+    const signOut = clearSession().catch(() => {}); // the user signs out
+    letGo();
+    await tabB;
+
+    expect(await second).toBeNull();
+    expect(await first).toBeNull();
+    await signOut;
+  });
+
+  it('Devin PR #35 r2: a DPoP mismatch does not clear a session another tab signed in meanwhile', async () => {
+    installFakeLocks();
+    await setSession({ ...tokens('A'), expiresAt: Date.now() - 1 });
+    const { getOrCreateKeypair } = await import('../../../src/core/dpop/keypair.js');
+    const { jwkThumbprint } = await import('../../../src/core/dpop/thumbprint.js');
+    const pair = await getOrCreateKeypair();
+    const localJkt = await jwkThumbprint(await crypto.subtle.exportKey('jwk', pair.publicKey));
+    registerRefreshCallback(async () => ({
+      access_token: jwtWithJkt(localJkt.split('').reverse().join('')),
+      expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
+      session_id: 'A',
+    }));
+    const changes = vi.fn();
+    onSessionChange(changes);
+    let letGo!: () => void;
+    const gate = new Promise<void>((r) => (letGo = r));
+    // Tab B signs in: it holds the store lock while A's refresh comes back.
+    const tabB = otherTab(async () => {
+      await gate;
+      await storage.storeRefreshToken('rt-B', Date.now() + 60_000);
+    });
+
+    const refreshing = getAccessToken();
+    await new Promise((r) => setTimeout(r, 20));
+    letGo();
+    await tabB;
+
+    await expect(refreshing).resolves.toBeNull();
+    expect(await storage.getRefreshToken()).toBe('rt-B');
+    expect(changes).not.toHaveBeenCalled();
+  });
+
+  it('Devin PR #35 r2: a terminal refresh error does not clear a session another tab signed in meanwhile', async () => {
+    installFakeLocks();
+    await setSession({ ...tokens('A'), expiresAt: Date.now() - 1 });
+    let letGo!: () => void;
+    const gate = new Promise<void>((r) => (letGo = r));
+    let tabB!: Promise<void>;
+    registerRefreshCallback(async () => {
+      // Tab B signs in while A's refresh is on the wire.
+      tabB = otherTab(async () => {
+        await gate;
+        await storage.storeRefreshToken('rt-B', Date.now() + 60_000);
+      });
+      throw Object.assign(new Error('revoked'), { code: 'AUTH_SESSION_REVOKED' });
+    });
+    const changes = vi.fn();
+    onSessionChange(changes);
+
+    const refreshing = getAccessToken();
+    const settled = refreshing.catch((e: unknown) => e);
+    await new Promise((r) => setTimeout(r, 20));
+    letGo();
+    await tabB;
+
+    expect(await settled).toMatchObject({ code: 'AUTH_SESSION_REVOKED' });
+    expect(await storage.getRefreshToken()).toBe('rt-B');
+    expect(changes).not.toHaveBeenCalled();
+  });
+
+  it('Devin PR #35 r2: a sign-in during the refresh call is not overwritten by the old refresh', async () => {
+    await setSession({ ...tokens('A'), expiresAt: Date.now() - 1 });
+    registerRefreshCallback(async () => {
+      await setSession(tokens('B')); // the user signs in again meanwhile
+      return {
+        access_token: 'at-A2',
+        expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
+        session_id: 'A',
+        refresh_token: 'rt-A2',
+        refresh_expires_at: new Date(Date.now() + 60_000).toISOString(),
+      };
+    });
+
+    expect(await getAccessToken()).toBe('at-B');
+    expect(getCurrentSessionId()).toBe('B');
+    expect(await storage.getRefreshToken()).toBe('rt-B');
   });
 });
