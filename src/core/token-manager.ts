@@ -1,4 +1,18 @@
-// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.6.7 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.6.8 | 2026-10-14 | BB
+// v1.6.8 (rc.26, issue #37, Devin note on PR #36): a cookie note during a
+//   superseded sign-out no longer keeps the signed-out session.
+//   - noteCookieSession() ignores the id a pending sign-out signs out. An
+//     unscoped SSR /me note could put that session back mid-sign-out.
+//   - The stand-down decides by the held session's source. Case table
+//     (only when the wipe stood down for a sign-in and nothing moved since):
+//       held null                 + update -> adopt the update
+//       held null                 + none   -> report the clear
+//       held from a token         + any    -> already adopted; no clear
+//       held = signed-out, cookie + update -> adopt the update
+//       held = signed-out, cookie + none   -> drop it; report the clear
+//       held = other, cookie      + update -> adopt the update
+//       held = other, cookie      + none   -> keep it; no clear
+//     "update" = the newest ignored session_updated for another session.
 // v1.6.7 (rc.25, Devin round 2, PR #36):
 //   - Each pending sign-out keeps its own record (signed-out session, row at
 //     sign-out, ignored sign-in). An older wipe that settles no longer erases
@@ -799,32 +813,29 @@ async function clearSessionAndReport(): Promise<boolean> {
       pendingSignOuts.delete(own);
       // v1.6.6: the sign-in that superseded this sign-out was ignored while
       // the marker was set; adopt it now, unless this tab moved on since.
-      const update = own.update;
-      if (
-        supersededBySignIn &&
-        !reported &&
-        update !== null &&
-        update.sessionId !== signedOut &&
-        clearCount === myClears &&
-        installCount === myInstall &&
-        state.sessionId === null
-      ) {
-        state.accessToken = update.accessToken;
-        state.accessExpiresAt = update.accessExpiresAt;
-        adoptSessionId(update.sessionId, 'token');
-        adoptedSignIn = true;
-        notifyListeners();
-      } else if (
-        supersededBySignIn &&
-        !reported &&
-        clearCount === myClears &&
-        installCount === myInstall &&
-        state.sessionId !== null
-      ) {
-        // v1.6.7 (Devin PR #36 r2): the sign-in removed the marker before it
-        // broadcast, so this tab already adopted it; do not report a clear
-        // or stop that session's event stream.
-        adoptedSignIn = true;
+      // v1.6.8 (issue #37): decided by where the held session came from, not
+      // only by whether one is held (case table in the header).
+      const update = own.update !== null && own.update.sessionId !== signedOut ? own.update : null;
+      if (supersededBySignIn && !reported && clearCount === myClears && installCount === myInstall) {
+        const held = state.sessionId;
+        if (held !== null && sessionSource === 'token') {
+          // v1.6.7 (Devin PR #36 r2): the sign-in removed the marker before it
+          // broadcast, so this tab already adopted it; do not report a clear
+          // or stop that session's event stream.
+          adoptedSignIn = true;
+        } else if (update !== null) {
+          state.accessToken = update.accessToken;
+          state.accessExpiresAt = update.accessExpiresAt;
+          adoptSessionId(update.sessionId, 'token');
+          adoptedSignIn = true;
+          notifyListeners();
+        } else if (held !== null && held === signedOut) {
+          // A cookie note put the signed-out session back: finish the clear.
+          adoptSessionId(null, null);
+        } else if (held !== null) {
+          // A cookie note for another session: the server's word, kept.
+          adoptedSignIn = true;
+        }
       }
     },
     () => {
@@ -1436,6 +1447,9 @@ export function noteCookieSession(
   scopeAtRequest?: Pick<SessionScope, 'generation'>
 ): void {
   if (typeof sessionId !== 'string' || sessionId.length === 0) return;
+  // v1.6.8 (issue #37): a /me that still names the session a pending
+  // sign-out is signing out is stale (an unscoped SSR note, for one).
+  for (const pending of pendingSignOuts) if (pending.signedOut === sessionId) return;
   if (scopeAtRequest !== undefined && !isSessionScopeCurrent(scopeAtRequest)) return;
   if (sessionId === state.sessionId) return;
   // /me is the server's word on which session this browser holds. A

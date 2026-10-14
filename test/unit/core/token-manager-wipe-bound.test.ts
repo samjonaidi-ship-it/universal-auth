@@ -1,4 +1,7 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/core/token-manager-wipe-bound.test.ts | v1.6.3 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/token-manager-wipe-bound.test.ts | v1.6.4 | 2026-10-14 | BB
+// v1.6.4 (issue #37): an unscoped cookie note for the signed-out session
+// during a superseded sign-out does not keep that session (the tab adopts
+// the newer sign-in); noteCookieSession ignores the id being signed out.
 // v1.6.3 (Devin PR #36 r2): two overlapping sign-outs with localStorage
 // blocked keep another tab's newer sign-in; a cold tab that already adopted
 // the sign-in (marker removed before the broadcast) does not report a clear.
@@ -58,6 +61,7 @@ import {
   getCurrentSessionId,
   getSessionScope,
   clearSessionIfCurrent,
+  noteCookieSession,
   __setWipeTimeoutMsForTests,
   __resetTokenManagerForTests,
 } from '../../../src/core/token-manager.js';
@@ -799,5 +803,55 @@ describe('token-manager — wipe bound and locally-revoked marker (issue #33)', 
     expect(cleared).toBe(false);
     expect(getCurrentSessionId()).toBe('B');
     expect(await storage.getRefreshToken()).toBe('rt-B');
+  });
+
+  it('issue #37: a cookie note for the signed-out session during a superseded sign-out does not keep it', async () => {
+    __setWipeTimeoutMsForTests(5_000);
+    installFakeLocks();
+    await setSession(tokens('A'));
+    const peer = new BroadcastChannel('bb-universal-auth-session');
+    let letGo!: () => void;
+    const gate = new Promise<void>((r) => (letGo = r));
+    const busy = otherTab(() => gate);
+    const tabB = otherTab(async () => {
+      await storage.storeRefreshToken('rt-B', Date.now() + 60_000);
+      peer.postMessage({ type: 'session_updated', accessToken: 'at-B', accessExpiresAt: Date.now() + 60_000, sessionId: 'B' });
+      await new Promise((r) => setTimeout(r, 10)); // A records B while its marker is set
+      // AuthProvider's SSR effect: /me still names A, no captured scope.
+      noteCookieSession('A');
+    });
+    const unblock = blockLocalStorage();
+    let cleared!: boolean;
+    try {
+      const clearing = clearSessionIfCurrent(getSessionScope());
+      await new Promise((r) => setTimeout(r, 10));
+      letGo();
+      await busy;
+      await tabB;
+      cleared = await clearing;
+    } finally {
+      unblock();
+    }
+    peer.close();
+
+    expect(vi.mocked(storage.clearAllSessionState)).not.toHaveBeenCalled();
+    expect(await storage.getRefreshToken()).toBe('rt-B');
+    expect(getSessionScope()).toMatchObject({ sessionId: 'B', source: 'token' });
+    expect(await getAccessToken()).toBe('at-B');
+    expect(cleared).toBe(false);
+  });
+
+  it('issue #37: noteCookieSession ignores the session a pending sign-out signs out', async () => {
+    await setSession(tokens('A'));
+    const { release } = hangNextWipe();
+    const clearing = clearSession().catch(() => {});
+
+    noteCookieSession('A');
+    expect(getCurrentSessionId()).toBeNull();
+    noteCookieSession('C'); // another session is still the server's word
+    expect(getSessionScope()).toMatchObject({ sessionId: 'C', source: 'cookie' });
+
+    release();
+    await clearing;
   });
 });
