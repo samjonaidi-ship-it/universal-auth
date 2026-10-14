@@ -1,4 +1,7 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/core/token-manager-issue32.test.ts | v1.1.0 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/token-manager-issue32.test.ts | v1.2.0 | 2026-10-14 | BB
+// v1.2.0 (token-manager v1.5.2, Devin PR #34): a server-wins cookie note that
+//   drops the install's token during its store makes the install stand down:
+//   no notify (it would read as a sign-out), no broadcast of the dropped token.
 // v1.1.0 (token-manager v1.5.1, pre-push review): a /me naming a cookie
 //   session during the install store does not silence the install's notify.
 // rc.23 (token-manager v1.5.0) — issue #32, follow-ups from PR #31's review:
@@ -108,9 +111,10 @@ describe('token-manager — issue #32 follow-ups (rc.23)', () => {
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
-  it('review: a cookie note during the install store still notifies listeners', async () => {
+  it('Devin PR #34: a cookie note that drops the install token during the store silences the install', async () => {
     const listener = vi.fn();
     onSessionChange(listener);
+    const posted = vi.spyOn(BroadcastChannel.prototype, 'postMessage');
 
     const gate = deferred<void>();
     const real = await vi.importActual<typeof import('../../../src/core/storage.js')>(
@@ -123,10 +127,14 @@ describe('token-manager — issue #32 follow-ups (rc.23)', () => {
 
     const installing = setSession(tokens('sess-A'));
     await vi.waitFor(() => expect(storage.storeRefreshToken).toHaveBeenCalled());
-    noteCookieSession('sess-Z'); // a late /me moves the generation; no clear, no install
+    noteCookieSession('sess-Z'); // /me names cookie session Z; A's token is dropped
     gate.resolve();
     await installing;
 
-    expect(listener).toHaveBeenCalledTimes(1);
+    // A notify here would read as a sign-out (no live token) in AuthProvider.
+    expect(listener).not.toHaveBeenCalled();
+    expect(posted).not.toHaveBeenCalledWith(expect.objectContaining({ accessToken: 'at-sess-A' }));
+    expect(getSessionScope()).toMatchObject({ sessionId: 'sess-Z', source: 'cookie' });
+    posted.mockRestore();
   });
 });

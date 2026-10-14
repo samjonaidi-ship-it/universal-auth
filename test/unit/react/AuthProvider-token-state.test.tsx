@@ -1,4 +1,6 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/react/AuthProvider-token-state.test.tsx | v1.4.0 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/react/AuthProvider-token-state.test.tsx | v1.5.0 | 2026-10-14 | BB
+// v1.5.0 (AuthProvider v1.2.2, Devin PR #34): a sign-out while hydrate's /me
+//   is in flight stays signed out; the late reply is dropped.
 // v1.4.0 (AuthProvider v1.2.1, pre-push review): hydrate does not apply the
 //   old session's /me over a sign-in that landed during the mint.
 // v1.3.0 (rc.23, AuthProvider v1.2.0, issue #32): a sign-in during a failed
@@ -422,5 +424,35 @@ describe('AuthProvider — tokenState (rc.22)', () => {
     await new Promise((r) => setTimeout(r, 80));
     expect(screen.getByTestId('who').textContent).toBe('bob');
     expect(screen.getByTestId('token').textContent).toBe('live');
+  });
+
+  it('Devin PR #34: a sign-out during the hydrate /me is not undone by its late reply', async () => {
+    let meCalls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input instanceof Request ? input.url : input);
+        if (url.includes('/auth/v1/me') && ++meCalls === 1) {
+          await clearSession(); // the user signs out while /me is in flight
+          return jsonResp(200, meFor('sess-A', 'alice'));
+        }
+        if (url.includes('/auth/v1/me')) {
+          return jsonResp(401, { code: 'AUTH_SESSION_EXPIRED', message: 'signed out' });
+        }
+        return jsonResp(404, { error: 'not_stubbed' });
+      })
+    );
+
+    render(
+      <AuthProvider>
+        <StatusProbe />
+        <IdentityProbe />
+      </AuthProvider>
+    );
+
+    await new Promise((r) => setTimeout(r, 100));
+    expect(screen.getByTestId('who').textContent).toBe('nobody');
+    expect(screen.getByTestId('status').textContent).not.toBe('authenticated');
+    expect(getSessionScope().sessionId).toBeNull();
   });
 });

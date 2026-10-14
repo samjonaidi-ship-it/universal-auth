@@ -41,6 +41,14 @@ Follow-ups from PR #31's review. No public signature changed.
     server-sent `stale` / `wipe_failed` key is dropped.
   - `session-watcher.ts` v1.3.1 and `session-events.ts` v0.3.0 — a failed
     IndexedDB wipe adds `wipe_failed: true` to `session.revoked`.
+- Devin review of PR #34:
+  - `AuthProvider.tsx` v1.2.2 — the hydrate drops a `/me` reply that a sign-in
+    or sign-out overtook, before it notes, mints or applies it. Before, a
+    sign-out during `/me` let the late reply restore the signed-out identity.
+  - `token-manager.ts` v1.5.2 — `setSession()` also stays silent when its
+    access token is gone from memory by the end of its store (a server-wins
+    `/me` dropped it). Before, its notify read as a sign-out, and it
+    broadcast a token the session no longer holds.
 
 ## [1.1.0-rc.22] — 2026-10-14 — cookie-only sessions and silent no-token refresh
 

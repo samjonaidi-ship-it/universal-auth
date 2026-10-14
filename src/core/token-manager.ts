@@ -1,4 +1,9 @@
-// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.5.1 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.5.2 | 2026-10-14 | BB
+// v1.5.2 (Devin, PR #34): setSession() also stands down when its access token
+//   is no longer in memory (a server-wins /me dropped it, or a refresh
+//   replaced it). Before, the install notified after a cookie note dropped
+//   its token, so AuthProvider read 'no live token' and showed anonymous,
+//   and other tabs got the dropped token.
 // v1.5.1 (pre-push review): setSession() stands down only for a clearSession()
 //   or a newer setSession() that began during its store (clearCount /
 //   installCount). Before, any generation bump did, so a /me naming a cookie
@@ -411,7 +416,17 @@ export async function setSession(tokens: SessionTokens): Promise<void> {
   // now. Telling tabs and listeners about this one would undo it.
   // v1.5.1: only those two. Any other session move (a /me naming a cookie
   // session, a refresh adopting an id) is not a reason to stay silent.
-  if (installCount !== myInstall || clearCount !== myClears) return;
+  // v1.5.2: or the install's token is gone from memory (a server-wins /me
+  // dropped it, or a refresh replaced it and notified on its own). Then this
+  // install no longer describes the session, and its notify would read as a
+  // sign-out.
+  if (
+    installCount !== myInstall ||
+    clearCount !== myClears ||
+    state.accessToken !== tokens.accessToken
+  ) {
+    return;
+  }
 
   broadcast({
     type: 'session_updated',
