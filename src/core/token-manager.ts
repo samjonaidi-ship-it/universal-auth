@@ -1,4 +1,16 @@
-// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.6.4 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.6.5 | 2026-10-14 | BB
+// v1.6.5 (rc.25, Devin on CalExp5 #909): a sign-out wipe no longer deletes a
+//   newer sign-in from another tab. Tab B's sign-in could take the store lock
+//   first; tab A's queued wipe then deleted B's refresh token. Now:
+//     - setSession() removes the revoked marker INSIDE the store lock, right
+//       after its store, so no wipe can get the lock while it is still set;
+//     - the clearSession() wipe re-reads the marker under the lock and wipes
+//       only while it still holds its own value (like the retry wipe, v1.6.2).
+//       Removed = a sign-in owns the store: keep it, and do not broadcast
+//       session_cleared (other tabs adopted that sign-in). Replaced = a newer
+//       sign-out runs its own wipe.
+//   Both lock orders: B first -> A sees no marker, keeps B; A first -> A
+//   wipes, then B stores. Same-tab order (pendingClear/pendingInstall) holds.
 // v1.6.4 (rc.24, Devin round 3, PR #35): performRefresh() decides ownership by
 //   the stored row's identity (storage getRefreshTokenRowId(), the row's IV),
 //   not by re-reading the token. A re-read ran the expiry check, so a token
@@ -582,7 +594,14 @@ export async function setSession(tokens: SessionTokens): Promise<void> {
   const install = (async () => {
     if (clearBefore !== null) await clearBefore.catch(() => {});
     if (installBefore !== null) await installBefore.catch(() => {});
-    await runUnderStoreLock(() => storeRefreshToken(tokens.refreshToken, refreshExpiresAt));
+    await runUnderStoreLock(async () => {
+      await storeRefreshToken(tokens.refreshToken, refreshExpiresAt);
+      // v1.6.0: a stored sign-in replaces a locally revoked state, unless a
+      // clear began during the store (that clear owns the marker now).
+      // v1.6.5: removed inside the store lock, so a sign-out wipe queued
+      // behind this store sees the marker gone and leaves this token.
+      if (clearCount === myClears) clearRevokedMarker();
+    });
   })();
   pendingInstall = install;
   try {
@@ -590,9 +609,6 @@ export async function setSession(tokens: SessionTokens): Promise<void> {
   } finally {
     if (pendingInstall === install) pendingInstall = null;
   }
-  // v1.6.0: a stored sign-in replaces a locally revoked state, unless a clear
-  // began during the store (that clear owns the marker now).
-  if (clearCount === myClears) clearRevokedMarker();
 
   // v1.5.0: a sign-out or a newer sign-in during the store owns the session
   // now. Telling tabs and listeners about this one would undo it.
@@ -666,10 +682,22 @@ async function clearSessionAndReport(): Promise<boolean> {
   setRevokedMarker(marker);
   const previousWipe = pendingClear;
   const installBefore = pendingInstall;
+  // v1.6.5: set when the wipe stood down because another tab's sign-in
+  // removed the marker before this wipe got the store lock.
+  let supersededBySignIn = false;
   const wipe = (async () => {
     if (previousWipe !== null) await previousWipe.catch(() => {});
     if (installBefore !== null) await installBefore.catch(() => {});
     await runUnderStoreLock(async () => {
+      // v1.6.5 (Devin, CalExp5 #909): the store belongs to whoever owns the
+      // marker now. Removed: a sign-in (any tab) stored its refresh token
+      // after this sign-out began, so it is not ours to delete. Replaced: a
+      // newer sign-out owns the wipe and runs it itself.
+      const now = readRevokedMarker();
+      if (now !== marker) {
+        supersededBySignIn = now === null;
+        return;
+      }
       await clearAllSessionState();
       if (installCount === myInstall) await deleteKeypair();
     });
@@ -696,7 +724,9 @@ async function clearSessionAndReport(): Promise<boolean> {
   // using them (issue #33 item 2).
   // v1.5.0: memory is already cleared, so tabs and listeners hear about it
   // even when the IndexedDB wipe failed. The failure is re-thrown after.
-  broadcast({ type: 'session_cleared' });
+  // v1.6.5: not the other tabs when a later sign-in in another tab owns the
+  // store: they adopted that session, and session_cleared would drop it.
+  if (!supersededBySignIn) broadcast({ type: 'session_cleared' });
   notifyListeners();
 
   try {

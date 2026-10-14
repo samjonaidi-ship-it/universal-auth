@@ -8,6 +8,19 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
 
 > **Note on v1.1.0-rc.3 (2026-05-06):** rc.3 landed on `main` but failed CI on 3 lint errors before it could be tagged or published. v1.1.0-rc.4 is the same code with those 3 errors resolved + coverage threshold reconciled with measured coverage. Public consumer path for the v1.1 line is rc.1 → rc.4 (rc.2 and rc.3 were never published).
 
+## [1.1.0-rc.25] — 2026-10-14 — cross-tab sign-out keeps a newer sign-in
+
+### Fixed
+
+- `token-manager.ts` v1.6.5 (Devin on CalExp5 #909): a sign-out in tab A no
+  longer deletes the refresh token of a sign-in tab B made after it. B's
+  sign-in could take the store lock first; A's queued wipe then deleted B's
+  token. Now `setSession()` removes the locally-revoked marker inside the
+  store lock, and the `clearSession()` wipe re-reads the marker under the
+  lock and wipes only while it still holds its own value. When a sign-in
+  removed it, the wipe keeps the store and does not broadcast
+  `session_cleared` (other tabs adopted that sign-in).
+
 ## [1.1.0-rc.24] — 2026-10-14 — session-scope debt (issue #33 items 2–6)
 
 Item 1 (keep the old refresh token on a server-wins cookie session) was
