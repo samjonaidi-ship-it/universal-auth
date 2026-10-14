@@ -1,8 +1,12 @@
-// @samjonaidi-ship-it/universal-auth | src/react/useAuth.ts | v1.0.2 | 2026-09-17 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/useAuth.ts | v1.1.0 | 2026-10-14 | BB
 // Public useAuth hook — subscribes to IdentityContext + StatusContext only.
 // Per §D2.4: personas / activePersona / hasPersona / switchActivePersona / allFeatures / agent.
 // allFeatures() reads entitlements module directly (so useAuth doesn't subscribe
 // to EntitlementsContext and re-render when features change — see §8.4 split rule).
+//
+// v1.1.0 (rc.22): exposes `tokenState` from StatusContext ('live' |
+// 'cookie_only' | 'none'), so a consumer can tell a cookie-only session
+// (authenticated, but no bearer token) from a token session.
 //
 // v1.0.2 (P4.7): signOut's type surface now includes `expectedSessionId?`,
 // forwarded straight through to flows/recovery.ts signOut() (no logic here).
@@ -18,6 +22,7 @@ import {
   IdentityContext,
   StatusContext,
   type AuthStatus,
+  type TokenState,
 } from './AuthProvider.js';
 import type { Identity, Persona, AgentContext } from '../types/api.js';
 import { getEntitlementsSnapshot } from '../core/entitlements.js';
@@ -29,6 +34,8 @@ export interface UseAuthReturn {
   // Core identity
   identity: Identity | null;
   status: AuthStatus;
+  /** v1.1.0 — 'cookie_only' = signed in by cookie, no bearer token. */
+  tokenState: TokenState;
 
   // D8 — multi-persona
   personas: readonly Persona[];
@@ -84,6 +91,7 @@ export function useAuth(): UseAuthReturn {
   return {
     identity: id.identity,
     status: st.status,
+    tokenState: st.tokenState,
     personas: id.personas,
     activePersona: id.activePersona,
     primary_persona: id.primary_persona,

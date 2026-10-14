@@ -1,4 +1,14 @@
-// @samjonaidi-ship-it/universal-auth | src/core/session-watcher.ts | v1.1.0 | 2026-05-06 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/session-watcher.ts | v1.2.0 | 2026-10-14 | BB
+// v1.2.0 (rc.22): a revoked/expired /me poll is scoped to the session it
+//   started under. The `session.revoked` event carries session_id and
+//   generation, and clearSession() runs only if that session is still the
+//   current one. Before, a poll that left under session A and came back 401
+//   after a sign-in as B cleared B (the gap CalExp5 #881 patched with
+//   isReplacedSessionExpiry). Devin round 1 (PR #31): the clear goes through
+//   clearSessionIfCurrent(scope), and a sign-in that lands during the clear's
+//   IndexedDB wipe keeps its refresh token, keypair and listeners.
+//   Pre-push review: clearSessionIfCurrent() returns false when that sign-in
+//   superseded the clear, so the watcher keeps polling the new session.
 // Background session validator — polls `/auth/v1/me` while the tab is active,
 // so admin-forced revocations propagate to the UI within ~1 poll interval.
 //
@@ -16,7 +26,7 @@
 
 import { get } from './client.js';
 import { AuthSessionRevoked, AuthSessionExpired, AuthSdkError } from '../errors.js';
-import { clearSession } from './token-manager.js';
+import { clearSessionIfCurrent, getSessionScope, isSessionScopeCurrent } from './token-manager.js';
 import { refreshEntitlements } from './entitlements.js';
 import { emit } from './event-reporter.js';
 import { startSessionEvents, stopSessionEvents } from './session-events.js';
@@ -139,6 +149,9 @@ async function doPoll(): Promise<void> {
     return;
   }
 
+  // v1.2.0: which session this poll speaks for.
+  const scope = getSessionScope();
+
   try {
     const result = await get<unknown>(
       '/auth/v1/me',
@@ -158,24 +171,43 @@ async function doPoll(): Promise<void> {
   } catch (err) {
     // Session gone — surface + clean up.
     if (err instanceof AuthSessionRevoked || err instanceof AuthSessionExpired) {
-      void emit('session.revoked', {
-        reason: err instanceof AuthSessionRevoked ? 'server' : 'expired',
-      });
-      await clearSession();
-      stopSessionWatcher();
+      await handleRevoked(err instanceof AuthSessionRevoked ? 'server' : 'expired', scope);
       return;
     }
     // Any other AuthSdkError with a 401/403 class treated as revocation.
     if (err instanceof AuthSdkError && isRevocationCode(err.code)) {
-      void emit('session.revoked', { reason: 'server' });
-      await clearSession();
-      stopSessionWatcher();
+      await handleRevoked('server', scope);
       return;
     }
     // Network error or transient 5xx — keep polling on schedule.
   } finally {
     scheduleNextPoll();
   }
+}
+
+/**
+ * v1.2.0: the poll's session is gone. Report it with the session it belongs
+ * to. Clear only when that session is still current: if a new session was
+ * installed while the poll was in flight, the 401 is about the old one, and
+ * the new one must survive. The watcher keeps polling for the new session.
+ */
+async function handleRevoked(
+  reason: 'server' | 'expired',
+  scope: ReturnType<typeof getSessionScope>
+): Promise<void> {
+  const current = isSessionScopeCurrent(scope);
+  void emit('session.revoked', {
+    reason,
+    session_id: scope.sessionId,
+    generation: scope.generation,
+    ...(current ? {} : { stale: true }),
+  });
+  if (!current) return;
+  // Re-checked inside clearSessionIfCurrent (the emit above can yield), and
+  // clearSession() itself spares a session installed during its wipe. It
+  // returns false then, and the watcher must keep polling that new session.
+  if (!(await clearSessionIfCurrent(scope))) return;
+  stopSessionWatcher();
 }
 
 function isRevocationCode(code: string): boolean {

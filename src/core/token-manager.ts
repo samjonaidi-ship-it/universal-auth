@@ -1,4 +1,35 @@
-// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.3.2 | 2026-09-17 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.4.0 | 2026-10-14 | BB
+// v1.4.0 (rc.22, gaps found by CalExp5 #881's "no session token" loop):
+//   - No refresh token is no longer silent. performRefresh() still returns
+//     null (getAccessToken() keeps its contract), but it now fires
+//     onTokenUnavailable({reason:'no_refresh_token', ...scope}) once per
+//     session generation, and getAccessTokenOrThrow() turns the null into a
+//     typed AuthNoRefreshToken. Deliberately NOT via notifyListeners():
+//     AuthProvider's listener would flip a valid cookie session to anonymous.
+//   - Session generation + scope. Every change of session identity bumps a
+//     counter; getSessionScope() returns {sessionId, generation, source}.
+//     noteCookieSession() lets AuthProvider record the cookie session's id
+//     from /me's session_meta, so a cookie-only session has an id and a
+//     generation too. isSessionScopeCurrent() is the staleness check a
+//     consumer uses to drop a session-expired event from a replaced session.
+//   - isTerminalRefreshError() is exported. DEVICE_UNRECOGNIZED is documented
+//     as NOT terminal (see the function).
+//   - Devin round 1 (PR #31): clearSession() no longer wipes a session
+//     installed while its IndexedDB clear runs (setSession() waits for the
+//     wipe; the clear skips keypair delete / broadcast / notify once the
+//     generation moved); clearSessionIfCurrent(scope) checks and clears in
+//     one step. noteCookieSession() follows the server when /me names a
+//     different session. A no-refresh-token result that races a sign-in
+//     returns the new token and does not fire onTokenUnavailable.
+//   - Pre-push review (PR #31): the clear stands down only for a setSession()
+//     install (installCount), not for any generation bump (a late /me from
+//     the old cookie must not cancel a sign-out). clearSessionIfCurrent()
+//     returns whether the clear really ran. Overlapping wipes are chained.
+//     noteCookieSession(id, scope) drops a /me reply that a session change
+//     overtook. The raced-null early return needs a real install.
+//   - Doc comments corrected: the terminal set is three codes (the v1.2.0
+//     notes said two); getAccessToken() re-throws a failed refresh (it said
+//     "returns null").
 // v1.3.2 (P4.7): performRefresh() now captures the session id it is
 //   refreshing FOR before the network round-trip starts. A refresh can sit
 //   on the wire for seconds; if a NEW session is installed (setSession(),
@@ -31,7 +62,8 @@
 //        can't smuggle a fake session.
 // v1.2.0 (P3.1) — refresh-failure classification. The catch in
 //   performRefresh() no longer clears the stored refresh token on EVERY
-//   failure. Only AUTH_SESSION_EXPIRED / AUTH_SESSION_REVOKED clear; network
+//   failure. Only AUTH_SESSION_EXPIRED / AUTH_SESSION_REVOKED (and, since
+//   v1.3.0, INVALID_DPOP_BINDING) clear; network
 //   errors, aborts and 5xx keep the credential so a dead zone no longer signs
 //   a crew member out (and, downstream in BB Express, no longer purges their
 //   unsynced offline work). See isTerminalRefreshError().
@@ -54,6 +86,7 @@ import { deleteKeypair, loadKeypair } from './dpop/keypair.js';
 import { jwkThumbprint } from './dpop/thumbprint.js';
 import { reportSoftError } from './error-hook.js';
 import {
+  AuthNoRefreshToken,
   CnfJktMismatchError,
   LegacyRefreshResponseError,
   NoNavigatorLocksError,
@@ -110,6 +143,42 @@ const state: InternalState = {
 };
 
 let refreshCallback: RefreshCallback | null = null;
+
+// ── Session generation / scope (v1.4.0) ───────────────────────────────────
+//
+// `generation` moves every time the session identity changes: setSession(),
+// clearSession(), a terminal refresh clear, a broadcast from another tab that
+// installs a different session or clears it, a refresh that returns a new
+// session id, and noteCookieSession() adopting a cookie session's id. A
+// consumer captures getSessionScope() when it starts work and drops the
+// result if isSessionScopeCurrent() says the session was replaced meanwhile.
+
+/** Where the current session id came from. */
+export type SessionSource = 'token' | 'cookie';
+
+export interface SessionScope {
+  /** The session id, or null when there is no session. */
+  sessionId: string | null;
+  /** Monotonic counter; bumps on every change of session identity. */
+  generation: number;
+  /** 'token' = installed with tokens; 'cookie' = learned from /me only. */
+  source: SessionSource | null;
+}
+
+let generation = 0;
+let sessionSource: SessionSource | null = null;
+// The storage wipe of a clearSession() still running. setSession() waits for
+// it, so an install during a clear is not deleted by that clear.
+let pendingClear: Promise<void> | null = null;
+// Counts setSession() installs. A clear compares it, not the generation:
+// only a real sign-in during the wipe may make the clear stand down.
+let installCount = 0;
+
+function adoptSessionId(id: string | null, source: SessionSource | null): void {
+  if (id !== state.sessionId) generation++;
+  state.sessionId = id;
+  sessionSource = id === null ? null : source;
+}
 
 // Safety margin — refresh 30 s before actual expiry to cover clock skew + flight time
 const REFRESH_MARGIN_MS = 30_000;
@@ -179,13 +248,13 @@ function handleBroadcast(raw: unknown): void {
       // Another tab refreshed; adopt its access token without re-fetching
       state.accessToken = raw.accessToken;
       state.accessExpiresAt = raw.accessExpiresAt;
-      state.sessionId = raw.sessionId;
+      adoptSessionId(raw.sessionId, 'token');
       notifyListeners();
       break;
     case 'session_cleared':
       state.accessToken = null;
       state.accessExpiresAt = 0;
-      state.sessionId = null;
+      adoptSessionId(null, null);
       notifyListeners();
       break;
   }
@@ -224,6 +293,47 @@ function notifyListeners(): void {
   }
 }
 
+// ── Token-unavailable listeners (v1.4.0) ──────────────────────────────────
+
+export interface TokenUnavailableEvent extends SessionScope {
+  /** Why no access token could be produced. */
+  reason: 'no_refresh_token';
+}
+
+type TokenUnavailableListener = (e: TokenUnavailableEvent) => void;
+const tokenUnavailableListeners = new Set<TokenUnavailableListener>();
+/** Generation we last fired for — fire once per generation, not per call. */
+let tokenUnavailableFiredFor: number | null = null;
+
+/**
+ * Subscribe to "the SDK could not produce an access token". Today the only
+ * reason is `no_refresh_token`: getAccessToken() needed a refresh and found
+ * no stored refresh token (a cookie-only session after a subdomain hop, or
+ * never signed in). Fires once per session generation, so a consumer that
+ * calls getAccessToken() on every request is not flooded. Session state is
+ * NOT changed: a cookie-only session stays valid for cookie-authenticated
+ * calls.
+ */
+export function onTokenUnavailable(listener: TokenUnavailableListener): () => void {
+  tokenUnavailableListeners.add(listener);
+  return () => {
+    tokenUnavailableListeners.delete(listener);
+  };
+}
+
+function notifyTokenUnavailable(reason: TokenUnavailableEvent['reason']): void {
+  if (tokenUnavailableFiredFor === generation) return;
+  tokenUnavailableFiredFor = generation;
+  const event: TokenUnavailableEvent = { reason, ...getSessionScope() };
+  for (const l of tokenUnavailableListeners) {
+    try {
+      l(event);
+    } catch {
+      // Listener bugs must not crash the token manager
+    }
+  }
+}
+
 // ── Public API ────────────────────────────────────────────────────────────
 
 /**
@@ -241,7 +351,16 @@ export function registerRefreshCallback(cb: RefreshCallback): void {
 export async function setSession(tokens: SessionTokens): Promise<void> {
   state.accessToken = tokens.accessToken;
   state.accessExpiresAt = tokens.expiresAt;
+  // Always a new generation: a fresh install is a new session even when the
+  // server re-uses the id.
+  generation++;
+  installCount++;
   state.sessionId = tokens.sessionId;
+  sessionSource = 'token';
+
+  // A clear that began before this install must finish its wipe first, or
+  // the wipe would delete this session's refresh token (Devin, PR #31).
+  if (pendingClear !== null) await pendingClear.catch(() => {});
 
   const refreshExpiresAt = tokens.refreshExpiresAt ?? Date.now() + DEFAULT_REFRESH_TTL_MS;
   await storeRefreshToken(tokens.refreshToken, refreshExpiresAt);
@@ -269,13 +388,39 @@ export async function setSession(tokens: SessionTokens): Promise<void> {
  * session-events, which calls back into clearSession on session.revoked.
  */
 export async function clearSession(): Promise<void> {
+  await clearSessionAndReport();
+}
+
+/** clearSession(); true unless a setSession() during the wipe superseded it. */
+async function clearSessionAndReport(): Promise<boolean> {
   state.accessToken = null;
   state.accessExpiresAt = 0;
+  generation++;
   state.sessionId = null;
+  sessionSource = null;
   state.inFlightRefresh = null;
+  const myInstall = installCount;
 
-  await clearAllSessionState();
-  await deleteKeypair();
+  // v1.4.0: a setSession() that lands while the wipe runs owns the device
+  // from then on. It waits for this wipe (pendingClear) before storing its
+  // refresh token; this clear then keeps the new session's DPoP keypair and
+  // does not tell tabs or listeners that the new session was cleared. Any
+  // other session change (e.g. a late /me naming the old cookie session)
+  // does not cancel the sign-out. Wipes are chained, so pendingClear always
+  // covers every wipe still running.
+  const previousWipe = pendingClear;
+  const wipe = (async () => {
+    if (previousWipe !== null) await previousWipe.catch(() => {});
+    await clearAllSessionState();
+    if (installCount === myInstall) await deleteKeypair();
+  })();
+  pendingClear = wipe;
+  try {
+    await wipe;
+  } finally {
+    if (pendingClear === wipe) pendingClear = null;
+  }
+  if (installCount !== myInstall) return false;
   broadcast({ type: 'session_cleared' });
   notifyListeners();
 
@@ -285,12 +430,27 @@ export async function clearSession(): Promise<void> {
   } catch {
     // Module not loaded (e.g., older bundle) — ignore.
   }
+  return true;
 }
 
 /**
  * Return a valid access token, refreshing if needed.
  * Concurrent callers coalesce on a single in-flight refresh (§8.2).
- * Returns null if no session exists or refresh failed.
+ *
+ * v1.4.0 — what it really does (the old line said "returns null if no
+ * session exists or refresh failed", which was wrong on both counts):
+ *   - a live token in memory → that token, no network;
+ *   - SDK not initialised (no refresh callback) → whatever token is in
+ *     memory, possibly null or stale;
+ *   - no stored refresh token → null, and onTokenUnavailable fires once for
+ *     this session generation. This is the cookie-only case: the session
+ *     may still be valid server-side;
+ *   - refresh succeeded → the new token;
+ *   - refresh FAILED → it RE-THROWS. Terminal errors (isTerminalRefreshError)
+ *     have cleared the session first; transient ones have kept the refresh
+ *     token. A failure is never turned into null.
+ * Use getAccessTokenOrThrow() to get a typed AuthNoRefreshToken instead of
+ * the null.
  */
 export async function getAccessToken(): Promise<string | null> {
   // Fast path — valid access token in memory
@@ -311,6 +471,22 @@ export async function getAccessToken(): Promise<string | null> {
   } finally {
     state.inFlightRefresh = null;
   }
+}
+
+/**
+ * v1.4.0: like getAccessToken(), but never resolves null. When no access
+ * token can be produced it throws AuthNoRefreshToken, so a caller can tell
+ * "no token to mint from" apart from a transient refresh failure (which
+ * re-throws the original error, e.g. a TypeError or HTTP_503).
+ */
+export async function getAccessTokenOrThrow(): Promise<string> {
+  const token = await getAccessToken();
+  if (token === null) {
+    throw new AuthNoRefreshToken(
+      'no access token: no refresh token is stored for this origin (cookie-only session or signed out)',
+    );
+  }
+  return token;
 }
 
 // ── Refresh-failure classification (P3.1) ─────────────────────────────────
@@ -346,8 +522,17 @@ export async function getAccessToken(): Promise<string | null> {
  *     deleting it would sign users out over a code defect.
  *   - DPOP_REPLAY — the jti was already seen. Every proof mints a fresh jti,
  *     so a retry succeeds on its own.
+ *   - DEVICE_UNRECOGNIZED (decided v1.4.0) — it means "verify this device"
+ *     (a step-up), not "this credential is dead". The CT BFF does not return
+ *     it from /auth/v1/session/refresh today (no emitter in bff/, checked
+ *     2026-10-14). If it ever does, deleting a refresh token over a step-up
+ *     prompt would sign the crew member out; the caller should route the
+ *     error to its verification UI instead. CalExp5 #881 made the same call.
+ *
+ * v1.4.0: exported, so consumers classify refresh errors with the SDK's own
+ * rule instead of copying the code list.
  */
-function isTerminalRefreshError(err: unknown): boolean {
+export function isTerminalRefreshError(err: unknown): boolean {
   const code = (err as { code?: unknown } | null)?.code;
   return (
     code === 'AUTH_SESSION_EXPIRED' ||
@@ -387,10 +572,22 @@ async function performRefresh(): Promise<string | null> {
     // round-trip starts. See the note at the catch block below — this is
     // what lets a stale response tell "still mine" from "superseded".
     const sessionIdAtStart = state.sessionId;
+    const installsAtStart = installCount;
 
     const rt = await getRefreshToken();
+    if (rt === null && installCount !== installsAtStart && hasLiveAccessToken()) {
+      // A setSession() landed during the lookup: the null is about the old
+      // session. Hand back the new token; no event. Any other change (a /me
+      // naming a cookie session, a clear) still reports the missing token.
+      return state.accessToken;
+    }
     if (rt === null) {
-      // No refresh token — need re-auth
+      // No refresh token: nothing to mint from. Return null (the documented
+      // getAccessToken() contract) but SAY so. Before v1.4.0 this was silent,
+      // so a caller could not tell "no token" from a blip (CalExp5 #881's
+      // reconnect loop). No notifyListeners(): the session may be a valid
+      // cookie-only one, and AuthProvider's listener would mark it anonymous.
+      notifyTokenUnavailable('no_refresh_token');
       return null;
     }
 
@@ -410,7 +607,7 @@ async function performRefresh(): Promise<string | null> {
         await clearRefreshToken();
         state.accessToken = null;
         state.accessExpiresAt = 0;
-        state.sessionId = null;
+        adoptSessionId(null, null);
         broadcast({ type: 'session_cleared' });
         notifyListeners();
         // rc.7 D7-fu(b): typed error class so consumers can
@@ -424,7 +621,7 @@ async function performRefresh(): Promise<string | null> {
 
       state.accessToken = result.access_token;
       state.accessExpiresAt = newExpiresAt;
-      state.sessionId = result.session_id;
+      adoptSessionId(result.session_id, 'token');
 
       // v1.0.1 (B7): use server-returned refresh_expires_at when present.
       // Legacy servers (pre-v1.0.1) won't return the field; fall back to
@@ -487,6 +684,8 @@ async function performRefresh(): Promise<string | null> {
       //   AUTH_SESSION_REVOKED  — user/admin revoke, reuse-detection family
       //                           revoke, or (CT mig 170+) a disabled/deleted
       //                           identity. The BFF maps all three to this code.
+      //   INVALID_DPOP_BINDING  — (v1.3.0, P4.6) keypair lost; see
+      //                           isTerminalRefreshError().
       //
       // Everything else — network error, timeout/abort, 5xx, an unparseable
       // response — is TRANSIENT. Keep the refresh token and let the caller
@@ -523,7 +722,7 @@ async function performRefresh(): Promise<string | null> {
           await clearRefreshToken();
           state.accessToken = null;
           state.accessExpiresAt = 0;
-          state.sessionId = null;
+          adoptSessionId(null, null);
           broadcast({ type: 'session_cleared' });
           notifyListeners();
         }
@@ -551,8 +750,8 @@ async function performRefresh(): Promise<string | null> {
         state.accessExpiresAt = 0;
       }
 
-      // Re-throw either way so callers (client.ts retry logic) can distinguish
-      // refresh-failure from no-token-present.
+      // Re-throw either way, so a failed refresh is never mistaken for "no
+      // token" (which resolves null above, with onTokenUnavailable).
       throw err;
     }
   });
@@ -648,6 +847,66 @@ export function getCurrentSessionId(): string | null {
   return state.sessionId;
 }
 
+/** v1.4.0: the current session generation (see SessionScope). */
+export function getSessionGeneration(): number {
+  return generation;
+}
+
+/** v1.4.0: snapshot of which session is current. Zero network. */
+export function getSessionScope(): SessionScope {
+  return { sessionId: state.sessionId, generation, source: sessionSource };
+}
+
+/**
+ * v1.4.0: is `scope` (captured earlier with getSessionScope()) still the
+ * current session? False once any session change happened since. Use it to
+ * drop a session-expired / revoked signal that a replaced session produced.
+ */
+export function isSessionScopeCurrent(scope: Pick<SessionScope, 'generation'>): boolean {
+  return scope.generation === generation;
+}
+
+/**
+ * v1.4.0: clear the session only if `scope` is still the current one.
+ * Returns true when it cleared; false when the scope was stale, or when a
+ * setSession() during the wipe superseded the clear. Used by the session
+ * watcher so a revoke that a replaced session produced cannot sign out the
+ * new one, and so it stops polling only when it really signed out.
+ */
+export async function clearSessionIfCurrent(
+  scope: Pick<SessionScope, 'generation'>
+): Promise<boolean> {
+  if (!isSessionScopeCurrent(scope)) return false;
+  return clearSessionAndReport();
+}
+
+/**
+ * v1.4.0: record the session id of a cookie-authenticated session, read from
+ * /auth/v1/me's `session_meta.session_id`. This gives a cookie-only session
+ * an id and a generation, so its events can be scoped. When /me names a
+ * session other than the one held, the server wins: the scope moves to the
+ * cookie session (new generation, source 'cookie'). Does not notify session
+ * listeners and does not touch tokens.
+ * Called by AuthProvider after /me succeeds. Pass the scope captured before
+ * the /me request: a reply that a sign-in or sign-out overtook is dropped,
+ * so it cannot relabel the new session with the old id.
+ */
+export function noteCookieSession(
+  sessionId: string | null | undefined,
+  scopeAtRequest?: Pick<SessionScope, 'generation'>
+): void {
+  if (typeof sessionId !== 'string' || sessionId.length === 0) return;
+  if (scopeAtRequest !== undefined && !isSessionScopeCurrent(scopeAtRequest)) return;
+  if (sessionId === state.sessionId) return;
+  // /me is the server's word on which session this browser holds. A
+  // different id means the local token session is not the one the cookie
+  // authenticates (e.g. token session A expired here, B signed in on a
+  // sibling subdomain), so the scope follows the server (Devin, PR #31).
+  // Tokens are left alone: a later refresh re-adopts its own id, which
+  // moves the generation again.
+  adoptSessionId(sessionId, 'cookie');
+}
+
 /**
  * True if the SDK currently holds a valid-looking access token.
  * Zero network. Used by useAuth() status derivation.
@@ -679,6 +938,12 @@ export function __resetTokenManagerForTests(): void {
   state.inFlightRefresh = null;
   refreshCallback = null;
   listeners.clear();
+  tokenUnavailableListeners.clear();
+  tokenUnavailableFiredFor = null;
+  generation = 0;
+  sessionSource = null;
+  pendingClear = null;
+  installCount = 0;
   warnedMissingRefreshExpiresAt = false;
   warnedNoNavigatorLocks = false;
   if (broadcastChannel !== null) {
