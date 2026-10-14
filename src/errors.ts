@@ -1,4 +1,7 @@
-// @samjonaidi-ship-it/universal-auth | src/errors.ts | v1.0.4 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | src/errors.ts | v1.0.5 | 2026-10-14 | BB
+// v1.0.5 (rc.24, issue #33): SESSION_WIPE_TIMEOUT + SessionWipeTimeout, thrown
+//   by clearSession() when the IndexedDB wipe does not settle in time.
+//   SDK-internal; never from the BFF.
 // v1.0.4 (rc.22): AUTH_NO_REFRESH_TOKEN + AuthNoRefreshToken — thrown by
 //   getAccessTokenOrThrow() when there is no refresh token to mint from
 //   (cookie-only session, or never signed in). SDK-internal; never from the BFF.
@@ -376,6 +379,18 @@ export class CnfJktMismatchError extends AuthSdkError {
 export class AuthNoRefreshToken extends AuthSdkError {
   constructor(message: string, opts?: ConstructorParameters<typeof AuthSdkError>[2]) {
     super('AUTH_NO_REFRESH_TOKEN', message, opts);
+  }
+}
+
+/**
+ * rc.24 (issue #33): the IndexedDB wipe of a sign-out did not settle within
+ * the SDK's bound. Memory is already cleared and tabs were told; the SDK has
+ * marked this origin locally revoked, so the next refresh retries the wipe
+ * and never uses a refresh token that survived it.
+ */
+export class SessionWipeTimeout extends AuthSdkError {
+  constructor(message: string, opts?: ConstructorParameters<typeof AuthSdkError>[2]) {
+    super('SESSION_WIPE_TIMEOUT', message, opts);
   }
 }
 

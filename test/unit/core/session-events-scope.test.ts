@@ -1,4 +1,8 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/core/session-events-scope.test.ts | v1.2.0 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/session-events-scope.test.ts | v1.3.0 | 2026-10-14 | BB
+// v1.3.0 (session-events v0.4.0, issue #33 items 5 + 6): a family revoke
+// naming this session in session_ids clears it; scope 'identity' clears any
+// session; a session with no local id asks /me which session it is before it
+// clears; the emitted event carries only allowlisted keys.
 // v1.2.0 (session-events v0.3.1): a revoke naming a session_id clears a
 // session that has no local id yet; a server `stale` key is dropped.
 // v1.1.0 (session-events v0.3.0, pre-push review): a revoke naming another
@@ -182,7 +186,9 @@ describe('session-events — revoke is scoped and reported after the clear', () 
 
   it('review r2: a revoke naming a session_id clears a session with no local id yet', async () => {
     // Refresh-token-only session: /me has not run, so the scope has no id.
+    // v1.3.0: the deferred /me fails (the session is revoked), so it fails closed.
     await storage.storeRefreshToken('rt-cookie', Date.now() + 86_400_000);
+    stubMe(() => json(401, { code: 'SESSION_REVOKED', message: 'revoked' }));
     startSessionEvents();
     MockEventSource.instances[0]!.dispatch('session.revoked', { reason: 'admin_revoke', session_id: 'sess-X' });
 
@@ -225,5 +231,124 @@ describe('session-events — revoke is scoped and reported after the clear', () 
     expect(payload).not.toHaveProperty('stale');
     expect(getCurrentSessionId()).toBeNull();
     expect(MockEventSource.instances).toHaveLength(1);
+  });
+
+  const meBody = (id: string) => ({
+    identity: { identity_id: 'sam', identity_kind: 'human', display_name: 'Sam' },
+    personas: [],
+    aggregate: { features: [], app_access: [] },
+    session_meta: { session_id: id, issued_at: new Date().toISOString(), expires_at: new Date(Date.now() + 60_000).toISOString() },
+  });
+  const stubMe = (reply: () => Response) =>
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input instanceof Request ? input.url : input);
+        if (url.includes('/auth/v1/me')) return reply();
+        return new Response('{}', { status: 404 });
+      })
+    );
+  const json = (status: number, body: unknown) =>
+    new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+  const revokePayload = () => vi.mocked(emit).mock.calls.find((c) => c[0] === 'session.revoked')?.[1];
+
+  it('issue #33 item 5: a family revoke naming this session in session_ids clears it', async () => {
+    await setSession(tokens('sess-A'));
+    startSessionEvents();
+    MockEventSource.instances[0]!.dispatch('session.revoked', {
+      reason: 'family_revoke',
+      scope: 'family',
+      session_id: 'sess-other',
+      session_ids: ['sess-other', 'sess-A'],
+    });
+
+    await vi.waitFor(() => expect(revokePayload()).toBeDefined());
+    expect(revokePayload()).toMatchObject({ revoke_scope: 'family' });
+    expect(revokePayload()).not.toHaveProperty('stale');
+    expect(getCurrentSessionId()).toBeNull();
+  });
+
+  it('issue #33 item 5: a family revoke that does not name this session keeps it', async () => {
+    await setSession(tokens('sess-A'));
+    startSessionEvents();
+    MockEventSource.instances[0]!.dispatch('session.revoked', {
+      reason: 'family_revoke',
+      scope: 'family',
+      session_id: 'sess-other',
+      session_ids: ['sess-other', 'sess-third'],
+    });
+
+    await vi.waitFor(() => expect(revokePayload()).toBeDefined());
+    expect(revokePayload()).toMatchObject({ stale: true });
+    expect(getCurrentSessionId()).toBe('sess-A');
+  });
+
+  it('issue #33 item 5: an identity-scope revoke clears this session whatever id it names', async () => {
+    await setSession(tokens('sess-A'));
+    startSessionEvents();
+    MockEventSource.instances[0]!.dispatch('session.revoked', {
+      reason: 'identity_revoke',
+      scope: 'identity',
+      session_id: 'sess-other',
+    });
+
+    await vi.waitFor(() => expect(revokePayload()).toBeDefined());
+    expect(revokePayload()).toMatchObject({ revoke_scope: 'identity' });
+    expect(revokePayload()).not.toHaveProperty('stale');
+    expect(getCurrentSessionId()).toBeNull();
+  });
+
+  it('issue #33 item 5: no local id and /me names another session: kept, stale, stream reopens', async () => {
+    await storage.storeRefreshToken('rt-cookie', Date.now() + 86_400_000);
+    stubMe(() => json(200, meBody('sess-mine')));
+    startSessionEvents();
+    MockEventSource.instances[0]!.dispatch('session.revoked', { reason: 'admin_revoke', session_id: 'sess-X' });
+
+    await vi.waitFor(() => expect(revokePayload()).toBeDefined());
+    expect(revokePayload()).toMatchObject({ session_id: 'sess-X', stale: true });
+    expect(storage.clearAllSessionState).not.toHaveBeenCalled();
+    expect(await storage.getRefreshToken()).not.toBeNull();
+    expect(MockEventSource.instances).toHaveLength(2);
+  });
+
+  it('issue #33 item 5: no local id and /me names the revoked session: cleared', async () => {
+    await storage.storeRefreshToken('rt-cookie', Date.now() + 86_400_000);
+    stubMe(() => json(200, meBody('sess-X')));
+    startSessionEvents();
+    MockEventSource.instances[0]!.dispatch('session.revoked', { reason: 'admin_revoke', session_id: 'sess-X' });
+
+    await vi.waitFor(() => expect(revokePayload()).toBeDefined());
+    expect(revokePayload()).not.toHaveProperty('stale');
+    expect(storage.clearAllSessionState).toHaveBeenCalled();
+    expect(await storage.getRefreshToken()).toBeNull();
+  });
+
+  it('issue #33 item 5: no local id and /me fails: fails closed (cleared)', async () => {
+    await storage.storeRefreshToken('rt-cookie', Date.now() + 86_400_000);
+    stubMe(() => json(503, { code: 'HTTP_503', message: 'down' }));
+    startSessionEvents();
+    MockEventSource.instances[0]!.dispatch('session.revoked', { reason: 'admin_revoke', session_id: 'sess-X' });
+
+    await vi.waitFor(() => expect(revokePayload()).toBeDefined());
+    expect(revokePayload()).not.toHaveProperty('stale');
+    expect(await storage.getRefreshToken()).toBeNull();
+  });
+
+  it('issue #33 item 6: the emitted event carries only allowlisted keys and a safe reason', async () => {
+    await setSession(tokens('sess-A'));
+    startSessionEvents();
+    MockEventSource.instances[0]!.dispatch('session.revoked', {
+      reason: 'Admin Revoke <script>',
+      identity_id: 'idn-secret',
+      session_ids: ['sess-A', 'sess-B'],
+      email: 'someone@example.com',
+      session_id: 'sess-A',
+    });
+
+    await vi.waitFor(() => expect(revokePayload()).toBeDefined());
+    const payload = revokePayload() as Record<string, unknown>;
+    expect(Object.keys(payload).sort()).toEqual(['generation', 'reason', 'session_id']);
+    expect(payload.reason).toBe('server');
+    expect(payload.session_id).toBe('sess-A');
   });
 });

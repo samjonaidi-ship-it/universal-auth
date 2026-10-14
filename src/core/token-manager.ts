@@ -1,4 +1,14 @@
-// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.5.3 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.6.0 | 2026-10-14 | BB
+// v1.6.0 (rc.24, issue #33 items 2 + 4):
+//   - The IndexedDB wipe of a clear is bounded (WIPE_TIMEOUT_MS). A wipe that
+//     does not settle in time fails the clear with SessionWipeTimeout, so a
+//     session.revoked event is no longer held by a hung IndexedDB.
+//   - A failed or timed-out wipe writes a "locally revoked" marker
+//     (localStorage + memory). The next refresh honours it: it retries the
+//     wipe and treats the case as no refresh token, so a refresh token or
+//     keypair that survived a sign-out is never used to sign back in. A
+//     setSession() store removes the marker. The marker is per origin, so
+//     every tab of the origin fails closed until a sign-in or a good wipe.
 // v1.5.3 (Devin round 3, PR #34): getSessionEpoch() counts setSession() and
 //   clearSession() calls. AuthProvider's hydrate uses it to tell its own
 //   token refresh apart from a sign-in or sign-out during /me.
@@ -118,6 +128,7 @@ import {
   CnfJktMismatchError,
   LegacyRefreshResponseError,
   NoNavigatorLocksError,
+  SessionWipeTimeout,
 } from '../errors.js';
 
 // ── Public types ──────────────────────────────────────────────────────────
@@ -208,6 +219,91 @@ let clearCount = 0;
 let pendingInstall: Promise<void> | null = null;
 // The generation a terminal refresh clear produced (see isRefreshClearCurrent).
 let refreshClearGeneration: number | null = null;
+
+// ── Wipe bound + locally-revoked marker (v1.6.0, issue #33) ──────────────
+
+const DEFAULT_WIPE_TIMEOUT_MS = 5_000;
+let wipeTimeoutMs = DEFAULT_WIPE_TIMEOUT_MS;
+const REVOKED_MARKER_KEY = 'bb-universal-auth-revoked';
+// Memory copy of the marker, for runtimes where localStorage throws.
+let locallyRevoked = false;
+
+/** Race a wipe against WIPE_TIMEOUT_MS; the wipe itself keeps running. */
+function withWipeTimeout(wipe: Promise<void>): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new SessionWipeTimeout(`session wipe did not settle within ${wipeTimeoutMs} ms`)),
+      wipeTimeoutMs,
+    );
+  });
+  return Promise.race([wipe, timeout]).finally(() => clearTimeout(timer));
+}
+
+function setRevokedMarker(): void {
+  locallyRevoked = true;
+  try {
+    globalThis.localStorage?.setItem(REVOKED_MARKER_KEY, '1');
+  } catch {
+    // Storage blocked: the memory flag still covers this page.
+  }
+}
+
+function clearRevokedMarker(): void {
+  locallyRevoked = false;
+  try {
+    globalThis.localStorage?.removeItem(REVOKED_MARKER_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+function isLocallyRevoked(): boolean {
+  if (locallyRevoked) return true;
+  try {
+    return globalThis.localStorage?.getItem(REVOKED_MARKER_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Track a wipe in pendingClear until it settles, even past its timeout, so a
+ * later setSession() still waits for it and the wipe cannot delete the new
+ * session's refresh token.
+ */
+function trackWipe(wipe: Promise<void>): void {
+  pendingClear = wipe;
+  const release = (): void => {
+    if (pendingClear === wipe) pendingClear = null;
+  };
+  void wipe.then(release, release);
+}
+
+/**
+ * The marker is set: a wipe failed and a refresh token or keypair may have
+ * survived a sign-out. Retry the wipe. A sign-in that began first, or begins
+ * during it, owns the device and keeps its state.
+ */
+async function retryLocallyRevokedWipe(): Promise<void> {
+  const myInstall = installCount;
+  const previousWipe = pendingClear;
+  const installBefore = pendingInstall;
+  const wipe = (async () => {
+    if (previousWipe !== null) await previousWipe.catch(() => {});
+    if (installBefore !== null) await installBefore.catch(() => {});
+    if (installCount !== myInstall) return;
+    await clearAllSessionState();
+    if (installCount === myInstall) await deleteKeypair();
+  })();
+  trackWipe(wipe);
+  try {
+    await withWipeTimeout(wipe);
+    if (installCount === myInstall) clearRevokedMarker();
+  } catch {
+    // The marker stays; the next refresh retries.
+  }
+}
 
 function adoptSessionId(id: string | null, source: SessionSource | null): void {
   if (id !== state.sessionId) generation++;
@@ -414,6 +510,9 @@ export async function setSession(tokens: SessionTokens): Promise<void> {
   } finally {
     if (pendingInstall === install) pendingInstall = null;
   }
+  // v1.6.0: a stored sign-in replaces a locally revoked state, unless a clear
+  // began during the store (that clear owns the marker now).
+  if (clearCount === myClears) clearRevokedMarker();
 
   // v1.5.0: a sign-out or a newer sign-in during the store owns the session
   // now. Telling tabs and listeners about this one would undo it.
@@ -486,19 +585,22 @@ async function clearSessionAndReport(): Promise<boolean> {
     await clearAllSessionState();
     if (installCount === myInstall) await deleteKeypair();
   })();
-  pendingClear = wipe;
+  // v1.6.0: pendingClear tracks the wipe until it really settles, but this
+  // clear waits at most WIPE_TIMEOUT_MS for it (issue #33 item 4).
+  trackWipe(wipe);
   let wipeFailed = false;
   let wipeError: unknown = null;
   try {
-    await wipe;
+    await withWipeTimeout(wipe);
   } catch (err) {
     wipeFailed = true;
     wipeError = err;
-  } finally {
-    if (pendingClear === wipe) pendingClear = null;
   }
   // A sign-in during the wipe owns the device now; it is not "cleared".
   if (installCount !== myInstall) return false;
+  // v1.6.0: a refresh token or keypair may have survived. The marker makes
+  // the next refresh retry the wipe instead of using them (issue #33 item 2).
+  if (wipeFailed) setRevokedMarker();
   // v1.5.0: memory is already cleared, so tabs and listeners hear about it
   // even when the IndexedDB wipe failed. The failure is re-thrown after.
   broadcast({ type: 'session_cleared' });
@@ -654,6 +756,15 @@ async function performRefresh(): Promise<string | null> {
     // what lets a stale response tell "still mine" from "superseded".
     const sessionIdAtStart = state.sessionId;
     const installsAtStart = installCount;
+
+    // v1.6.0: a sign-out whose wipe failed may have left a refresh token on
+    // disk. Never refresh with it: retry the wipe, then report no token.
+    if (isLocallyRevoked()) {
+      await retryLocallyRevokedWipe();
+      if (installCount !== installsAtStart && hasLiveAccessToken()) return state.accessToken;
+      notifyTokenUnavailable('no_refresh_token');
+      return null;
+    }
 
     const rt = await getRefreshToken();
     if (rt === null && installCount !== installsAtStart && hasLiveAccessToken()) {
@@ -1034,6 +1145,11 @@ export function invalidateAccessToken(): void {
 
 // ── Test-only helper ──────────────────────────────────────────────────────
 
+/** Test-only: shorten the wipe bound (ms). Reset by __resetTokenManagerForTests. */
+export function __setWipeTimeoutMsForTests(ms: number): void {
+  wipeTimeoutMs = ms;
+}
+
 /**
  * Reset in-memory state + refresh callback.
  * Used by unit tests between cases.
@@ -1054,6 +1170,8 @@ export function __resetTokenManagerForTests(): void {
   clearCount = 0;
   pendingInstall = null;
   refreshClearGeneration = null;
+  wipeTimeoutMs = DEFAULT_WIPE_TIMEOUT_MS;
+  clearRevokedMarker();
   warnedMissingRefreshExpiresAt = false;
   warnedNoNavigatorLocks = false;
   if (broadcastChannel !== null) {

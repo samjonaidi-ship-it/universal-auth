@@ -1,4 +1,7 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/react/AuthProvider-token-state.test.tsx | v1.7.0 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/react/AuthProvider-token-state.test.tsx | v1.8.0 | 2026-10-14 | BB
+// v1.8.0 (AuthProvider v1.3.0, issue #33 item 3): an initialSession for
+//   another session than the live token's runs one /me and shows the live
+//   identity; the same session id runs no /me.
 // v1.7.0 (AuthProvider v1.2.4, Devin round 3): a sign-in that keeps the same
 //   session id during hydrate's /me drops the old reply; the new identity stays.
 // v1.6.0 (AuthProvider v1.2.3, Devin round 2): a /me whose own token refresh
@@ -58,6 +61,12 @@ function meFor(sessionId: string, name: string): Session {
 function IdentityProbe(): ReactNode {
   const ctx = useContext(IdentityContext);
   return <div data-testid="who">{ctx?.identity?.display_name ?? 'nobody'}</div>;
+}
+
+function IdentityHistory({ seen }: { seen: string[] }): ReactNode {
+  const ctx = useContext(IdentityContext);
+  seen.push(ctx?.identity?.display_name ?? 'nobody');
+  return null;
 }
 
 function jsonResp(status: number, body: unknown): Response {
@@ -526,5 +535,89 @@ describe('AuthProvider — tokenState (rc.22)', () => {
     await new Promise((r) => setTimeout(r, 100));
     expect(screen.getByTestId('who').textContent).toBe('carol');
     expect(meCalls).toBeGreaterThanOrEqual(2);
+  });
+
+  it('issue #33 item 3: an initialSession for another session shows the live session identity', async () => {
+    await setSession({
+      accessToken: 'at-B',
+      refreshToken: 'rt-B',
+      expiresAt: Date.now() + 15 * 60_000,
+      sessionId: 'sess-B',
+    });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (url.includes('/auth/v1/me')) return jsonResp(200, meFor('sess-B', 'bob'));
+      return jsonResp(404, { error: 'not_stubbed' });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <AuthProvider initialSession={meFor('sess-A', 'alice')}>
+        <StatusProbe />
+        <IdentityProbe />
+      </AuthProvider>
+    );
+
+    await waitFor(() => expect(screen.getByTestId('who').textContent).toBe('bob'));
+    expect(screen.getByTestId('token').textContent).toBe('live');
+    expect(getSessionScope()).toMatchObject({ sessionId: 'sess-B', source: 'token' });
+  });
+
+  it('issue #33 item 3: an initialSession for the live session runs no /me', async () => {
+    await setSession({
+      accessToken: 'at-A',
+      refreshToken: 'rt-A',
+      expiresAt: Date.now() + 15 * 60_000,
+      sessionId: 'sess-A',
+    });
+    const fetchMock = vi.fn(async () => jsonResp(200, meFor('sess-A', 'other')));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <AuthProvider initialSession={meFor('sess-A', 'alice')}>
+        <IdentityProbe />
+      </AuthProvider>
+    );
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(screen.getByTestId('who').textContent).toBe('alice');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('issue #33 item 3: a sign-out during the corrective /me drops its reply', async () => {
+    await setSession({
+      accessToken: 'at-B',
+      refreshToken: 'rt-B',
+      expiresAt: Date.now() + 15 * 60_000,
+      sessionId: 'sess-B',
+    });
+    const seen: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input instanceof Request ? input.url : input);
+        if (url.includes('/auth/v1/me')) {
+          await clearSession();
+          // The sign-out settles (listener ran) before the reply lands.
+          await new Promise((r) => setTimeout(r, 40));
+          return jsonResp(200, meFor('sess-B', 'bob'));
+        }
+        return jsonResp(404, { error: 'not_stubbed' });
+      })
+    );
+
+    render(
+      <AuthProvider initialSession={meFor('sess-A', 'alice')}>
+        <StatusProbe />
+        <IdentityProbe />
+        <IdentityHistory seen={seen} />
+      </AuthProvider>
+    );
+    await new Promise((r) => setTimeout(r, 100));
+
+    // A late session_cleared broadcast also lands, so check every render.
+    expect(seen).not.toContain('bob');
+    expect(screen.getByTestId('who').textContent).toBe('nobody');
+    expect(screen.getByTestId('status').textContent).toBe('anonymous');
   });
 });
