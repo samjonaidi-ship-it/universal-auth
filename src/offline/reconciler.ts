@@ -1,4 +1,6 @@
-// @samjonaidi-ship-it/universal-auth | src/offline/reconciler.ts | v1.0.1 | 2026-05-01 | BB
+// @samjonaidi-ship-it/universal-auth | src/offline/reconciler.ts | v1.0.2 | 2026-10-15 | BB
+// v1.0.2 (rc.27, Devin on PR #42): a failed cookie mint no longer aborts the
+//   drain. The row replays on the cookie alone, as before the mint existed.
 // Queue flush + reconciliation per §9.4 status-code matrix.
 //
 // Matrix:
@@ -14,7 +16,7 @@
 
 import { readAll, remove, setRetryAfter, incrementRetry, moveToDeadLetter, type QueuedMutation } from './queue.js';
 import { getClientConfig } from '../core/client.js';
-import { getAccessToken } from '../core/token-manager.js';
+import { getAccessToken, isCookieMintFailure } from '../core/token-manager.js';
 import { emit } from '../core/event-reporter.js';
 
 const MAX_RETRIES = 5;
@@ -73,7 +75,15 @@ async function flushOne(row: QueuedMutation): Promise<Outcome> {
   // re-enqueue on network failure → infinite loop). We mimic its headers
   // directly here.
   const url = joinUrl(cfg.apiBaseUrl, row.endpoint);
-  const accessToken = await getAccessToken();
+  let accessToken: string | null;
+  try {
+    accessToken = await getAccessToken();
+  } catch (err) {
+    // rc.27: a failed cookie mint (429, 5xx, offline, bad body) replays the
+    // row on the cookie alone, as before the mint. Other errors still throw.
+    if (!isCookieMintFailure(err)) throw err;
+    accessToken = null;
+  }
 
   const headers: Record<string, string> = {
     'X-Auth-Protocol-Version': 'v1',

@@ -1,4 +1,5 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/offline/reconciler.test.ts | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/offline/reconciler.test.ts | v1.1.0 | 2026-10-15 | BB
+// v1.1.0 (rc.27, Devin on PR #42): a failed cookie mint replays on the cookie.
 // A2 gate #4 — reconciler status-code matrix (§9.4).
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -15,7 +16,7 @@ import {
   __resetEventReporterForTests,
 } from '../../../src/core/event-reporter.js';
 import { __resetDbForTests } from '../../../src/core/storage.js';
-import { __resetTokenManagerForTests } from '../../../src/core/token-manager.js';
+import { __resetTokenManagerForTests, noteCookieSession } from '../../../src/core/token-manager.js';
 
 function resp(status: number, body: unknown = {}): Response {
   return new Response(JSON.stringify(body), {
@@ -66,6 +67,29 @@ describe('offline/reconciler', () => {
     const r = await flush();
     expect(r.flushed).toBe(1);
     expect(await depth()).toBe(0);
+  });
+
+  it('a failed cookie mint does not stop the drain: the row replays on the cookie', async () => {
+    configureClient({
+      apiBaseUrl: 'https://ct-bff.test',
+      appId: 'bb_express',
+      sdkVersion: '1.1.0-rc.27',
+      mintFromCookie: true,
+    });
+    noteCookieSession('sess-cookie-1');
+    await addRow('m1');
+    fetchSpy.mockImplementation((url) => {
+      if (String(url).endsWith('/auth/v1/session/mint')) {
+        return Promise.resolve(new Response('bad gateway', { status: 503 }));
+      }
+      return Promise.resolve(resp(200, { ok: true }));
+    });
+    const r = await flush();
+    expect(r.flushed).toBe(1);
+    expect(await depth()).toBe(0);
+    const replay = (fetchSpy.mock.calls as unknown as [string, RequestInit][])
+      .find(([u]) => String(u).endsWith('/api/x'));
+    expect((replay![1].headers as Record<string, string>).Authorization).toBeUndefined();
   });
 
   it('removes rows on 4xx (permanent client error)', async () => {
