@@ -1,4 +1,6 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/core/client-cookie-mint.test.ts | v1.0.0 | 2026-10-15 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/client-cookie-mint.test.ts | v1.1.0 | 2026-10-15 | BB
+// v1.1.0 (Devin on PR #42): a 200 with a null or non-JSON body holds mints
+//   back 60 s and then recovers; it is not a refusal.
 // rc.27 (COOKIE_BEARER_MINT_SPEC §5) — client half of the cookie mint:
 //   the mint request (cookie only, no Authorization, app_id = mintAppId ?? appId),
 //   the status mapping (401/400/403 → refused; 429/5xx → thrown, transient),
@@ -132,6 +134,34 @@ describe('core/client — rc.27 cookie mint', () => {
     expect(callsTo(fetchSpy, MINT_URL)).toHaveLength(1);
     expect(seen).toHaveBeenCalledTimes(1);
     expect(seen.mock.calls[0]?.[0]).toMatchObject({ reason: 'no_refresh_token' });
+  });
+
+  it.each([
+    ['JSON null', 'null'],
+    ['not JSON', '<html>gateway</html>'],
+  ])('a 200 whose body is %s holds mints back 60 s, then recovers', async (_label, body) => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      configure({ mintFromCookie: true });
+      noteCookieSession('sess-cookie-1');
+      let bad = true;
+      fetchSpy.mockImplementation(async (input: RequestInfo | URL) =>
+        String(input) === MINT_URL
+          ? (bad ? new Response(body, { status: 200 }) : mintOk())
+          : jsonResp(200, { ok: true }));
+
+      const err = await getAccessToken().catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(Error);
+      await getAccessToken().catch(() => undefined);
+      expect(callsTo(fetchSpy, MINT_URL)).toHaveLength(1);
+
+      bad = false;
+      vi.setSystemTime(Date.now() + 61_000);
+      expect(await getAccessToken()).toBe('at-minted');
+      expect(callsTo(fetchSpy, MINT_URL)).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('429 throws AuthRateLimited with retryAfterSeconds, and the request still goes out on the cookie', async () => {

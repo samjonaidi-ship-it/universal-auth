@@ -1,4 +1,6 @@
-// @samjonaidi-ship-it/universal-auth | src/core/client.ts | v1.5.0 | 2026-10-15 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/client.ts | v1.5.1 | 2026-10-15 | BB
+// v1.5.1 (rc.27, Devin on PR #42): a mint 200 whose body is JSON null or not
+//   JSON is an unusable reply (60 s hold), not a refusal for the session.
 // v1.5.0 (rc.27, COOKIE_BEARER_MINT_SPEC §5): opt-in `mintFromCookie`. A
 //   cookie-only session (no refresh token) gets a short-lived bearer from
 //   POST /auth/v1/session/mint, sent on the cookie alone (no Authorization).
@@ -574,7 +576,17 @@ async function mintTokenRequest(): Promise<MintResponse | null> {
     }
     throw errorFromEnvelope(env);
   }
-  return JSON.parse(bodyText) as MintResponse;
+  // A 200 that is not JSON, or is JSON null, is an unusable reply, not a
+  // refusal: hand back an empty object so the token manager's field check
+  // rejects it and holds mints back 60 s (Devin on PR #42). null is kept for
+  // the 401/400/403 refusals above.
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(bodyText);
+  } catch {
+    parsed = undefined;
+  }
+  return (parsed ?? {}) as MintResponse;
 }
 
 async function refreshTokenRequest(refreshToken: string): Promise<{

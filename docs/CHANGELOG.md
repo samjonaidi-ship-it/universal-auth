@@ -28,7 +28,13 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
   60 s; a minted token is kept 1 h at most.
 - A failed mint never blocks a request: it goes out on the cookie alone, as
   before rc.27 (`isCookieMintFailure()` marks those errors). A 401 on a minted
-  bearer re-mints once and retries.
+  bearer re-mints once and retries. The offline queue replays on the cookie
+  too (`reconciler.ts` v1.0.2).
+- A mint that names another session than the cookie session held moves the
+  scope to that session and keeps its token for it; the caller, who asked for
+  the old session, gets `null`.
+- A mint 200 whose body is JSON `null` or not JSON is a malformed reply
+  (60 s hold), not a refusal.
 - Off by default: with the flag off nothing changes.
 
 ## [1.1.0-rc.26] — 2026-10-14 — cookie note during a superseded sign-out

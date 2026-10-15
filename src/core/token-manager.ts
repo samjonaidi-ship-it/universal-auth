@@ -1,4 +1,8 @@
-// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.7.1 | 2026-10-15 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.7.2 | 2026-10-15 | BB
+// v1.7.2 (rc.27, Devin on PR #42): a mint that names a session other than the
+//   cookie session held moves the scope to that session (the server wins, as
+//   in noteCookieSession) and keeps its token for it, but the caller, who
+//   asked for the old session, gets null and goes out on the cookie.
 // v1.7.1 (rc.27, pre-push review): the mint block is scoped to the session
 //   generation and capped at 10 min; a reply whose expiry is already past is
 //   rejected and blocks for 60 s; a minted token is kept 1 h at most.
@@ -1372,6 +1376,9 @@ async function performRefresh(): Promise<string | null> {
  *   a block still running, same
  *   generation                      -> re-throw its error without a request
  *   200 expiry > 1 h out            -> kept for 1 h at most
+ *   200 for another session id      -> scope moves to that session, its
+ *                                     token kept for it; this caller gets
+ *                                     null (it asked for the old session)
  */
 async function mintFromCookie(
   mint: MintCallback,
@@ -1425,11 +1432,16 @@ async function mintFromCookie(
     block(err, MINT_BAD_REPLY_BLOCK_MS);
     throw err;
   }
+  const askedFor = state.sessionId;
   state.accessToken = result.access_token;
   state.accessExpiresAt = Math.min(expiresAt, now + MINT_MAX_TTL_MS);
   adoptSessionId(result.session_id, 'cookie');
   notifyListeners();
-  return result.access_token;
+  // v1.7.2: the cookie now authenticates another session (a sign-in on a
+  // sibling subdomain, say). adoptSessionId() moved the generation, so work
+  // scoped to the old session sees the change; this caller asked for the old
+  // session and must not carry the new one's bearer.
+  return result.session_id === askedFor ? result.access_token : null;
 }
 
 /**

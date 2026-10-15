@@ -1,4 +1,6 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/core/token-manager-cookie-mint.test.ts | v1.1.0 | 2026-10-15 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/token-manager-cookie-mint.test.ts | v1.2.0 | 2026-10-15 | BB
+// v1.2.0 (Devin on PR #42): a mint naming another session moves the scope and
+//   hands this caller null.
 // rc.27 (COOKIE_BEARER_MINT_SPEC §5) — token-manager half of the cookie mint:
 //   a cookie session with no refresh token mints, once, under the refresh lock;
 //   a refusal reports no_refresh_token and is not retried in that generation;
@@ -175,6 +177,25 @@ describe('token-manager — rc.27 cookie mint', () => {
     const err = await getAccessToken().catch((e: unknown) => e);
     expect(isCookieMintFailure(err)).toBe(true);
     expect(hasLiveAccessToken()).toBe(false);
+  });
+
+  it('a mint naming another session moves the scope there; the caller gets null, the next one its token', async () => {
+    const mint = vi.fn(async () => minted('sess-other', 'at-other'));
+    registerMintCallback(mint);
+    noteCookieSession('sess-cookie-1');
+    const before = getSessionScope();
+    const listener = vi.fn();
+    onSessionChange(listener);
+
+    expect(await getAccessToken()).toBeNull();
+    const after = getSessionScope();
+    expect(after).toMatchObject({ sessionId: 'sess-other', source: 'cookie' });
+    expect(after.generation).not.toBe(before.generation);
+    expect(listener).toHaveBeenCalled();
+
+    // The token belongs to the new session: the next caller gets it, no new mint.
+    expect(await getAccessToken()).toBe('at-other');
+    expect(mint).toHaveBeenCalledTimes(1);
   });
 
   it('a 429 block belongs to its session: a new cookie session mints at once', async () => {
