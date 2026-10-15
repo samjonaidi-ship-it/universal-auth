@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// BB_Tools | guardrails/devin-gate.mjs | v1.10.2 | 2026-10-09 | BB
+// BB_Tools | guardrails/devin-gate.mjs | v1.10.3 | 2026-10-14 | BB
 // CANONICAL. Every managed repo carries a byte-identical copy at scripts/devin-gate.mjs;
 // edit THIS file, then `node sync-guardrails.mjs --pr` (BB_Tools). Run by devin-gate.yml.
 //
@@ -217,8 +217,23 @@ export function hasNudge(comments, sha) {
   return (comments || []).some((c) => typeof c?.body === 'string' && c.body.includes(m));
 }
 
-/** Marker left when the sweep re-runs a stale-green gate: repeat corrections are detected exactly, not guessed. */
-export const sweepCorrectedMarker = (runId, atIso, fp) => `<!-- devin-gate sweep-corrected run=${runId} at=${atIso} fp=${fp || 'none'} -->`;
+/**
+ * Marker left when the sweep re-runs a stale-green gate: repeat corrections are detected exactly, not guessed.
+ * `ev` = the evidence the correction fired on (sweepEvidence): a marker suppresses only a repeat on the SAME
+ * evidence, so a NEW bb-review failure on unchanged threads is a first correction, not a cooldown repeat
+ * (BB_Tools #216). Omitted = a pre-#216 marker, which matches on the thread fingerprint alone.
+ */
+export const sweepCorrectedMarker = (runId, atIso, fp, ev) => `<!-- devin-gate sweep-corrected run=${runId} at=${atIso} fp=${fp || 'none'}${ev ? ` ev=${ev}` : ''} -->`;
+
+/**
+ * The evidence that made a green gate stale, as one token. A failed bb-review is keyed by its status id (each
+ * POST is a new id; created_at when the id is absent), so a later failure is new evidence even when the thread
+ * state never moved. Otherwise the threads are the evidence and the fingerprint already keys them. Pure.
+ */
+export function sweepEvidence(bbReview) {
+  if (!bbReview || !/^(failure|error)$/i.test(bbReview.state || '')) return 'threads';
+  return `bb:${String(bbReview.id ?? bbReview.created_at ?? bbReview.updated_at ?? 'unknown').replace(/\s+/g, '')}`;
+}
 
 /**
  * Breadcrumb left when the sweep observes the thread-state fingerprint MOVE from the newest correction
@@ -273,10 +288,10 @@ export function sweepCorrection(comments, runId) {
   const states = [];
   for (const c of comments || []) {
     const body = typeof c?.body === 'string' ? c.body : '';
-    const m = body.match(/devin-gate sweep-corrected run=(\d+) at=(\S+?)(?: fp=(\S+))? -->/);
+    const m = body.match(/devin-gate sweep-corrected run=(\d+) at=(\S+?)(?: fp=(\S+?))?(?: ev=(\S+?))? -->/);
     if (m && Number(m[1]) === runId) {
       const t = Date.parse(m[2]);
-      if (Number.isFinite(t) && (!newest || t > newest.at)) newest = { at: t, fp: m[3] || 'none' };
+      if (Number.isFinite(t) && (!newest || t > newest.at)) newest = { at: t, fp: m[3] || 'none', ...(m[4] ? { ev: m[4] } : {}) };
       continue;
     }
     const s = body.match(/devin-gate sweep-state fp=(\S+) at=(\S+?) -->/);
@@ -800,7 +815,7 @@ export function githubIo(env = process.env, fetchFn = fetch, { requestTimeoutMs 
  * Pure. Should the latest devin-gate run be re-run now?
  *   run      {status, conclusion, run_attempt, id} of the newest devin-gate run on the head
  *   bbReview {state}|null;  threads = review threads (null = unreadable)
- *   corrected = newest sweep-corrected marker {at, fp, trail, lastFp} (null = none found; undefined = comment list unreadable)
+ *   corrected = newest sweep-corrected marker {at, fp, ev?, trail, lastFp} (null = none found; undefined = comment list unreadable)
  *   strict = as in decide(): which threads block (blockingFindings). The canonical fast path plays no part here:
  *   unreadable threads never re-run a red gate, on any PR - a re-run under the same outage could turn a PR with
  *   an open red finding green (codex P1, BB_Tools #237).
@@ -857,17 +872,25 @@ export function sweepDecision({ run, bbReview, threads, corrected, nowMs = Date.
       // to the marker's records "state unchanged at that tick" (posted unconditionally when the marker read
       // had failed) and must not lift suppression by itself (Devin, CT #787).
       const moved = (corrected?.trail || []).some((t) => t.fp !== corrected.fp);
-      if (corrected && corrected.fp === fp && !moved && nowMs - corrected.at < SWEEP_COOLDOWN_MS) {
+      // The marker suppresses only a repeat on the SAME evidence: a new bb-review failure (a new status id) on
+      // unchanged threads is new evidence and fires now, not after the cooldown (BB_Tools #216). A pre-#216
+      // marker carries no ev and keeps the fingerprint-only match. Only a NEW failure counts: bb-review going
+      // green (ev back to 'threads') is not new evidence. The bypass honours the attempt cap like every other
+      // repeat - bb-review re-posting failures under fresh ids must not re-run the gate every tick.
+      const ev = sweepEvidence(bbReview);
+      const newEvidence = !!corrected && corrected.ev !== undefined && corrected.ev !== ev && ev.startsWith('bb:');
+      if (corrected && corrected.fp === fp && !(newEvidence && !cooling) && !moved && nowMs - corrected.at < SWEEP_COOLDOWN_MS) {
+        if (newEvidence) return { rerun: false, why: `a new bb-review failure since the last correction, but the run has ${run.run_attempt} attempts - cooling down (one retry per hour)` };
         // A partial trail-status history cannot prove nothing moved - the move may sit beyond what was
         // read, and a reopened red finding must not stay mergeable under a stale green (Devin, BMB #985 /
         // CT #791 / BB_Scan #35). Re-judging is always safe: the new run reads live threads. Repeats are
         // bounded by the same attempt cap the retryable path honours - a persistent status-API outage
         // fires at most SWEEP_MAX_ATTEMPTS corrections, then once per cooldown.
-        if (corrected.historyIncomplete && !cooling) return { rerun: true, full: true, corrected: true, fp, why: `${staleWhy}: the trail-status history is incomplete - re-judging rather than trusting a partial read` };
+        if (corrected.historyIncomplete && !cooling) return { rerun: true, full: true, corrected: true, fp, ev, why: `${staleWhy}: the trail-status history is incomplete - re-judging rather than trusting a partial read` };
         if (corrected.historyIncomplete) return { rerun: false, why: `trail-status history incomplete and the run has ${run.run_attempt} attempts - cooling down (one retry per hour)` };
         return { rerun: false, why: `stale-green correction against this same thread state fired ${((nowMs - corrected.at) / 60000).toFixed(0)} min ago; cooling down (one retry per hour)` };
       }
-      return { rerun: true, full: true, corrected: true, fp, why: `${staleWhy}: the green gate is stale` };
+      return { rerun: true, full: true, corrected: true, fp, ev, why: `${staleWhy}: the green gate is stale` };
     }
   }
   if (run.status !== 'completed' || !RETRYABLE_CONCLUSIONS.has(run.conclusion)) return { rerun: false, why: `latest run is ${run.status}/${run.conclusion || '-'}` };
@@ -1106,7 +1129,7 @@ export async function runSweep(env, fetchFn = fetch, log = console.log, nowMs = 
       if (d.rerun) {
         await io.api('POST', `/repos/${repo}/actions/runs/${run.id}/${d.full ? 'rerun' : 'rerun-failed-jobs'}`);
         // The rerun already fired: a failed marker post loses the repeat record, not the result.
-        if (d.corrected) { try { await io.postComment(`_devin-gate: the latest green verdict is stale (${d.why}); re-running the check._\n\n${sweepCorrectedMarker(run.id, new Date(nowMs).toISOString(), d.fp)}`); } catch (e) { d.why += ` (correction marker failed: ${errLine(e)})`; } }
+        if (d.corrected) { try { await io.postComment(`_devin-gate: the latest green verdict is stale (${d.why}); re-running the check._\n\n${sweepCorrectedMarker(run.id, new Date(nowMs).toISOString(), d.fp, d.ev)}`); } catch (e) { d.why += ` (correction marker failed: ${errLine(e)})`; } }
       } else if (breadcrumbErr) { d.why += ` (state trail write failed: ${errLine(breadcrumbErr)})`; }
       out.push({ pr: p.number, rerun: d.rerun, rearm, why: d.why + disarmNote });
     } catch (e) { out.push({ pr: p.number, rerun: false, rearm, why: `error: ${errLine(e)}${disarmNote}` }); }
