@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/core/token-manager-cookie-mint.test.ts | v1.0.0 | 2026-10-15 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/token-manager-cookie-mint.test.ts | v1.1.0 | 2026-10-15 | BB
 // rc.27 (COOKIE_BEARER_MINT_SPEC §5) — token-manager half of the cookie mint:
 //   a cookie session with no refresh token mints, once, under the refresh lock;
 //   a refusal reports no_refresh_token and is not retried in that generation;
@@ -175,6 +175,88 @@ describe('token-manager — rc.27 cookie mint', () => {
     const err = await getAccessToken().catch((e: unknown) => e);
     expect(isCookieMintFailure(err)).toBe(true);
     expect(hasLiveAccessToken()).toBe(false);
+  });
+
+  it('a 429 block belongs to its session: a new cookie session mints at once', async () => {
+    const limited = Object.assign(new Error('rate limited'), { retryAfterSeconds: 120 });
+    const mint = vi.fn(async (): Promise<MintResponse | null> => { throw limited; });
+    registerMintCallback(mint);
+    noteCookieSession('sess-cookie-1');
+    expect(await getAccessToken().catch((e: unknown) => e)).toBe(limited);
+
+    await clearSession();
+    mint.mockResolvedValueOnce(minted('sess-cookie-2', 'at-2'));
+    noteCookieSession('sess-cookie-2');
+    expect(await getAccessToken()).toBe('at-2');
+    expect(mint).toHaveBeenCalledTimes(2);
+  });
+
+  it('a 429 that lands after a sign-out sets no block', async () => {
+    let fail: ((e: unknown) => void) | undefined;
+    const mint = vi.fn(() => new Promise<MintResponse | null>((_r, rej) => { fail = rej; }));
+    registerMintCallback(mint);
+    noteCookieSession('sess-cookie-1');
+    const pending = getAccessToken().catch((e: unknown) => e);
+    await vi.waitFor(() => expect(fail).toBeTypeOf('function'));
+    await clearSession();
+    fail?.(Object.assign(new Error('late 429'), { retryAfterSeconds: 120 }));
+    await pending;
+
+    mint.mockResolvedValueOnce(minted('sess-cookie-2', 'at-2'));
+    noteCookieSession('sess-cookie-2');
+    expect(await getAccessToken()).toBe('at-2');
+  });
+
+  it('a huge retry_after blocks for 10 minutes at most', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const limited = Object.assign(new Error('rate limited'), { retryAfterSeconds: 1e9 });
+      const mint = vi.fn(async (): Promise<MintResponse | null> => { throw limited; });
+      registerMintCallback(mint);
+      noteCookieSession('sess-cookie-1');
+      await getAccessToken().catch(() => undefined);
+      vi.setSystemTime(Date.now() + 9 * 60_000);
+      await getAccessToken().catch(() => undefined);
+      expect(mint).toHaveBeenCalledTimes(1);
+      vi.setSystemTime(Date.now() + 2 * 60_000);
+      mint.mockResolvedValueOnce(minted());
+      expect(await getAccessToken()).toBe('at-minted');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('an expiry already past is rejected and holds mints back 60 s', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const mint = vi.fn(async () => ({ ...minted(), expires_at: new Date(Date.now() - 1000).toISOString() }));
+      registerMintCallback(mint);
+      noteCookieSession('sess-cookie-1');
+      expect(isCookieMintFailure(await getAccessToken().catch((e: unknown) => e))).toBe(true);
+      expect(hasLiveAccessToken()).toBe(false);
+      await getAccessToken().catch(() => undefined);
+      expect(mint).toHaveBeenCalledTimes(1);
+      vi.setSystemTime(Date.now() + 61_000);
+      mint.mockResolvedValueOnce(minted());
+      expect(await getAccessToken()).toBe('at-minted');
+      expect(mint).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a far-future expiry is kept for 1 hour at most', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const mint = vi.fn(async () => ({ ...minted(), expires_at: new Date(Date.now() + 30 * 86_400_000).toISOString() }));
+      registerMintCallback(mint);
+      noteCookieSession('sess-cookie-1');
+      expect(await getAccessToken()).toBe('at-minted');
+      vi.setSystemTime(Date.now() + 61 * 60_000);
+      expect(hasLiveAccessToken()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('a sign-out during the mint wins: the minted token is dropped', async () => {

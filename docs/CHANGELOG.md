@@ -22,8 +22,10 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
   `session_id` with source `cookie`.
 - A 401 / 400 / 403 is a refusal: `getAccessToken()` resolves `null`, reports
   `no_refresh_token` once, and does not mint again for that session. A 429
-  blocks further mints for `retry_after_seconds`. A sign-in or sign-out during
-  the mint wins; a malformed reply stores nothing.
+  blocks further mints for `retry_after_seconds` (10 min at most, and only for
+  that session). A sign-in or sign-out during the mint wins. A malformed reply,
+  or one whose expiry is already past, stores nothing and holds mints back for
+  60 s; a minted token is kept 1 h at most.
 - A failed mint never blocks a request: it goes out on the cookie alone, as
   before rc.27 (`isCookieMintFailure()` marks those errors). A 401 on a minted
   bearer re-mints once and retries.

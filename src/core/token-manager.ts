@@ -1,4 +1,7 @@
-// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.7.0 | 2026-10-15 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.7.1 | 2026-10-15 | BB
+// v1.7.1 (rc.27, pre-push review): the mint block is scoped to the session
+//   generation and capped at 10 min; a reply whose expiry is already past is
+//   rejected and blocks for 60 s; a minted token is kept 1 h at most.
 // v1.7.0 (rc.27, COOKIE_BEARER_MINT_SPEC_2026-10-15 §5): cookie → bearer mint.
 //   When no refresh token is stored and the session is a cookie session
 //   (source 'cookie'), getAccessToken() asks the registered mint callback
@@ -314,9 +317,20 @@ export type MintCallback = () => Promise<MintResponse | null>;
 let mintCallback: MintCallback | null = null;
 /** Generation whose mint the server refused; no new mint until it moves. */
 let mintRefusedFor: number | null = null;
-/** A 429 holds mints back until this time (epoch ms); its error is re-thrown. */
+/**
+ * A 429 (or an unusable reply) holds mints back until this time (epoch ms);
+ * its error is re-thrown. Scoped to the generation that hit it, so a new
+ * sign-in is never blocked by the old session's limit.
+ */
 let mintBlockedUntil = 0;
 let mintBlockedError: unknown = null;
+let mintBlockedFor: number | null = null;
+/** Longest a server retry_after may hold mints back. */
+const MINT_BLOCK_MAX_MS = 10 * 60_000;
+/** Hold-back after a reply the SDK cannot use (bad body, expiry already past). */
+const MINT_BAD_REPLY_BLOCK_MS = 60_000;
+/** A minted token is never kept longer than this, whatever expires_at says. */
+const MINT_MAX_TTL_MS = 60 * 60_000;
 /** Errors thrown by a cookie mint (see isCookieMintFailure). */
 const mintFailures = new WeakSet<object>();
 
@@ -1351,19 +1365,31 @@ async function performRefresh(): Promise<string | null> {
  *                                     onTokenUnavailable; null
  *   null (refused), changed         -> as the 200 "changed" row
  *   throw (429/5xx/network)         -> mark it, re-throw; a 429's
- *                                     retry_after_seconds blocks new mints
- *   a 429 block still running       -> re-throw that 429 without a request
+ *                                     retry_after_seconds (capped at 10 min)
+ *                                     blocks new mints for this generation
+ *   200 unusable (bad field, expiry
+ *   already past), nothing changed  -> mark, block 60 s, throw; nothing stored
+ *   a block still running, same
+ *   generation                      -> re-throw its error without a request
+ *   200 expiry > 1 h out            -> kept for 1 h at most
  */
 async function mintFromCookie(
   mint: MintCallback,
   signedOutSince: () => boolean,
   stillMineHere: () => boolean,
 ): Promise<string | null> {
-  if (mintBlockedError !== null && Date.now() < mintBlockedUntil) throw mintBlockedError;
+  if (mintBlockedError !== null && mintBlockedFor === generation && Date.now() < mintBlockedUntil) {
+    throw mintBlockedError;
+  }
   const generationAtStart = generation;
   const isCurrent = (): boolean => generation === generationAtStart && stillMineHere();
   const superseded = (): string | null =>
     signedOutSince() || !hasLiveAccessToken() ? null : state.accessToken;
+  const block = (err: unknown, ms: number): void => {
+    mintBlockedUntil = Date.now() + Math.min(ms, MINT_BLOCK_MAX_MS);
+    mintBlockedError = err;
+    mintBlockedFor = generationAtStart;
+  };
 
   let result: MintResponse | null;
   try {
@@ -1372,8 +1398,7 @@ async function mintFromCookie(
     if (typeof err === 'object' && err !== null) mintFailures.add(err);
     const retryAfter = (err as { retryAfterSeconds?: unknown } | null)?.retryAfterSeconds;
     if (typeof retryAfter === 'number' && Number.isFinite(retryAfter) && retryAfter > 0) {
-      mintBlockedUntil = Date.now() + retryAfter * 1000;
-      mintBlockedError = err;
+      block(err, retryAfter * 1000);
     }
     throw err;
   }
@@ -1383,20 +1408,25 @@ async function mintFromCookie(
     notifyTokenUnavailable('no_refresh_token');
     return null;
   }
+  const now = Date.now();
   const expiresAt = new Date(result.expires_at).getTime();
   if (
     typeof result.access_token !== 'string' ||
     result.access_token.length === 0 ||
     typeof result.session_id !== 'string' ||
     result.session_id.length === 0 ||
-    !Number.isFinite(expiresAt)
+    !Number.isFinite(expiresAt) ||
+    expiresAt <= now
   ) {
+    // Block so a server that keeps sending this reply is not asked again on
+    // every request; the request itself goes out on the cookie.
     const err = new Error('session mint returned an unusable token response');
     mintFailures.add(err);
+    block(err, MINT_BAD_REPLY_BLOCK_MS);
     throw err;
   }
   state.accessToken = result.access_token;
-  state.accessExpiresAt = expiresAt;
+  state.accessExpiresAt = Math.min(expiresAt, now + MINT_MAX_TTL_MS);
   adoptSessionId(result.session_id, 'cookie');
   notifyListeners();
   return result.access_token;
@@ -1632,6 +1662,7 @@ export function __resetTokenManagerForTests(): void {
   mintRefusedFor = null;
   mintBlockedUntil = 0;
   mintBlockedError = null;
+  mintBlockedFor = null;
   listeners.clear();
   tokenUnavailableListeners.clear();
   tokenUnavailableFiredFor = null;
