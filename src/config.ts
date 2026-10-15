@@ -1,4 +1,6 @@
-// @samjonaidi-ship-it/universal-auth | src/config.ts | v1.1.16 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | src/config.ts | v1.1.17 | 2026-10-15 | BB
+// v1.1.17: SDK_VERSION → 1.1.0-rc.27. + mintFromCookie / mintAppId
+//   (COOKIE_BEARER_MINT_SPEC §5), validated here, passed to configureClient.
 // v1.1.16: SDK_VERSION → 1.1.0-rc.26.
 // v1.1.15: SDK_VERSION → 1.1.0-rc.25.
 // v1.1.14: SDK_VERSION → 1.1.0-rc.24.
@@ -107,6 +109,13 @@ export interface UniversalAuthConfig {
   useDpop?: DpopMode;
   /** SSE session-watcher mode (SSE_DESIGN_v1.0.md §5). Default `auto`. */
   useSSE?: UseSSEMode;
+  /**
+   * rc.27: mint a short-lived bearer from the session cookie when the session
+   * has no refresh token (cookie-only sign-in from a sibling app). Default false.
+   */
+  mintFromCookie?: boolean;
+  /** rc.27: `app_id` sent to the mint. Defaults to `appId`. */
+  mintAppId?: string;
 
   // Cross-subdomain cookie per D10 + SDK §5.0 v1.4.0 locked
   /** Cookie domain for shared session across subdomains. Default `.buildwithbainbridge.com` (post-D20 cutover 2026-05-03). */
@@ -235,7 +244,7 @@ export function assertApiBaseUrlSafety(
  *  of regression. `pnpm verify:version-sync` (scripts/verify-version-sync.ts)
  *  now CI-gates this constant against package.json:version on every build.
  */
-export const SDK_VERSION = '1.1.0-rc.26';
+export const SDK_VERSION = '1.1.0-rc.27';
 
 /**
  * Initialize the SDK. Called once at app startup.
@@ -278,6 +287,22 @@ export async function initUniversalAuth(config: UniversalAuthConfig): Promise<vo
   }
   resolvedUseSSE = useSSE;
 
+  // rc.27: validate the mint options early, like useDpop / useSSE.
+  if (config.mintFromCookie !== undefined && typeof config.mintFromCookie !== 'boolean') {
+    throw new Error(
+      `[@samjonaidi-ship-it/universal-auth] Invalid mintFromCookie value '${String(
+        config.mintFromCookie
+      )}'. Must be true or false.`
+    );
+  }
+  if (config.mintAppId !== undefined && (typeof config.mintAppId !== 'string' || config.mintAppId.length === 0)) {
+    throw new Error(
+      `[@samjonaidi-ship-it/universal-auth] Invalid mintAppId value '${String(
+        config.mintAppId
+      )}'. Must be a non-empty string.`
+    );
+  }
+
   // Browser-context safety check (skipped in Node test harness)
   if (typeof window !== 'undefined' && typeof window.location !== 'undefined') {
     assertModeSafety(mode, window.location.hostname, config.cookieDomain);
@@ -302,6 +327,8 @@ export async function initUniversalAuth(config: UniversalAuthConfig): Promise<vo
     appId: config.appId,
     sdkVersion: SDK_VERSION,
     useDpop,
+    mintFromCookie: config.mintFromCookie === true,
+    ...(config.mintAppId !== undefined ? { mintAppId: config.mintAppId } : {}),
   });
 
   // Wire event reporter (batched ingestion per §3.2 + §8.1)

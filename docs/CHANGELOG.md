@@ -8,6 +8,27 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
 
 > **Note on v1.1.0-rc.3 (2026-05-06):** rc.3 landed on `main` but failed CI on 3 lint errors before it could be tagged or published. v1.1.0-rc.4 is the same code with those 3 errors resolved + coverage threshold reconciled with measured coverage. Public consumer path for the v1.1 line is rc.1 → rc.4 (rc.2 and rc.3 were never published).
 
+## [1.1.0-rc.27] — 2026-10-15 — cookie → bearer mint
+
+### Added
+
+- `token-manager.ts` v1.7.0, `client.ts` v1.5.0, `config.ts` v1.1.17
+  (COOKIE_BEARER_MINT_SPEC 2026-10-15, server half ControlTower #840): a
+  session learned only from the shared cookie (no refresh token) can now get a
+  bearer token. Opt in with `mintFromCookie: true`; `mintAppId` names the app
+  on the mint allow-list (defaults to `appId`). The SDK then calls
+  `POST /auth/v1/session/mint` with the cookie alone (no Authorization, no
+  DPoP), single-flight under the refresh lock, and stores the token for
+  `session_id` with source `cookie`.
+- A 401 / 400 / 403 is a refusal: `getAccessToken()` resolves `null`, reports
+  `no_refresh_token` once, and does not mint again for that session. A 429
+  blocks further mints for `retry_after_seconds`. A sign-in or sign-out during
+  the mint wins; a malformed reply stores nothing.
+- A failed mint never blocks a request: it goes out on the cookie alone, as
+  before rc.27 (`isCookieMintFailure()` marks those errors). A 401 on a minted
+  bearer re-mints once and retries.
+- Off by default: with the flag off nothing changes.
+
 ## [1.1.0-rc.26] — 2026-10-14 — cookie note during a superseded sign-out
 
 ### Fixed

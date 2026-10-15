@@ -1,4 +1,10 @@
-// @samjonaidi-ship-it/universal-auth | src/core/client.ts | v1.4.0 | 2026-08-10 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/client.ts | v1.5.0 | 2026-10-15 | BB
+// v1.5.0 (rc.27, COOKIE_BEARER_MINT_SPEC §5): opt-in `mintFromCookie`. A
+//   cookie-only session (no refresh token) gets a short-lived bearer from
+//   POST /auth/v1/session/mint, sent on the cookie alone (no Authorization).
+//   401/400/403 → null (refused: onTokenUnavailable); 429/5xx/network → throw
+//   (transient). A failed mint never blocks a request: requestInternal and
+//   tryRefresh fall back to the cookie alone, as before this change.
 // v1.4.0 (P4.1): /auth/v1/pin/verify joins DPOP_PROTECTED_ENDPOINTS — PIN is
 //   the crew's primary sign-in and was the only mint path sending no proof.
 // v1.3.0 (P4.6): DPoP proofs now go out on the calls that ESTABLISH the
@@ -66,8 +72,11 @@ import {
 import {
   getAccessToken,
   registerRefreshCallback,
+  registerMintCallback,
+  isCookieMintFailure,
   setSession,
   invalidateAccessToken,
+  type MintResponse,
 } from './token-manager.js';
 import { getOrCreateDeviceId } from './device-id.js';
 import { getOrCreateKeypair } from './dpop/keypair.js';
@@ -93,6 +102,16 @@ export interface ClientConfig {
    * `'never'` opts out entirely (legacy crew sessions).
    */
   useDpop?: DpopMode;
+  /**
+   * rc.27: mint a bearer from the session cookie when the session has no
+   * refresh token (POST /auth/v1/session/mint). Default false.
+   */
+  mintFromCookie?: boolean;
+  /**
+   * rc.27: the `app_id` the mint sends. Defaults to `appId`. CalExp5 signs in
+   * as `bb_express` but CT's mint allow-list names it `calexp5`.
+   */
+  mintAppId?: string;
 }
 
 /**
@@ -142,6 +161,8 @@ export function configureClient(cfg: ClientConfig): void {
   registerRefreshCallback(async (refreshToken: string) => {
     return refreshTokenRequest(refreshToken);
   });
+  // rc.27: null unregisters, so re-configuring with the flag off turns it off.
+  registerMintCallback(cfg.mintFromCookie === true ? () => mintTokenRequest() : null);
 }
 
 function requireConfig(): ClientConfig {
@@ -271,7 +292,14 @@ async function requestInternal<T>(
   // below now runs for anonymous requests too. See the long note there.
   let token: string | null = null;
   if (opts.anonymous !== true) {
-    token = await getAccessToken();
+    try {
+      token = await getAccessToken();
+    } catch (err) {
+      // rc.27: a failed cookie mint (429, 5xx, offline, bad body) must not
+      // block the call — send it on the cookie alone, as before the mint.
+      if (!isCookieMintFailure(err)) throw err;
+      token = null;
+    }
     if (token !== null) {
       headers.Authorization = `Bearer ${token}`;
     }
@@ -489,7 +517,64 @@ async function tryRefresh(): Promise<void> {
   // This covers server-side revocation / clock skew where the server returns
   // 401 on a token we still consider locally valid.
   invalidateAccessToken();
-  await getAccessToken();
+  try {
+    await getAccessToken();
+  } catch (err) {
+    // rc.27: before the mint, a cookie-only session's refresh returned null
+    // and the retry went out on the cookie. A failed mint keeps that path
+    // instead of turning a transient error into AuthSessionExpired.
+    if (!isCookieMintFailure(err)) throw err;
+  }
+}
+
+/**
+ * rc.27 (COOKIE_BEARER_MINT_SPEC §5): POST /auth/v1/session/mint on the
+ * session cookie alone. Never sends Authorization (CT answers 400
+ * COOKIE_REQUIRED). Returns null when CT refuses (401 no/ending session,
+ * 400/403 config) so the token manager reports `no_refresh_token` once.
+ * Throws on 429 (AuthRateLimited carries retryAfterSeconds), 5xx, a
+ * redirect and network errors: all transient.
+ */
+async function mintTokenRequest(): Promise<MintResponse | null> {
+  const cfg = requireConfig();
+  const url = joinUrl(cfg.apiBaseUrl, '/auth/v1/session/mint');
+  const mintSignal = withDefaultTimeout(undefined, DEFAULT_REQUEST_TIMEOUT_MS);
+  const response = await fetch(url, {
+    method: 'POST',
+    credentials: 'include',
+    redirect: 'manual',
+    referrerPolicy: 'strict-origin-when-cross-origin',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'X-Auth-Protocol-Version': PROTOCOL_VERSION,
+      'X-App-Id': cfg.appId,
+      'X-SDK-Version': cfg.sdkVersion,
+      'Idempotency-Key': nanoid(),
+    },
+    body: JSON.stringify({ app_id: cfg.mintAppId ?? cfg.appId }),
+    ...(mintSignal !== undefined ? { signal: mintSignal } : {}),
+  });
+  if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400)) {
+    throw new AuthSdkError(
+      'UNEXPECTED_REDIRECT',
+      `Mint was redirected (status ${response.status}); expected direct response from CT BFF.`
+    );
+  }
+  const bodyText = await response.text();
+  if (response.status === 401 || response.status === 400 || response.status === 403) {
+    return null;
+  }
+  if (!response.ok) {
+    let env: AuthErrorEnvelope;
+    try {
+      env = JSON.parse(bodyText) as AuthErrorEnvelope;
+    } catch {
+      throw new AuthSdkError(`HTTP_${response.status}`, `Mint failed: HTTP ${response.status}`);
+    }
+    throw errorFromEnvelope(env);
+  }
+  return JSON.parse(bodyText) as MintResponse;
 }
 
 async function refreshTokenRequest(refreshToken: string): Promise<{

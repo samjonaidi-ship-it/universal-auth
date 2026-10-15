@@ -1,4 +1,21 @@
-// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.6.8 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.7.0 | 2026-10-15 | BB
+// v1.7.0 (rc.27, COOKIE_BEARER_MINT_SPEC_2026-10-15 §5): cookie → bearer mint.
+//   When no refresh token is stored and the session is a cookie session
+//   (source 'cookie'), getAccessToken() asks the registered mint callback
+//   (client.ts: POST /auth/v1/session/mint) instead of resolving null. Only
+//   when the app opted in (mintFromCookie); otherwise nothing changes.
+//   - Single-flight: it runs inside performRefresh(), so the in-tab mutex and
+//     the 'bb-auth-refresh' lock cover it like a refresh.
+//   - Adopted as the cookie session: access token in memory only, no refresh
+//     token stored, no broadcast (each tab mints for itself), listeners told.
+//   - A sign-in, sign-out or session change during the mint wins: the result
+//     is dropped (same scope rules as the refresh path).
+//   - Refused (the callback resolves null: 401, or a 400/403 that no retry
+//     can fix) → onTokenUnavailable + null, and no new mint in this
+//     generation. Transient (429/5xx/network) → re-thrown; a 429's
+//     retry_after_seconds holds further mints back until it passes.
+//   - isCookieMintFailure(err) marks those throws, so the HTTP client can
+//     still send a request on the cookie alone while the mint is down.
 // v1.6.8 (rc.26, issue #37, Devin note on PR #36): a cookie note during a
 //   superseded sign-out no longer keeps the signed-out session.
 //   - noteCookieSession() ignores the id a pending sign-out signs out. An
@@ -277,6 +294,31 @@ const state: InternalState = {
 };
 
 let refreshCallback: RefreshCallback | null = null;
+
+// ── Cookie → bearer mint (v1.7.0) ─────────────────────────────────────────
+
+/** POST /auth/v1/session/mint 200 body (the fields the SDK uses). */
+export interface MintResponse {
+  access_token: string;
+  expires_at: string; // ISO — access token expiry
+  session_id: string;
+}
+
+/**
+ * Trade the session cookie for an access token. Resolves null when the
+ * server refuses (no live session, or a refusal no retry can fix); throws on
+ * a transient failure. Implementation lives in core/client.ts.
+ */
+export type MintCallback = () => Promise<MintResponse | null>;
+
+let mintCallback: MintCallback | null = null;
+/** Generation whose mint the server refused; no new mint until it moves. */
+let mintRefusedFor: number | null = null;
+/** A 429 holds mints back until this time (epoch ms); its error is re-thrown. */
+let mintBlockedUntil = 0;
+let mintBlockedError: unknown = null;
+/** Errors thrown by a cookie mint (see isCookieMintFailure). */
+const mintFailures = new WeakSet<object>();
 
 // ── Session generation / scope (v1.4.0) ───────────────────────────────────
 //
@@ -638,6 +680,23 @@ function notifyTokenUnavailable(reason: TokenUnavailableEvent['reason']): void {
  */
 export function registerRefreshCallback(cb: RefreshCallback): void {
   refreshCallback = cb;
+}
+
+/**
+ * v1.7.0: register (or, with null, remove) the cookie → bearer mint. Called
+ * by client.ts at SDK init only when the app set `mintFromCookie: true`.
+ */
+export function registerMintCallback(cb: MintCallback | null): void {
+  mintCallback = cb;
+}
+
+/**
+ * v1.7.0: true when `err` was thrown by a cookie mint (429, 5xx, network).
+ * The session is still a valid cookie session then; a cookie-authenticated
+ * request can go out without a bearer token.
+ */
+export function isCookieMintFailure(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && mintFailures.has(err);
 }
 
 /**
@@ -1062,6 +1121,11 @@ async function performRefresh(): Promise<string | null> {
       // A sign-out began during the lookup: the token read is a survivor.
       return null;
     }
+    if (rt === null && mintCallback !== null && sessionSource === 'cookie' && mintRefusedFor !== generation) {
+      // v1.7.0: a cookie session with no refresh token here: mint from the
+      // cookie. Still inside the refresh lock, so single-flight.
+      return mintFromCookie(mintCallback, signedOutSince, stillMineHere);
+    }
     if (rt === null) {
       // No refresh token: nothing to mint from. Return null (the documented
       // getAccessToken() contract) but SAY so. Before v1.4.0 this was silent,
@@ -1275,6 +1339,67 @@ async function performRefresh(): Promise<string | null> {
       throw err;
     }
   });
+}
+
+/**
+ * v1.7.0: one cookie → bearer mint, run by performRefresh() under the refresh
+ * lock. Case table (generation and scope are read before the call):
+ *   200, nothing changed           -> adopt as the cookie session, notify
+ *   200, sign-out / sign-in / other session meanwhile -> drop; hand back a
+ *                                     live token of the newer sign-in, or null
+ *   null (refused), nothing changed -> no mint again this generation;
+ *                                     onTokenUnavailable; null
+ *   null (refused), changed         -> as the 200 "changed" row
+ *   throw (429/5xx/network)         -> mark it, re-throw; a 429's
+ *                                     retry_after_seconds blocks new mints
+ *   a 429 block still running       -> re-throw that 429 without a request
+ */
+async function mintFromCookie(
+  mint: MintCallback,
+  signedOutSince: () => boolean,
+  stillMineHere: () => boolean,
+): Promise<string | null> {
+  if (mintBlockedError !== null && Date.now() < mintBlockedUntil) throw mintBlockedError;
+  const generationAtStart = generation;
+  const isCurrent = (): boolean => generation === generationAtStart && stillMineHere();
+  const superseded = (): string | null =>
+    signedOutSince() || !hasLiveAccessToken() ? null : state.accessToken;
+
+  let result: MintResponse | null;
+  try {
+    result = await mint();
+  } catch (err) {
+    if (typeof err === 'object' && err !== null) mintFailures.add(err);
+    const retryAfter = (err as { retryAfterSeconds?: unknown } | null)?.retryAfterSeconds;
+    if (typeof retryAfter === 'number' && Number.isFinite(retryAfter) && retryAfter > 0) {
+      mintBlockedUntil = Date.now() + retryAfter * 1000;
+      mintBlockedError = err;
+    }
+    throw err;
+  }
+  if (!isCurrent()) return superseded();
+  if (result === null) {
+    mintRefusedFor = generation;
+    notifyTokenUnavailable('no_refresh_token');
+    return null;
+  }
+  const expiresAt = new Date(result.expires_at).getTime();
+  if (
+    typeof result.access_token !== 'string' ||
+    result.access_token.length === 0 ||
+    typeof result.session_id !== 'string' ||
+    result.session_id.length === 0 ||
+    !Number.isFinite(expiresAt)
+  ) {
+    const err = new Error('session mint returned an unusable token response');
+    mintFailures.add(err);
+    throw err;
+  }
+  state.accessToken = result.access_token;
+  state.accessExpiresAt = expiresAt;
+  adoptSessionId(result.session_id, 'cookie');
+  notifyListeners();
+  return result.access_token;
 }
 
 /**
@@ -1503,6 +1628,10 @@ export function __resetTokenManagerForTests(): void {
   state.sessionId = null;
   state.inFlightRefresh = null;
   refreshCallback = null;
+  mintCallback = null;
+  mintRefusedFor = null;
+  mintBlockedUntil = 0;
+  mintBlockedError = null;
   listeners.clear();
   tokenUnavailableListeners.clear();
   tokenUnavailableFiredFor = null;
