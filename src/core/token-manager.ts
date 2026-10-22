@@ -1,4 +1,7 @@
-// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.7.2 | 2026-10-15 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/token-manager.ts | v1.7.3 | 2026-10-22 | BB
+// v1.7.3 (rc.27): wire the dead sdk-metrics module — performRefresh() times
+//   each refresh callback (recordTokenRefresh) and counts each refresh
+//   failure (recordError). Metrics only; no behaviour change.
 // v1.7.2 (rc.27, Devin on PR #42): a mint that names a session other than the
 //   cookie session held moves the scope to that session (the server wins, as
 //   in noteCookieSession) and keeps its token for it, but the caller, who
@@ -242,6 +245,7 @@ import {
 import { deleteKeypair, loadKeypair } from './dpop/keypair.js';
 import { jwkThumbprint } from './dpop/thumbprint.js';
 import { reportSoftError } from './error-hook.js';
+import { recordError, recordTokenRefresh } from './sdk-metrics.js';
 import {
   AuthNoRefreshToken,
   CnfJktMismatchError,
@@ -1155,7 +1159,14 @@ async function performRefresh(): Promise<string | null> {
     }
 
     try {
-      const result = await refreshCallback!(rt);
+      // Metrics: every real refresh attempt counts, success or failure.
+      const refreshStartMs = Date.now();
+      let result: RefreshResponse;
+      try {
+        result = await refreshCallback!(rt);
+      } finally {
+        recordTokenRefresh(Date.now() - refreshStartMs);
+      }
       const newExpiresAt = new Date(result.expires_at).getTime();
 
       // P1-G (RFC 9449 §6.1): if the issued access token carries `cnf.jkt`,
@@ -1295,6 +1306,14 @@ async function performRefresh(): Promise<string | null> {
       // and is then correctly treated as terminal here. That degrades to
       // today's behaviour in a rare case instead of being today's behaviour in
       // every case.
+      // Metrics: the failure counts too (terminal or transient).
+      {
+        const errCode = (err as { code?: unknown } | null)?.code;
+        recordError(
+          typeof errCode === 'string' && errCode.length > 0 ? errCode : 'REFRESH_FAILED',
+          err instanceof Error ? err.message : String(err),
+        );
+      }
       // P4.7: this refresh attempt was for `sessionIdAtStart`. A refresh can
       // sit on the wire for seconds on a bad connection — long enough for the
       // user to re-authenticate (PIN re-entry after the server revoked this

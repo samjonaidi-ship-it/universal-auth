@@ -1,4 +1,7 @@
-// @samjonaidi-ship-it/universal-auth | src/core/error-hook.ts | v1.0.0 | 2026-05-06 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/error-hook.ts | v1.0.1 | 2026-10-22 | BB
+// v1.0.1 (rc.27): reportSoftError() also records into the SDK metrics
+//   (sdk-metrics recordError) so `getSDKMetrics().errors` reflects what the
+//   consumer's onError hook saw.
 // P1-E — central registration point for the consumer-supplied `config.onError`
 // callback. Any SDK module that previously hit `console.warn` for a soft-fail
 // path now goes through `reportSoftError(err)`. If the consumer set
@@ -11,6 +14,12 @@
 // They cannot import config.ts without creating a circular dep through the
 // imports they themselves are loaded by. This tiny module sits below both
 // and is registered by config.ts at init time.
+//
+// Every report is also counted in the process-local SDK metrics
+// (sdk-metrics.ts) so `getSDKMetrics().errors` reflects what the consumer's
+// onError hook saw. No import cycle: config.ts only lazy-imports this module.
+
+import { recordError } from './sdk-metrics.js';
 
 let onErrorCallback: ((err: unknown) => void) | null = null;
 
@@ -38,6 +47,11 @@ export function registerOnError(cb: ((err: unknown) => void) | null): void {
  * unavailable, etc.
  */
 export function reportSoftError(err: unknown): void {
+  const code = (err as { code?: unknown } | null)?.code;
+  recordError(
+    typeof code === 'string' && code.length > 0 ? code : 'SOFT_ERROR',
+    err instanceof Error ? err.message : String(err),
+  );
   if (onErrorCallback !== null) {
     try {
       onErrorCallback(err);

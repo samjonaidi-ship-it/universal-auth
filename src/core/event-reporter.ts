@@ -1,4 +1,7 @@
-// @samjonaidi-ship-it/universal-auth | src/core/event-reporter.ts | v1.0.2 | 2026-09-06 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/event-reporter.ts | v1.0.3 | 2026-10-22 | BB
+// v1.0.3 (rc.27): wire the dead sdk-metrics module — doFlush() times each
+//   batch POST (recordEventBatch) and counts each flush failure
+//   (recordError). Metrics only; no behaviour change.
 // Event batching + ingestion — POST /events/v1/ingest (§3.2 / §6).
 //
 // v1.0.1 (D5): the device id is cached at module level after first resolution.
@@ -19,6 +22,7 @@ import { getOrCreateDeviceId } from './device-id.js';
 import { getClientConfig, post } from './client.js';
 import { getCurrentSessionId } from './token-manager.js';
 import { STORE_EVENT_QUEUE, getSharedDb } from './storage.js';
+import { recordError, recordEventBatch } from './sdk-metrics.js';
 import { AuthSdkError } from '../errors.js';
 
 // ── Public types ──────────────────────────────────────────────────────────
@@ -246,12 +250,19 @@ async function doFlush(): Promise<void> {
 
   const batch = rows.map((r) => r.envelope);
 
+  // Metrics: every batch POST attempt counts, success or failure.
+  const flushStartMs = Date.now();
   try {
     // `anonymous: false` — but if no access token is present, the client
     // skips the Authorization header; CT BFF accepts unauth ingest for
     // enrollment-phase events.
     await post('/events/v1/ingest', { events: batch });
   } catch (err) {
+    const errCode = (err as { code?: unknown } | null)?.code;
+    recordError(
+      typeof errCode === 'string' && errCode.length > 0 ? errCode : 'EVENT_FLUSH_FAILED',
+      err instanceof Error ? err.message : String(err),
+    );
     // On 4xx (non-auth), assume server-side validation rejected — drop these
     // events permanently to prevent infinite retry loops. The typical cause
     // is UNKNOWN_EVENT_TYPE per §6.3 — server contract says "dropped".
@@ -263,6 +274,8 @@ async function doFlush(): Promise<void> {
     // Re-schedule so the timer picks up the retry.
     scheduleFlush();
     return;
+  } finally {
+    recordEventBatch(Date.now() - flushStartMs);
   }
 
   // Success — purge the flushed rows.

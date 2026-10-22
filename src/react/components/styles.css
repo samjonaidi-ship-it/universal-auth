@@ -1,16 +1,16 @@
-/* @samjonaidi-ship-it/universal-auth | src/react/components/styles.css | v1.0.0-rc.5 | 2026-05-06 | BB
+/* @samjonaidi-ship-it/universal-auth | src/react/components/styles.css | v1.0.0-rc.6 | 2026-10-22 | BB
  * CSS custom properties only (§8.5). Consumer apps override --bb-* vars to theme.
  * No inline styles in any component (verified by scripts/verify-bundle.ts).
  *
  * v1.0.0-rc.4: + ConsentCenter, PermissionCenter, ConsentVersionWatcher overlay.
  * v1.0.0-rc.5: + DelegationCenter (L3.4 — DELEGATION_CENTER_DESIGN_v1.0.md).
+ * v1.0.0-rc.6: - .bb-auth-impersonation-banner (component removed in v1.1.0-rc.10).
  */
 
 :where(.bb-auth-signin-form,
        .bb-auth-code-entry,
        .bb-auth-passkey-prompt,
        .bb-auth-offline-indicator,
-       .bb-auth-impersonation-banner,
        .bb-auth-app-chooser,
        .bb-auth-persona-chooser,
        .bb-auth-agent-banner,
@@ -161,17 +161,6 @@
   padding: 8px var(--bb-spacing);
   text-align: center;
   font-size: 0.9rem;
-}
-
-.bb-auth-impersonation-banner {
-  background: #fff3cd;
-  color: #664d03;
-  padding: 8px var(--bb-spacing);
-  display: flex;
-  gap: var(--bb-spacing);
-  align-items: center;
-  justify-content: center;
-  border-bottom: 1px solid #ffe69c;
 }
 
 .bb-auth-agent-banner {
