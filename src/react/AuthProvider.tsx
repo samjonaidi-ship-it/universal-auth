@@ -1,4 +1,8 @@
-// @samjonaidi-ship-it/universal-auth | src/react/AuthProvider.tsx | v1.3.1 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/AuthProvider.tsx | v1.3.2 | 2026-10-22 | BB
+// v1.3.2 (rc.27): isAnonymousCode() no longer treats HTTP_403 as anonymous —
+//   a 403 denies an authenticated identity (authorization failure), so
+//   collapsing it to 'anonymous' showed signed-out UX for a signed-in user.
+//   Only true no-session cases (401, session expired/revoked) count.
 // v1.3.1 (rc.24, pre-push review P1): a failed corrective /me drops the SSR
 // identity (status 'loading') instead of keeping another session's identity.
 // v1.3.0 (rc.24, issue #33 item 3): an initialSession whose id is not the
@@ -525,12 +529,14 @@ export function AuthProvider({
   );
 }
 
-// HTTP-status / error-code helper for hydrate path
+// HTTP-status / error-code helper for hydrate path.
+// 403 is deliberately NOT here: a denial of an authenticated identity is an
+// authorization failure, not "no session" — collapsing it to 'anonymous'
+// would show signed-out UX for a user who is signed in but not permitted.
 function isAnonymousCode(code: string): boolean {
   return (
     code === 'AUTH_SESSION_EXPIRED' ||
     code === 'AUTH_SESSION_REVOKED' ||
-    code === 'HTTP_401' ||
-    code === 'HTTP_403'
+    code === 'HTTP_401'
   );
 }

@@ -1,4 +1,6 @@
-// @samjonaidi-ship-it/universal-auth | demo/src/App.tsx | v1.0.4 | 2026-05-04 | BB
+// @samjonaidi-ship-it/universal-auth | demo/src/App.tsx | v1.0.5 | 2026-10-22 | BB
+// v1.0.5 (rc.27): drop ImpersonationBanner import/usage — the component was
+//   removed from the SDK in v1.1.0-rc.10 and the import broke the demo build.
 // Block 7 demo expansion — actually exercises the SDK end-to-end against the
 // production CT BFF.
 //
@@ -24,7 +26,6 @@ import {
   useEntitlements,
   SignInForm,
   OfflineIndicator,
-  ImpersonationBanner,
   AgentStatusBanner,
 } from '@samjonaidi-ship-it/universal-auth/react';
 import '@samjonaidi-ship-it/universal-auth/react/styles.css';
@@ -87,7 +88,6 @@ export default function App(): ReactNode {
     <AuthProvider>
       <Shell>
         <OfflineIndicator />
-        <ImpersonationBanner />
         <AgentStatusBanner />
         <DemoBody />
       </Shell>
