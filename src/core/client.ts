@@ -1,4 +1,8 @@
-// @samjonaidi-ship-it/universal-auth | src/core/client.ts | v1.6.0 | 2026-10-22 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/client.ts | v1.6.1 | 2026-10-22 | BB
+// v1.6.1 (Devin on PR #46): a second USE_DPOP_NONCE challenge after the
+//   retry is spent now surfaces its typed error instead of falling through
+//   to a silent token refresh — refreshing cannot fix a missing nonce, and
+//   the extra request only delayed the same error.
 // v1.6.0: nonce-capable end-to-end — the three gaps that kept the BFF's
 //   USE_DPOP_NONCE enforcement from ever being answerable by this SDK:
 //   (a) refreshTokenRequest() retries once on a 401 nonce challenge,
@@ -489,6 +493,18 @@ async function requestInternal<T>(
   if (response.status === 401 && !ctx.refreshed && opts.anonymous !== true) {
     // Don't refresh-loop on /session/refresh itself
     if (!path.includes('/session/refresh')) {
+      // v1.6.1 (Devin on PR #46): if this 401 is ANOTHER nonce challenge after
+      // the DPoP retry is spent, surface its typed error — a silent token
+      // refresh cannot fix "proof needs this nonce", so burning one only adds
+      // a doomed third request. The peeked body is consumed either way and
+      // nothing below re-reads it: a challenge returns here, a non-challenge
+      // proceeds to tryRefresh which issues a fresh response.
+      if (ctx.dpopRetried && response.headers.get('dpop-nonce') !== null) {
+        const peekText = await response.text();
+        if (isUseDpopNonceEnvelope(peekText)) {
+          return finalizeFailedResponse<T>(response, peekText);
+        }
+      }
       try {
         await tryRefresh();
       } catch {
