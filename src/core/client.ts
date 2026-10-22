@@ -1,4 +1,7 @@
-// @samjonaidi-ship-it/universal-auth | src/core/client.ts | v1.6.1 | 2026-10-22 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/client.ts | v1.6.2 | 2026-10-22 | BB
+// v1.6.2 (Devin on PR #47): finalizeFailedResponse lifts the code out of a
+//   wrapped `{ error: { code } }` body — errorFromEnvelope reads top-level
+//   `code` only, so a nested challenge previously surfaced code:undefined.
 // v1.6.1 (Devin on PR #46): a second USE_DPOP_NONCE challenge after the
 //   retry is spent now surfaces its typed error instead of falling through
 //   to a silent token refresh — refreshing cannot fix a missing nonce, and
@@ -850,7 +853,27 @@ function isUseDpopNonceEnvelope(bodyText: string): boolean {
 function finalizeFailedResponse<T>(response: Response, bodyText: string): Promise<RequestResult<T>> {
   let envelope: AuthErrorEnvelope;
   try {
-    envelope = JSON.parse(bodyText) as AuthErrorEnvelope;
+    const parsed = JSON.parse(bodyText) as Record<string, unknown>;
+    // v1.6.2 (Devin on PR #47): the §3.6 wrapped shape
+    // `{ error: { code, message } }` — the second form isUseDpopNonceEnvelope
+    // accepts — carries its code one level down, and errorFromEnvelope reads
+    // top-level `code` only. Lift it so a nested body still produces a typed
+    // error with its real code. Flat bodies take the else branch unchanged;
+    // a string `error` (the older wire format) is left for env.error.
+    if (
+      parsed.code === undefined &&
+      typeof parsed.error === 'object' &&
+      parsed.error !== null &&
+      typeof (parsed.error as { code?: unknown }).code === 'string'
+    ) {
+      const inner = parsed.error as { code: string; message?: unknown };
+      envelope = {
+        code: inner.code,
+        ...(typeof inner.message === 'string' ? { message: inner.message } : {}),
+      };
+    } else {
+      envelope = parsed as AuthErrorEnvelope;
+    }
   } catch {
     throw new AuthSdkError(
       `HTTP_${response.status}`,

@@ -1,4 +1,6 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/core/client-dpop.test.ts | v1.1.1 | 2026-10-22 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/client-dpop.test.ts | v1.1.2 | 2026-10-22 | BB
+// v1.1.2: pins v1.6.2 (Devin on PR #47) — a repeated NESTED challenge
+// surfaces code USE_DPOP_NONCE, not code:undefined.
 // v1.1.1: pins v1.6.1 (Devin on PR #46) — a repeated challenge surfaces
 // USE_DPOP_NONCE without a silent refresh, while a non-challenge 401
 // still refreshes.
@@ -226,6 +228,22 @@ describe('core/client — DPoP wire-up (L3.1)', () => {
         fetchSpy.mock.calls.every((c) => String(c[0]).endsWith('/auth/v1/session/revoke')),
         'a repeated nonce challenge must not trigger a silent refresh'
       ).toBe(true);
+    });
+
+    it('a repeated NESTED challenge still surfaces with code USE_DPOP_NONCE (Devin #47)', async () => {
+      // errorFromEnvelope reads top-level `code` only — a wrapped
+      // `{error:{code}}` body must be normalised, not thrown as undefined.
+      const nested = () =>
+        new Response(
+          JSON.stringify({ error: { code: 'USE_DPOP_NONCE', message: 'again' } }),
+          { status: 401, headers: { 'content-type': 'application/json', 'DPoP-Nonce': 'n2' } }
+        );
+      fetchSpy.mockResolvedValueOnce(nested()).mockResolvedValueOnce(nested());
+
+      await expect(post('/auth/v1/session/revoke', {})).rejects.toMatchObject({
+        code: 'USE_DPOP_NONCE',
+      });
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
     });
 
     it('still silent-refreshes a second 401 that carries a DPoP-Nonce header but is NOT a challenge', async () => {
