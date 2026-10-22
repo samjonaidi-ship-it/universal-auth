@@ -1,4 +1,8 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/core/client-dpop.test.ts | v1.0.0 | 2026-05-05 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/client-dpop.test.ts | v1.1.0 | 2026-10-22 | BB
+// v1.1.0: + v1.6.0 coverage — the flat {code: USE_DPOP_NONCE} wire shape the
+// BFF actually sends, and the nonce retry on anonymous mint endpoints
+// (anonymous only gates Authorization, not the proof).
+//
 // L3.1 SDK wire-up coverage — DPoP fetch wrapper + nonce-challenge retry +
 // soft/hard fallback semantics + clearSession() keypair tear-down. Mirrors
 // DPOP_DESIGN_v1.0.md §5.3 + §10 Q3.
@@ -162,6 +166,111 @@ describe('core/client — DPoP wire-up (L3.1)', () => {
       // Second proof has the server-issued nonce
       const secondPayload = decodeDpopPayload(secondHeaders.DPoP!);
       expect(secondPayload.nonce).toBe('nonce-from-server');
+    });
+
+    it('retries once on a FLAT {code: USE_DPOP_NONCE} challenge — the shape the BFF sends', async () => {
+      // routes/auth-v1.js answers a DpopError as
+      // `reply.code(401).send({ code, message, protocol_version })` — flat,
+      // not the `{error:{code}}` envelope the earlier test uses.
+      fetchSpy
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              code: 'USE_DPOP_NONCE',
+              message: 'DPoP nonce required — retry with nonce',
+              protocol_version: 'v1',
+            }),
+            {
+              status: 401,
+              headers: {
+                'content-type': 'application/json',
+                'DPoP-Nonce': 'flat-nonce',
+              },
+            }
+          )
+        )
+        .mockResolvedValueOnce(jsonResp(200, { ok: true }));
+
+      await post('/auth/v1/session/revoke', {});
+
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      const secondHeaders = (fetchSpy.mock.calls[1]![1] as RequestInit).headers as Record<string, string>;
+      expect(decodeDpopPayload(secondHeaders.DPoP!).nonce).toBe('flat-nonce');
+    });
+
+    it('caps the nonce retry at one — a second challenge surfaces the error, no loop', async () => {
+      const challenge = () =>
+        new Response(
+          JSON.stringify({ code: 'USE_DPOP_NONCE', message: 'again', protocol_version: 'v1' }),
+          {
+            status: 401,
+            headers: { 'content-type': 'application/json', 'DPoP-Nonce': 'another-nonce' },
+          }
+        );
+      fetchSpy
+        .mockResolvedValueOnce(challenge())
+        .mockResolvedValueOnce(challenge())
+        // After the nonce-retry cap the ordinary 401 path runs: silent
+        // refresh → terminal 401 → AuthSessionExpired to the caller.
+        .mockResolvedValueOnce(
+          jsonResp(401, { code: 'AUTH_SESSION_EXPIRED', message: 'expired', protocol_version: 'v1' })
+        );
+
+      await expect(post('/auth/v1/session/revoke', {})).rejects.toMatchObject({
+        code: 'AUTH_SESSION_EXPIRED',
+      });
+
+      const revokeCalls = fetchSpy.mock.calls.filter((c) =>
+        String(c[0]).endsWith('/auth/v1/session/revoke')
+      );
+      expect(revokeCalls.length).toBe(2); // initial + one retry, never a third
+    });
+
+    it('retries an ANONYMOUS DPoP mint call on a nonce challenge (anonymous gates auth, not the proof)', async () => {
+      // v1.6.0: the mint endpoints are called anonymous:true yet still carry
+      // a DPoP proof (P4.6). A USE_DPOP_NONCE challenge on them is answerable
+      // — the old `anonymous !== true` gate skipped the retry entirely.
+      fetchSpy
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              code: 'USE_DPOP_NONCE',
+              message: 'DPoP nonce required — retry with nonce',
+              protocol_version: 'v1',
+            }),
+            {
+              status: 401,
+              headers: { 'content-type': 'application/json', 'DPoP-Nonce': 'mint-nonce' },
+            }
+          )
+        )
+        .mockResolvedValueOnce(jsonResp(200, { ok: true }));
+
+      await post('/auth/v1/code/verify', { code: '000000' }, { anonymous: true });
+
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      const secondHeaders = (fetchSpy.mock.calls[1]![1] as RequestInit).headers as Record<string, string>;
+      expect(decodeDpopPayload(secondHeaders.DPoP!).nonce).toBe('mint-nonce');
+      expect(secondHeaders.Authorization).toBeUndefined(); // still anonymous
+    });
+
+    it('caps the nonce retry at one on an anonymous mint call too', async () => {
+      const challenge = () =>
+        new Response(
+          JSON.stringify({ code: 'USE_DPOP_NONCE', message: 'again', protocol_version: 'v1' }),
+          {
+            status: 401,
+            headers: { 'content-type': 'application/json', 'DPoP-Nonce': 'nonce-x' },
+          }
+        );
+      fetchSpy.mockResolvedValueOnce(challenge()).mockResolvedValueOnce(challenge());
+
+      // anonymous:true → no silent-refresh fallthrough; the second challenge
+      // surfaces as the typed error after exactly one retry.
+      await expect(
+        post('/auth/v1/code/verify', { code: '000000' }, { anonymous: true })
+      ).rejects.toMatchObject({ code: 'USE_DPOP_NONCE' });
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
     });
 
     it('falls back to plain Bearer when DPoP build fails + emits dpop.fallback_used', async () => {

@@ -1,4 +1,16 @@
-// @samjonaidi-ship-it/universal-auth | src/core/client.ts | v1.5.1 | 2026-10-15 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/client.ts | v1.6.0 | 2026-10-22 | BB
+// v1.6.0: nonce-capable end-to-end — the three gaps that kept the BFF's
+//   USE_DPOP_NONCE enforcement from ever being answerable by this SDK:
+//   (a) refreshTokenRequest() retries once on a 401 nonce challenge,
+//       re-proving with the server-issued nonce (it builds its own fetch, so
+//       the requestInternal retry below never covered it);
+//   (b) isUseDpopNonceEnvelope() also accepts the flat
+//       `{ code: 'USE_DPOP_NONCE', message, protocol_version }` body the v1
+//       routes actually send — the nested `{ error: { code } }` shape was
+//       assumed but is not what the BFF emits for DpopError;
+//   (c) the nonce retry no longer requires `anonymous !== true` — anonymous
+//       only gates the Authorization header attach; DPoP mint endpoints are
+//       anonymous AND proof-bearing, so a challenge on them is answerable.
 // v1.5.1 (rc.27, Devin on PR #42): a mint 200 whose body is JSON null or not
 //   JSON is an unusable reply (60 s hold), not a refusal for the session.
 // v1.5.0 (rc.27, COOKIE_BEARER_MINT_SPEC §5): opt-in `mintFromCookie`. A
@@ -439,16 +451,21 @@ async function requestInternal<T>(
   }
 
   // v1.0.5 (L3.1): DPoP-Nonce challenge retry (RFC 9449 §8). Server returns
-  // 401 with `DPoP-Nonce` header + envelope `{ error: { code: 'USE_DPOP_NONCE' } }`.
-  // Cache the nonce and re-issue the request once with it baked into the proof.
-  // Capped at one retry per request to avoid infinite loops on a server that
-  // keeps returning USE_DPOP_NONCE.
+  // 401 with `DPoP-Nonce` header + a `USE_DPOP_NONCE` body (flat or enveloped —
+  // see isUseDpopNonceEnvelope). Cache the nonce and re-issue the request once
+  // with it baked into the proof. Capped at one retry per request to avoid
+  // infinite loops on a server that keeps returning USE_DPOP_NONCE.
+  //
+  // v1.6.0: no `anonymous !== true` gate. `anonymous` only means "do not
+  // attach an Authorization header" — the DPoP-protected mint endpoints are
+  // called anonymous:true AND carry a proof (P4.6), so a nonce challenge on
+  // them is answerable and must be answered. A nonce retry is about the
+  // proof, never about auth headers.
   const dpopNonceHeader = response.headers.get('dpop-nonce');
   if (
     response.status === 401 &&
     dpopNonceHeader !== null &&
     !ctx.dpopRetried &&
-    opts.anonymous !== true &&
     (cfg.useDpop ?? 'auto') !== 'never' &&
     isDpopRequiredFor(path, method)
   ) {
@@ -597,13 +614,13 @@ async function refreshTokenRequest(refreshToken: string): Promise<{
   session_id: string;
 }> {
   const cfg = requireConfig();
-  const url = joinUrl(cfg.apiBaseUrl, '/auth/v1/session/refresh');
+  const path = '/auth/v1/session/refresh';
+  const url = joinUrl(cfg.apiBaseUrl, path);
   // v1.0.1 (B3): derive the idempotency key from the refresh token so two tabs
   // racing past the in-tab mutex send the SAME key — the server dedupes.
   // 16 hex chars (64 bits) is plenty for this dedupe window without leaking
   // the token (preimage-resistant under SHA-256).
   const idempotencyKey = await deriveRefreshIdempotencyKey(refreshToken);
-  const refreshSignal = withDefaultTimeout(undefined, DEFAULT_REQUEST_TIMEOUT_MS);
 
   // P4.6 — attach a DPoP proof to the refresh.
   //
@@ -621,64 +638,98 @@ async function refreshTokenRequest(refreshToken: string): Promise<{
   // ath-less on purpose: a refresh carries no access token. The refresh token
   // is NOT an access token and must not be hashed into `ath`.
   //
-  // No nonce retry, deliberately: the refresh call site passes
-  // `verifyDpopProof(req, { sql, boundJkt })` with no `requireNonce`, which
-  // defaults false, so USE_DPOP_NONCE cannot be raised here. (The DPoP design
-  // doc says nonces are "refresh-only" — that is drift; the code does not ask
-  // for one.) If anyone ever flips requireNonce on for refresh, they MUST add
-  // a nonce-retry here or every refresh will fail.
-  let dpopProof: string | null = null;
+  // v1.6.0 — nonce retry. This used to read "no nonce retry, deliberately:
+  // requireNonce is never passed at the refresh call site." BB_ControlTower
+  // PR #862 merged SHADOW nonce classification and the BFF keeps the
+  // USE_DPOP_NONCE challenge path live (services/dpop.js); the moment
+  // requireNonce flips on, every bound refresh gets a 401 challenge it must
+  // answer. The retry is the same shape as requestInternal's: cache the
+  // server-issued `DPoP-Nonce`, re-prove once with it, never loop — a server
+  // that challenges again gets the error envelope, not another try.
   const refreshDpopMode: DpopMode = cfg.useDpop ?? 'auto';
-  if (refreshDpopMode !== 'never') {
+  const buildRefreshProof = async (): Promise<string | null> => {
+    if (refreshDpopMode === 'never') return null;
     try {
       await getOrCreateKeypair();
-      dpopProof = await buildDpopProof({ url, method: 'POST' });
+      // Same nonce-cache key as requestInternal uses for this path, so a
+      // nonce recorded by either fetch path is consumed by the next proof.
+      const cachedNonce = consumeNonce(path);
+      const proofInput: Parameters<typeof buildDpopProof>[0] = { url, method: 'POST' };
+      if (cachedNonce !== null) proofInput.nonce = cachedNonce;
+      return await buildDpopProof(proofInput);
     } catch (err) {
       if (refreshDpopMode === 'always') throw err;
       // Soft-fallback matches the main path: proceed without the proof. If the
       // session IS bound this will 401, which is the correct outcome — better
       // a clean auth failure than a silently unbound refresh.
       void emit('dpop.fallback_used', {
-        endpoint: '/auth/v1/session/refresh',
+        endpoint: path,
         method: 'POST',
         reason: err instanceof Error ? err.message : String(err),
       });
       reportSoftError(new DpopFallbackError(
-        `DPoP build failed for POST /auth/v1/session/refresh; refreshing without a proof. Cause: ${err instanceof Error ? err.message : String(err)}`,
+        `DPoP build failed for POST ${path}; refreshing without a proof. Cause: ${err instanceof Error ? err.message : String(err)}`,
         err instanceof Error ? { cause: err } : undefined,
       ));
+      return null;
     }
-  }
+  };
 
-  const response = await fetch(url, {
-    method: 'POST',
-    credentials: 'include',
-    // v1.0.1 (B4): same redirect + referrer hardening as primary fetch path.
-    redirect: 'manual',
-    referrerPolicy: 'strict-origin-when-cross-origin',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Auth-Protocol-Version': PROTOCOL_VERSION,
-      'X-App-Id': cfg.appId,
-      'X-SDK-Version': cfg.sdkVersion,
-      'Idempotency-Key': idempotencyKey,
-      ...(dpopProof !== null ? { DPoP: dpopProof } : {}),
-    },
-    body: JSON.stringify({ refresh_token: refreshToken }),
+  const sendRefresh = (dpopProof: string | null): Promise<Response> => {
     // P2.5: this path builds its own fetch rather than going through
     // request(), so it needs the timeout wired explicitly — it is the single
     // most important call to bound, because a hung refresh blocks every
-    // queued getAccessToken() caller behind the refresh mutex.
-    // Conditional spread: `exactOptionalPropertyTypes` forbids `signal: undefined`.
-    ...(refreshSignal !== undefined ? { signal: refreshSignal } : {}),
-  });
+    // queued getAccessToken() caller behind the refresh mutex. Per-attempt:
+    // a signal shared with a completed first fetch could already have fired.
+    const refreshSignal = withDefaultTimeout(undefined, DEFAULT_REQUEST_TIMEOUT_MS);
+    return fetch(url, {
+      method: 'POST',
+      credentials: 'include',
+      // v1.0.1 (B4): same redirect + referrer hardening as primary fetch path.
+      redirect: 'manual',
+      referrerPolicy: 'strict-origin-when-cross-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Auth-Protocol-Version': PROTOCOL_VERSION,
+        'X-App-Id': cfg.appId,
+        'X-SDK-Version': cfg.sdkVersion,
+        'Idempotency-Key': idempotencyKey,
+        ...(dpopProof !== null ? { DPoP: dpopProof } : {}),
+      },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+      // Conditional spread: `exactOptionalPropertyTypes` forbids `signal: undefined`.
+      ...(refreshSignal !== undefined ? { signal: refreshSignal } : {}),
+    });
+  };
+
+  let response = await sendRefresh(await buildRefreshProof());
   if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400)) {
     throw new AuthSdkError(
       'UNEXPECTED_REDIRECT',
       `Refresh was redirected (status ${response.status}); expected direct response from CT BFF.`
     );
   }
-  const bodyText = await response.text();
+  let bodyText = await response.text();
+
+  // v1.6.0: answer one USE_DPOP_NONCE challenge — 401 + `DPoP-Nonce` header +
+  // a nonce-challenge body. The body is already buffered, so the retry only
+  // fires on a real challenge (a stray DPoP-Nonce header on a session-expired
+  // 401 must not trigger it), and it can only fire once.
+  if (response.status === 401 && refreshDpopMode !== 'never') {
+    const dpopNonceHeader = response.headers.get('dpop-nonce');
+    if (dpopNonceHeader !== null && isUseDpopNonceEnvelope(bodyText)) {
+      recordNonce(path, dpopNonceHeader);
+      response = await sendRefresh(await buildRefreshProof());
+      if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400)) {
+        throw new AuthSdkError(
+          'UNEXPECTED_REDIRECT',
+          `Refresh was redirected (status ${response.status}); expected direct response from CT BFF.`
+        );
+      }
+      bodyText = await response.text();
+    }
+  }
+
   if (!response.ok) {
     let env: AuthErrorEnvelope;
     try {
@@ -755,15 +806,21 @@ function joinUrl(base: string, path: string): string {
 
 /**
  * v1.0.5 (L3.1): is the response body a `USE_DPOP_NONCE` challenge envelope?
- * Server shape: `{ error: { code: 'USE_DPOP_NONCE', message: '...' } }`.
+ * Two wire shapes are accepted:
+ *   - flat:    `{ code: 'USE_DPOP_NONCE', message, protocol_version }` — what
+ *              the v1 routes actually send for a DpopError (routes/auth-v1.js
+ *              replies `reply.code(401).send({ code: err.code, ... })`).
+ *   - nested:  `{ error: { code: 'USE_DPOP_NONCE', message: '...' } }` — the
+ *              shape the original implementation assumed; kept so a BFF that
+ *              wraps DpopError in the §3.6 envelope is still recognised.
  * Anything else means the 401's `DPoP-Nonce` header is informational and
  * should not be treated as a retry trigger.
  */
 function isUseDpopNonceEnvelope(bodyText: string): boolean {
   if (bodyText.length === 0) return false;
   try {
-    const parsed = JSON.parse(bodyText) as { error?: { code?: unknown } };
-    return parsed?.error?.code === 'USE_DPOP_NONCE';
+    const parsed = JSON.parse(bodyText) as { code?: unknown; error?: { code?: unknown } };
+    return parsed?.code === 'USE_DPOP_NONCE' || parsed?.error?.code === 'USE_DPOP_NONCE';
   } catch {
     return false;
   }
