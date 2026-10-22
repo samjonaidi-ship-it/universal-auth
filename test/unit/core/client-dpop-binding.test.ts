@@ -1,4 +1,8 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/core/client-dpop-binding.test.ts | v1.0.0 | 2026-08-10 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/client-dpop-binding.test.ts | v1.1.0 | 2026-10-22 | BB
+// v1.1.0: + v1.6.0 nonce-challenge coverage on the REAL refresh path —
+// challenge → retry with nonce → success, both wire shapes, the single-retry
+// cap, and the stray-DPoP-Nonce-header guard.
+//
 // P4.6 — DPoP proofs on the calls that actually establish and preserve the
 // binding.
 //
@@ -235,6 +239,138 @@ describe('P4.6 — DPoP on the REAL refresh path', () => {
     const headers = (call![1] as RequestInit).headers as Record<string, string>;
     expect(headers['Idempotency-Key']).toBeTypeOf('string');
     expect(headers['Idempotency-Key']!.length).toBeGreaterThan(0);
+  });
+});
+
+describe('v1.6.0 — USE_DPOP_NONCE challenge on the REAL refresh path', () => {
+  let fetchSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(async () => {
+    __resetClientForTests();
+    __resetTokenManagerForTests();
+    await __resetDbForTests();
+    clearDeviceIdCache();
+    __resetNonceCacheForTests();
+    configureClient({
+      apiBaseUrl: BASE,
+      appId: 'bb_express',
+      sdkVersion: '1.1.0-rc.14',
+      useDpop: 'auto',
+    });
+    fetchSpy = vi.spyOn(globalThis, 'fetch');
+  });
+
+  afterEach(() => {
+    fetchSpy.mockRestore();
+  });
+
+  const REFRESH = '/auth/v1/session/refresh';
+
+  const refreshCalls = () =>
+    fetchSpy.mock.calls.filter((c) => String(c[0]).endsWith(REFRESH));
+
+  const refreshHeaders = (call: (typeof fetchSpy.mock.calls)[number]) =>
+    (call[1] as RequestInit).headers as Record<string, string>;
+
+  function nonceChallenge(body: unknown, nonce: string): Response {
+    return new Response(JSON.stringify(body), {
+      status: 401,
+      headers: { 'content-type': 'application/json', 'DPoP-Nonce': nonce },
+    });
+  }
+
+  const FLAT_CHALLENGE = {
+    code: 'USE_DPOP_NONCE',
+    message: 'DPoP nonce required — retry with nonce',
+    protocol_version: 'v1',
+  };
+
+  function okRefreshBody() {
+    return {
+      access_token: 'at-2',
+      expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
+      refresh_expires_at: new Date(Date.now() + 90 * 86_400_000).toISOString(),
+      session_id: 's1',
+    };
+  }
+
+  // Drive refreshTokenRequest() the way production does — an expired access
+  // token forces getAccessToken() through performRefresh(), queueing each
+  // response in order for the fetches it makes.
+  async function triggerRealRefresh(...responses: Response[]) {
+    await setSession({
+      accessToken: 'at-stale',
+      refreshToken: 'rt-1',
+      expiresAt: Date.now() - 1000,
+      sessionId: 's1',
+    });
+    for (const r of responses) fetchSpy.mockResolvedValueOnce(r);
+    return getAccessToken();
+  }
+
+  it('answers a FLAT {code: USE_DPOP_NONCE} challenge — retries once with the nonce in the proof', async () => {
+    // The wire shape the BFF actually sends for a DpopError
+    // (routes/auth-v1.js: reply.code(401).send({ code, message, protocol_version })).
+    expect(await triggerRealRefresh(
+      nonceChallenge(FLAT_CHALLENGE, 'server-nonce-1'),
+      jsonResp(200, okRefreshBody()),
+    )).toBe('at-2');
+
+    const calls = refreshCalls();
+    expect(calls.length).toBe(2);
+    expect(decodeProof(refreshHeaders(calls[0]!).DPoP!).nonce).toBeUndefined();
+    expect(decodeProof(refreshHeaders(calls[1]!).DPoP!).nonce).toBe('server-nonce-1');
+  });
+
+  it('answers the NESTED {error:{code}} challenge shape too', async () => {
+    expect(await triggerRealRefresh(
+      nonceChallenge(
+        { error: { code: 'USE_DPOP_NONCE', message: 'use this nonce' } },
+        'server-nonce-2',
+      ),
+      jsonResp(200, okRefreshBody()),
+    )).toBe('at-2');
+
+    const calls = refreshCalls();
+    expect(calls.length).toBe(2);
+    expect(decodeProof(refreshHeaders(calls[1]!).DPoP!).nonce).toBe('server-nonce-2');
+  });
+
+  it('keeps the same refresh-token-derived Idempotency-Key on the retry', async () => {
+    // The retry is the same logical refresh; the server must see the SAME
+    // dedupe key or a raced cross-tab refresh loses P3.1's dedupe window.
+    await triggerRealRefresh(
+      nonceChallenge(FLAT_CHALLENGE, 'server-nonce-3'),
+      jsonResp(200, okRefreshBody()),
+    );
+    const calls = refreshCalls();
+    expect(refreshHeaders(calls[0]!)['Idempotency-Key'])
+      .toBe(refreshHeaders(calls[1]!)['Idempotency-Key']);
+  });
+
+  it('caps the nonce retry at ONE — a second challenge surfaces the error and keeps the token', async () => {
+    await expect(triggerRealRefresh(
+      nonceChallenge(FLAT_CHALLENGE, 'nonce-a'),
+      nonceChallenge(FLAT_CHALLENGE, 'nonce-b'),
+    )).rejects.toMatchObject({ code: 'USE_DPOP_NONCE' });
+
+    expect(refreshCalls().length).toBe(2); // never a third try
+    // USE_DPOP_NONCE is transient (isTerminalRefreshError), not a dead
+    // credential — the refresh token must survive for the next attempt.
+    expect(await getRefreshToken()).toBe('rt-1');
+  });
+
+  it('does NOT retry a 401 whose DPoP-Nonce header rides on a non-challenge body', async () => {
+    // A stray DPoP-Nonce on a session-expired 401 is informational; only a
+    // USE_DPOP_NONCE body triggers the retry.
+    await expect(triggerRealRefresh(
+      nonceChallenge(
+        { code: 'AUTH_SESSION_EXPIRED', message: 'expired', protocol_version: 'v1' },
+        'stray-nonce',
+      ),
+    )).rejects.toMatchObject({ code: 'AUTH_SESSION_EXPIRED' });
+
+    expect(refreshCalls().length).toBe(1);
   });
 });
 
