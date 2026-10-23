@@ -1,5 +1,16 @@
 #!/usr/bin/env node
-// BB_Tools | guardrails/check-pr-body.mjs | v1.7.0 | 2026-10-02 | BB
+// BB_Tools | guardrails/check-pr-body.mjs | v1.8.5 | 2026-10-21 | BB
+// v1.8.5 (pre-push review round-37 P3): epoch-SECONDS ts values normalize to ms - a logger
+//   writing seconds made every row read stale.
+// v1.8.4 (pre-push review round-29 P3): a row with ok:false is a FAILED brain_search call - it is
+//   not evidence a search happened; a numeric epoch ts counts too (the local 'YYYY-MM-DD HH:mm:ss'
+//   string is not the only shape the logger writes).
+// v1.8.3 (pre-push review round-28 P3): a log line that is valid JSON but not an object ('null',
+//   '42') is skipped - row.ts on it threw, and one stray line hid every real recorded call.
+// v1.8.2 (pre-push review P2): the default call-log path is trusted only OUTSIDE GitHub Actions -
+//   in CI it resolves inside the PR's own checkout, which the author controls; there it warns.
+// v1.8.1 (pre-push review P3): future-dated log rows count for nothing, and a log hit says "recorded
+//   on this machine" - it is a lead, not proof the typed line is this PR's search.
 // CANONICAL. Every managed repo carries a byte-identical copy at scripts/check-pr-body.mjs;
 // edit THIS file, then `node sync-guardrails.mjs --pr` (BB_Tools). Run by pr-body-lint.yml.
 //
@@ -25,15 +36,58 @@
 //     list that cannot be read after one retry, or a missing token/PR number, is exit 1, never a pass.
 //     It pages past PRs newer than this one and compares the OLDER_LIMIT nearest older PRs.
 //
+// v1.8.0 — the line is still SELF-REPORTED: a typed answer CI cannot verify is a line an agent can
+//   fabricate. When the recorded brain_search call log (digests/brain-search-calls.jsonl, the
+//   BRAIN_SEARCH_CALL_LOG env) is reachable, a pass is cross-checked against it; where no log is
+//   reachable (the synced copies run in each repo's CI, away from Sam's machine) the pass prints a
+//   ::warning:: saying the line is taken on trust - warned and logged, never silently trusted.
+//
 // Exit 0 = present (or an exempt dependency bot), 1 = missing, empty, untrue, copied, or the
 // repeat check could not run. Reads PR_BODY and PR_AUTHOR from the environment (plus GITHUB_TOKEN,
 // GITHUB_REPOSITORY and PR_NUMBER for the repeat check; a local run outside GitHub Actions without
 // them skips that check and says so): the workflow passes the body through
 // env, never through a `${{ }}` expansion inside `run:`, because the PR author
 // controls the body.
+import { existsSync, readFileSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const MIN_CONTENT = 10;
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+/** How far back a recorded brain_search call counts as "this PR's work". */
+export const SEARCH_WINDOW_MS = 24 * 3600e3;
+// The default log path counts ONLY outside CI, at the canonical home (guardrails/ in BB_Tools).
+// In GitHub Actions the same path resolves inside the PR's own checkout - BB_Tools' own workflow runs
+// this file from the PR's tree, so a committed digests/ row would be the author vouching for himself
+// (round-27 P2). In CI the machine log is unreachable anyway: null -> warn. A synced copy at
+// scripts/check-pr-body.mjs gets the same answer. BRAIN_SEARCH_CALL_LOG is trusted as the operator's.
+const DEFAULT_CALL_LOG = basename(HERE) === 'guardrails' && process.env.GITHUB_ACTIONS !== 'true' ? join(HERE, '..', 'digests', 'brain-search-calls.jsonl') : null;
+
+/**
+ * v1.8.0: the count of recorded brain_search calls within the last SEARCH_WINDOW_MS, read from the
+ * search-call log (digests/brain-search-calls.jsonl next to the canonical guardrails/, or
+ * BRAIN_SEARCH_CALL_LOG). null when no log is reachable - in CI on a synced repo there is none, and
+ * the caller warns instead of trusting the typed line. Never throws.
+ */
+export function recentSearchCalls({ file = process.env.BRAIN_SEARCH_CALL_LOG || DEFAULT_CALL_LOG, windowMs = SEARCH_WINDOW_MS, now = Date.now() } = {}) {
+  if (!file || !existsSync(file)) return null;
+  let n = 0;
+  try {
+    for (const line of readFileSync(file, 'utf8').split('\n')) {
+      if (!line.trim()) continue;
+      let row;
+      try { row = JSON.parse(line); } catch { continue; }
+      if (!row || typeof row !== 'object') continue;   // a 'null'/'42' line must not hide every real row (round-28 P3)
+      if (row.ok === false) continue;                  // a FAILED brain_search call is not evidence a search happened (round-29 P3)
+      // ts may be the local-format string OR a numeric epoch (round-29 P3): NaN rows count nothing.
+      const t = typeof row.ts === 'number' && Number.isFinite(row.ts) ? row.ts : Date.parse(row.ts || row.at || '');
+      const ms = typeof t === 'number' && t < 1e12 ? t * 1000 : t;   // epoch SECONDS from a logger reads as ms - normalize (round-37 P3)
+      if (!Number.isNaN(ms) && ms <= now && now - ms <= windowMs) n++;   // future-dated rows count for nothing (pre-push review P3)
+    }
+    return n;
+  } catch { return null; }
+}
 
 /** Dependency bots open PRs no agent wrote; there is nothing to disclose. Devin is NOT here — AGENTS.md binds it. */
 export const EXEMPT_AUTHORS = ['dependabot[bot]', 'renovate[bot]'];
@@ -279,6 +333,12 @@ if (isMain) {
   const r = checkPrBody({ body: process.env.PR_BODY, author: process.env.PR_AUTHOR, others: loaded.others });
   if (r.ok) {
     console.log(`[pr-body] ok: ${r.reason}`);
+    // v1.8.0: the line passed on its words; now say whether recorded activity backs it. A reachable
+    // call log makes the pass "verified"; no log (CI on a synced repo) is warned, never trusted.
+    const calls = recentSearchCalls();
+    if (calls === null) console.log('::warning::"Searched first:" passed on a self-reported line - the brain-search call log is not reachable here, so the claim is taken on trust.');
+    else if (calls === 0) console.log(`::warning::"Searched first:" is typed, but no brain_search call was recorded in the last ${SEARCH_WINDOW_MS / 3600e3}h - the claim could not be verified against recorded activity.`);
+    else console.log(`[pr-body] recorded activity: ${calls} brain_search call(s) were recorded on this machine in the last ${SEARCH_WINDOW_MS / 3600e3}h (any session - a lead, not proof the typed line is this PR's search).`);
   } else {
     console.error(`::error::${r.reason}`);
     console.error('  AGENTS.md §7/§12: add a line to the PR body, for example');

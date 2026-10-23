@@ -1,8 +1,28 @@
 #!/usr/bin/env node
-// BB_Tools | guardrails/check-risky-paths.mjs | v1.6.0 | 2026-09-05 | BB
+// BB_Tools | guardrails/check-risky-paths.mjs | v1.7.1 | 2026-10-23 | BB
 // CANONICAL. Every managed repo carries a byte-identical copy at scripts/check-risky-paths.mjs;
 // edit THIS file, then `node sync-guardrails.mjs --pr` (BB_Tools). Per-repo config is scripts/risky-paths.json.
 //
+// v1.7.1: only the exact value 'fast' relaxes the verdict — no trim/case-fold
+//   (the var is machine-set by sync-branch-protection --pace, which writes
+//   exactly 'fast'; the protection side compares it literally). A misspelt
+//   ' FAST ' or 'FAST' previously went advisory while the protection check
+//   still judged strict — unknown values must fail closed. (codex P1 on the
+//   2026-10-23 guardrails-sync wave.)
+// v1.7.0: the verdict is pace-aware — the workflow stopped skipping at
+//   BB_PACE=fast (risky-path-gate.yml v1.4, which now feeds BB_PACE into this
+//   script's env instead of an `if:` on the job). At pace=fast a
+//   risky-and-unlabelled verdict is ADVISORY — `::warning` annotations and
+//   exit 0 — because "Risky path review" is not a required context anywhere,
+//   so a red there blocks nothing and only fills pr-watch verdicts and digest
+//   needs-you lists with noise. The exception is the GATE-CRITICAL subset
+//   (see GATE_SENTINELS): a PR rewriting .github/workflows/*, this checker or
+//   the config that judges it is a PR rewriting its own judge, and that stays
+//   RED until `human-reviewed` at ANY pace — an advisory pass there is the
+//   hole the gate exists to close. Pace parsing matches the harness
+//   (bb.mjs paceFromVar): exactly 'fast' is fast; unset, empty or anything
+//   else is normal. A pace that widens the gate when it is unreadable is not
+//   a pace.
 // v1.6.0: a COMMA in a path was a bypass, and the CLI path was weaker than the CI one.
 //   One `split(/[\n,]/)` served both CHANGED_FILES and PR_LABELS. Labels may be
 //   comma-separated; paths may CONTAIN a comma, so `credentials,x.json` became two
@@ -404,6 +424,53 @@ export function hasLabel(labels, config = CONFIG) {
   return labels.some((l) => l.trim().toLowerCase() === config.label.toLowerCase());
 }
 
+/**
+ * GATE-CRITICAL — the subset of risky hits that stays RED at every pace.
+ *
+ * v1.7.0 made the rest of the gate advisory at BB_PACE=fast, because the
+ * "Risky path review" context is not a required check anywhere: a red there
+ * blocks nothing and only trains people to ignore a needs-you list. This
+ * subset is the exception, and it is the hole the gate exists to close — a PR
+ * rewriting .github/workflows/* (including the workflow that runs this
+ * checker), the checker itself, or the config that decides what "risky"
+ * means is a PR rewriting its own judge. Advisory green there is no verdict
+ * at all, so those hits block until `human-reviewed`, fast or not.
+ *
+ * Config-driven, not a hardcoded category name: a repo may call its
+ * protection category anything. A category is gate-critical when it declares
+ * `"gate_critical": true`, OR when its own patterns match a sentinel path —
+ * i.e. it is the category that covers the gate machinery — so a managed repo
+ * whose config predates the flag still cannot advise its own gate away. The
+ * per-FILE floor (isGatePath) holds even if a config classifies one of the
+ * sentinel paths under some other category.
+ */
+export const GATE_SENTINELS = [
+  '.github/workflows/risky-path-gate.yml',
+  'scripts/check-risky-paths.mjs',
+  'scripts/risky-paths.json',
+];
+
+/** Files that are gate-critical wherever they are classified. */
+export const isGatePath = (f) =>
+  f.startsWith('.github/workflows/') || GATE_SENTINELS.slice(1).includes(f);
+
+/** Is this category the one that covers the gate itself? */
+export function isGateCriticalCategory(cat) {
+  if (cat.gate_critical === true) return true;
+  const res = (cat.patterns || []).map((p) => new RegExp(p));
+  return GATE_SENTINELS.some((s) => res.some((r) => r.test(s)));
+}
+
+/** The names of the config's gate-critical categories. */
+export function gateCriticalCategories(config = CONFIG) {
+  return new Set(config.categories.filter(isGateCriticalCategory).map((c) => c.name));
+}
+
+/** GitHub workflow-command escaping: % CR LF everywhere; : and , inside a property. */
+const ann = (s) => String(s)
+  .replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A')
+  .replace(/:/g, '%3A').replace(/,/g, '%2C');
+
 // ── CLI ─────────────────────────────────────────────────────────────────────
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
 if (isMain) {
@@ -587,6 +654,22 @@ if (isMain) {
     process.exit(2);
   }
 
+  // The gate's OWN files are gate-critical even when NO category claims them:
+  // a config that drops the patterns covering .github/workflows/*, the checker
+  // or itself cannot thereby advise them away — that is exactly the disarm the
+  // ci-and-protection category was added to stop (codex P1, 2026-09-04: a PR
+  // deleting a pattern from risky-paths.json reported ROUTINE). Unclaimed
+  // sentinel paths land as a synthetic hit — loud and pointing at the config.
+  const unclaimedGate = files.filter((f) => isGatePath(f) && !hits.some((h) => h.files.includes(f)));
+  if (unclaimedGate.length) {
+    hits.push({
+      name: 'gate-files',
+      why: 'the gate\'s own files — a change here can rewrite or disarm this check; '
+        + 'no configured category claimed them, which is itself worth a look',
+      files: unclaimedGate,
+    });
+  }
+
   if (!hits.length) {
     console.log(`[32m[risky-paths] no risky paths in ${files.length} changed file(s) — routine, may auto-merge[0m`);
     process.exit(0);
@@ -601,8 +684,50 @@ if (isMain) {
     process.exit(0);
   }
 
-  console.error(`[31m[risky-paths] BLOCKED — ${header}, and the PR is not labelled.[0m\n`);
-  for (const h of hits) {
+  // ── The pace-aware verdict (v1.7.1) ─────────────────────────────────────────
+  //
+  // BB_PACE arrives through the workflow's step env (vars.BB_PACE, defaulting
+  // to 'normal'). ONLY the exact value 'fast' is advisory — no trim, no
+  // case-fold: the var is machine-set by sync-branch-protection --pace, which
+  // writes exactly 'fast', and the protection side compares it literally.
+  // A misspelt ' FAST ' would widen the gate while protection stayed strict —
+  // unknown values must fail closed (reviewer P1, 2026-10-23).
+  const atFast = String(process.env.BB_PACE || '') === 'fast';
+
+  const criticalCats = gateCriticalCategories();
+  const isCritical = (h) => criticalCats.has(h.name) || h.files.some(isGatePath);
+  const blocking = hits.filter(isCritical);
+  const advisory = hits.filter((h) => !isCritical(h));
+
+  // At fast, the non-critical hits are annotated as warnings rather than held
+  // red: the context is not required anywhere, so a red there cannot block —
+  // it can only fill a needs-you list with noise. The warning is the honest
+  // verdict: a human should still look, the check will not make them.
+  if (atFast) {
+    for (const h of advisory) {
+      console.log(`::warning title=Risky path (${h.name})::${h.files.length} file(s) — ${h.why}. `
+        + `Advisory at BB_PACE=fast; a human should still review (the "${CONFIG.label}" label clears it).`);
+      for (const f of h.files) {
+        console.log(`::warning file=${ann(f)}::${h.name} — needs human review`);
+      }
+    }
+    if (!blocking.length) {
+      console.log(`\x1b[33m[risky-paths] ${header} — ADVISORY at BB_PACE=fast (warnings annotated; the check stays green)\x1b[0m`);
+      for (const h of advisory) console.log(`  ${h.name}: ${h.files.join(', ')}`);
+      process.exit(0);
+    }
+  }
+
+  // Red at normal pace for every hit; at fast for the gate-critical subset
+  // alone — a PR rewriting the judge does not get an advisory pass.
+  const denied = atFast ? blocking : hits;
+  const deniedTotal = denied.reduce((n, h) => n + h.files.length, 0);
+  const deniedHeader = `${deniedTotal} file(s) in ${denied.length} risky categor${denied.length === 1 ? 'y' : 'ies'}`;
+
+  console.error(`[31m[risky-paths] BLOCKED — ${deniedHeader}, and the PR is not labelled.[0m\n`);
+  if (atFast) console.error('  Gate-critical hits stay red at EVERY pace — an advisory pass on a PR\n'
+    + '  rewriting the CI that judges it is the hole this gate exists to close.\n');
+  for (const h of denied) {
     console.error(`  ${h.name} — ${h.why}`);
     for (const f of h.files) console.error(`      ${f}`);
   }

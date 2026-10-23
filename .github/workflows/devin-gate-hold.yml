@@ -1,7 +1,10 @@
-# BB_Tools | guardrails/devin-gate-hold.yml | v1.1 | 2026-10-09 | BB
+# BB_Tools | guardrails/devin-gate-hold.yml | v1.2 | 2026-10-23 | BB
 # CANONICAL. Every managed repo carries a byte-identical copy at
 # .github/workflows/devin-gate-hold.yml; edit THIS file, then
 # `node sync-guardrails.mjs --pr` (BB_Tools). The script is scripts/devin-gate.mjs (HOLD MODE, v1.9.0 for the two phases).
+#
+# v1.2 (2026-10-23): ubuntu-slim on hold-disarm only (GH Actions cost audit). hold-recheck stays ubuntu-latest: single-CPU
+# jobs are killed at 15 min and HOLD_WAIT_MS is 16 (test/devin-gate.test.mjs:1531 requires this job to outlive that wait).
 #
 # Re-judges a PR at once when a hold for Sam is added or lifted: the title changed (a HOLD title) or the sams-merge
 # label was added or removed. GitHub's default pull_request_target types never fire on a title or label change, so a
@@ -46,7 +49,7 @@ jobs:
       github.event.pull_request.base.ref == github.event.repository.default_branch &&
       ((github.event.action == 'edited' && github.event.changes.title) ||
        ((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name == 'sams-merge'))
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     timeout-minutes: 5
     permissions:
       contents: read
@@ -81,6 +84,7 @@ jobs:
       # The newest hold event wins: its job re-reads the live PR and re-runs the gate, so cancelling an older wait loses nothing.
       group: devin-gate-hold-${{ github.event.pull_request.number }}
       cancel-in-progress: true
+    # NOT ubuntu-slim: single-CPU jobs are killed at 15 min and HOLD_WAIT_MS is 16 - the wait must outlive it.
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
