@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// BB_Tools | guardrails/devin-gate.mjs | v1.10.3 | 2026-10-14 | BB
+// BB_Tools | guardrails/devin-gate.mjs | v1.10.4 | 2026-10-23 | BB
+// v1.10.4: comment-only touch-up alongside devin-gate.yml v1.8 (ubuntu-slim runner). No behaviour change.
 // CANONICAL. Every managed repo carries a byte-identical copy at scripts/devin-gate.mjs;
 // edit THIS file, then `node sync-guardrails.mjs --pr` (BB_Tools). Run by devin-gate.yml.
 //

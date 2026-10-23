@@ -1,7 +1,12 @@
-# BB_Tools | guardrails/devin-gate.yml | v1.7 | 2026-10-09 | BB
+# BB_Tools | guardrails/devin-gate.yml | v1.8 | 2026-10-23 | BB
 # CANONICAL. Every managed repo carries a byte-identical copy at
 # .github/workflows/devin-gate.yml; edit THIS file, then
 # `node sync-guardrails.mjs --pr` (BB_Tools). The gate is scripts/devin-gate.mjs.
+#
+# v1.8 (2026-10-23): ubuntu-slim runner (GH Actions cost audit: ~17,000 billed min/mo on guardrail
+# fabric; this job's work is a bounded 8-min wait plus API calls, and slim's 15-min job cap is never
+# reached). The sweep stays */10 on purpose: runSweep is the backstop that disarms a held, armed PR
+# when the hold event's hold-disarm mutation fails - a slower tick widens the window a held PR can merge.
 #
 # v1.7 (2026-10-09): the edited/labeled/unlabeled triggers are GONE again - they moved to devin-gate-hold.yml. A job
 # skipped by its `if` still posts a SKIPPED devin-gate check on the PR head, and GitHub counts a skipped required check
@@ -95,7 +100,7 @@ jobs:
       github.event_name == 'schedule' ||
       (github.event_name == 'status' && github.event.context == 'bb-review' && (github.event.state == 'failure' || github.event.state == 'error')) ||
       (github.event.pull_request && github.event.pull_request.draft == false && github.event.pull_request.base.ref == github.event.repository.default_branch)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     timeout-minutes: 15
     permissions:
       contents: read
