@@ -1,4 +1,6 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/core/client-dpop.test.ts | v1.1.2 | 2026-10-22 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/client-dpop.test.ts | v1.1.3 | 2026-10-22 | BB
+// v1.1.3: pins v1.6.3 (Devin on PR #48) — a wrapped error body keeps its
+// trace_id through the normalizer, not just its code.
 // v1.1.2: pins v1.6.2 (Devin on PR #47) — a repeated NESTED challenge
 // surfaces code USE_DPOP_NONCE, not code:undefined.
 // v1.1.1: pins v1.6.1 (Devin on PR #46) — a repeated challenge surfaces
@@ -244,6 +246,24 @@ describe('core/client — DPoP wire-up (L3.1)', () => {
         code: 'USE_DPOP_NONCE',
       });
       expect(fetchSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it('a wrapped error body keeps its trace_id through the normalizer (Devin #48)', async () => {
+      // Lifting must spread the whole inner object — trace_id, hint,
+      // retry_after_seconds — not cherry-pick code+message.
+      const nested = () =>
+        new Response(
+          JSON.stringify({
+            error: { code: 'USE_DPOP_NONCE', message: 'again', trace_id: 'tr-123' },
+          }),
+          { status: 401, headers: { 'content-type': 'application/json', 'DPoP-Nonce': 'n3' } }
+        );
+      fetchSpy.mockResolvedValueOnce(nested()).mockResolvedValueOnce(nested());
+
+      await expect(post('/auth/v1/session/revoke', {})).rejects.toMatchObject({
+        code: 'USE_DPOP_NONCE',
+        traceId: 'tr-123',
+      });
     });
 
     it('still silent-refreshes a second 401 that carries a DPoP-Nonce header but is NOT a challenge', async () => {

@@ -1,4 +1,9 @@
-// @samjonaidi-ship-it/universal-auth | src/core/client.ts | v1.6.2 | 2026-10-22 | BB
+// @samjonaidi-ship-it/universal-auth | src/core/client.ts | v1.6.3 | 2026-10-22 | BB
+// v1.6.3 (Devin on PR #48, round-3 rewrite): the wrapped-envelope lift is now
+//   ONE shared normalizer, `normalizeAuthErrorEnvelope`, used by every
+//   error-parse site (requestInternal, mint, refresh, finalizeFailedResponse)
+//   — a wrapped `{ error: { code, ... } }` body keeps its code AND its other
+//   fields (trace_id, hint, retry_after_seconds), not just code+message.
 // v1.6.2 (Devin on PR #47): finalizeFailedResponse lifts the code out of a
 //   wrapped `{ error: { code } }` body — errorFromEnvelope reads top-level
 //   `code` only, so a nested challenge previously surfaced code:undefined.
@@ -536,7 +541,7 @@ async function requestInternal<T>(
   // Non-ok response — parse envelope and throw typed error
   let envelope: AuthErrorEnvelope;
   try {
-    envelope = JSON.parse(bodyText) as AuthErrorEnvelope;
+    envelope = normalizeAuthErrorEnvelope(JSON.parse(bodyText) as Record<string, unknown>);
   } catch {
     throw new AuthSdkError(
       `HTTP_${response.status}`,
@@ -606,7 +611,7 @@ async function mintTokenRequest(): Promise<MintResponse | null> {
   if (!response.ok) {
     let env: AuthErrorEnvelope;
     try {
-      env = JSON.parse(bodyText) as AuthErrorEnvelope;
+      env = normalizeAuthErrorEnvelope(JSON.parse(bodyText) as Record<string, unknown>);
     } catch {
       throw new AuthSdkError(`HTTP_${response.status}`, `Mint failed: HTTP ${response.status}`);
     }
@@ -752,7 +757,7 @@ async function refreshTokenRequest(refreshToken: string): Promise<{
   if (!response.ok) {
     let env: AuthErrorEnvelope;
     try {
-      env = JSON.parse(bodyText) as AuthErrorEnvelope;
+      env = normalizeAuthErrorEnvelope(JSON.parse(bodyText) as Record<string, unknown>);
     } catch {
       throw new AuthSdkError(`HTTP_${response.status}`, `Refresh failed: HTTP ${response.status}`);
     }
@@ -850,30 +855,35 @@ function isUseDpopNonceEnvelope(bodyText: string): boolean {
  * during the DPoP-nonce peek. Mirrors the tail of `requestInternal`'s error
  * path so the two branches stay consistent.
  */
+/**
+ * v1.6.3 (Devin on PR #48): normalize a parsed error body for
+ * errorFromEnvelope, which reads top-level `code` only. The BFF's v1 routes
+ * answer flat `{code, message, protocol_version}`; the §3.6 wrapped form
+ * `{error:{code,message,...}}` — the second shape isUseDpopNonceEnvelope
+ * accepts — carries its code one level down. Lifting means spreading the
+ * inner object over the outer one so `trace_id`, `hint`,
+ * `retry_after_seconds` and friends survive too, then dropping `error` so a
+ * wrapped object never shadows the older string-`error` wire format.
+ * Flat bodies and string-`error` bodies pass through unchanged.
+ */
+function normalizeAuthErrorEnvelope(parsed: Record<string, unknown>): AuthErrorEnvelope {
+  if (
+    parsed.code === undefined &&
+    typeof parsed.error === 'object' &&
+    parsed.error !== null &&
+    typeof (parsed.error as { code?: unknown }).code === 'string'
+  ) {
+    const lifted = { ...parsed, ...(parsed.error as Record<string, unknown>) };
+    delete lifted.error;
+    return lifted as AuthErrorEnvelope;
+  }
+  return parsed as AuthErrorEnvelope;
+}
+
 function finalizeFailedResponse<T>(response: Response, bodyText: string): Promise<RequestResult<T>> {
   let envelope: AuthErrorEnvelope;
   try {
-    const parsed = JSON.parse(bodyText) as Record<string, unknown>;
-    // v1.6.2 (Devin on PR #47): the §3.6 wrapped shape
-    // `{ error: { code, message } }` — the second form isUseDpopNonceEnvelope
-    // accepts — carries its code one level down, and errorFromEnvelope reads
-    // top-level `code` only. Lift it so a nested body still produces a typed
-    // error with its real code. Flat bodies take the else branch unchanged;
-    // a string `error` (the older wire format) is left for env.error.
-    if (
-      parsed.code === undefined &&
-      typeof parsed.error === 'object' &&
-      parsed.error !== null &&
-      typeof (parsed.error as { code?: unknown }).code === 'string'
-    ) {
-      const inner = parsed.error as { code: string; message?: unknown };
-      envelope = {
-        code: inner.code,
-        ...(typeof inner.message === 'string' ? { message: inner.message } : {}),
-      };
-    } else {
-      envelope = parsed as AuthErrorEnvelope;
-    }
+    envelope = normalizeAuthErrorEnvelope(JSON.parse(bodyText) as Record<string, unknown>);
   } catch {
     throw new AuthSdkError(
       `HTTP_${response.status}`,
