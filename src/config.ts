@@ -1,4 +1,5 @@
-// @samjonaidi-ship-it/universal-auth | src/config.ts | v1.1.17 | 2026-10-15 | BB
+// @samjonaidi-ship-it/universal-auth | src/config.ts | v1.1.18 | 2026-10-22 | BB
+// v1.1.18: SDK_VERSION → 1.1.0-rc.28 (stamps the nonce-retry build, #46-#49).
 // v1.1.17: SDK_VERSION → 1.1.0-rc.27. + mintFromCookie / mintAppId
 //   (COOKIE_BEARER_MINT_SPEC §5), validated here, passed to configureClient.
 // v1.1.16: SDK_VERSION → 1.1.0-rc.26.
@@ -244,7 +245,7 @@ export function assertApiBaseUrlSafety(
  *  of regression. `pnpm verify:version-sync` (scripts/verify-version-sync.ts)
  *  now CI-gates this constant against package.json:version on every build.
  */
-export const SDK_VERSION = '1.1.0-rc.27';
+export const SDK_VERSION = '1.1.0-rc.28';
 
 /**
  * Initialize the SDK. Called once at app startup.
