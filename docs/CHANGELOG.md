@@ -8,6 +8,38 @@ Citation convention: section-only (`§3.7`, `§D2.1`, `Appendix B`). Spec line n
 
 > **Note on v1.1.0-rc.3 (2026-05-06):** rc.3 landed on `main` but failed CI on 3 lint errors before it could be tagged or published. v1.1.0-rc.4 is the same code with those 3 errors resolved + coverage threshold reconciled with measured coverage. Public consumer path for the v1.1 line is rc.1 → rc.4 (rc.2 and rc.3 were never published).
 
+## [1.1.0-rc.28] — 2026-10-22 — DPoP nonce retry (USE_DPOP_NONCE)
+
+### Added
+
+- `client.ts` v1.6.0–v1.6.3 (#46–#49, server half ControlTower #862 shadow
+  DPoP-nonce enforcement): the SDK now answers a `401` +
+  `DPoP-Nonce` + `USE_DPOP_NONCE` challenge everywhere it can arrive.
+  `refreshTokenRequest()` retries once with the server-issued nonce through
+  the same `recordNonce`/`consumeNonce` cache as `requestInternal`; the
+  challenge recogniser accepts both the wrapped `{error:{code}}` body and
+  the flat `{code,message,protocol_version}` body the v1 routes send; and
+  the retry is no longer gated on `anonymous !== true`, so the anonymous
+  DPoP-bound mint endpoints answer it too.
+- One shared `normalizeAuthErrorEnvelope` serves all four parse sites
+  (requestInternal, mint, refresh, finalizeFailedResponse): wrapped
+  `{error:{code,...}}` bodies are lifted so `code`, `trace_id`, `hint` and
+  `retry_after_seconds` survive; flat and string-error bodies are
+  unchanged; non-JSON still throws `HTTP_<status>`.
+
+### Fixed
+
+- A second `USE_DPOP_NONCE` challenge after the retry is spent now surfaces
+  the typed `USE_DPOP_NONCE` error to the caller instead of burning a silent
+  token refresh that cannot fix a missing nonce.
+- A repeated challenge delivered in the wrapped `{error:{code}}` shape
+  reached `errorFromEnvelope` with `code` undefined; the normalizer lifts it
+  before the typed-error factory.
+
+Version-only release: no consumer-visible API change; `SDK_VERSION` stamps
+`1.1.0-rc.28` so fleet telemetry can gate ControlTower's `requireNonce`
+flip on a build that carries the retry.
+
 ## [1.1.0-rc.27] — 2026-10-15 — cookie → bearer mint
 
 ### Added
