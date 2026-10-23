@@ -1,4 +1,6 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/core/client-dpop-binding.test.ts | v1.1.0 | 2026-10-22 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/core/client-dpop-binding.test.ts | v1.1.1 | 2026-10-22 | BB
+// v1.1.1: pins v1.6.3 (Devin on PR #48) — a repeated NESTED challenge on the
+// real refresh path surfaces code USE_DPOP_NONCE, not code:undefined.
 // v1.1.0: + v1.6.0 nonce-challenge coverage on the REAL refresh path —
 // challenge → retry with nonce → success, both wire shapes, the single-retry
 // cap, and the stray-DPoP-Nonce-header guard.
@@ -358,6 +360,17 @@ describe('v1.6.0 — USE_DPOP_NONCE challenge on the REAL refresh path', () => {
     // USE_DPOP_NONCE is transient (isTerminalRefreshError), not a dead
     // credential — the refresh token must survive for the next attempt.
     expect(await getRefreshToken()).toBe('rt-1');
+  });
+
+  it('a repeated NESTED challenge on the refresh path surfaces code USE_DPOP_NONCE too', async () => {
+    // v1.6.3 (Devin on PR #48): refreshTokenRequest's own error tail must
+    // normalise the wrapped shape the same way finalizeFailedResponse does.
+    const nested = () =>
+      nonceChallenge({ error: { code: 'USE_DPOP_NONCE', message: 'again' } }, 'nn');
+    await expect(triggerRealRefresh(nested(), nested())).rejects.toMatchObject({
+      code: 'USE_DPOP_NONCE',
+    });
+    expect(refreshCalls().length).toBe(2);
   });
 
   it('does NOT retry a 401 whose DPoP-Nonce header rides on a non-challenge body', async () => {
