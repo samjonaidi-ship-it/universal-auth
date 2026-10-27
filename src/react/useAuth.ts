@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/react/useAuth.ts | v1.1.0 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/useAuth.ts | v1.1.1 | 2026-10-27 | BB
 // Public useAuth hook — subscribes to IdentityContext + StatusContext only.
 // Per §D2.4: personas / activePersona / hasPersona / switchActivePersona / allFeatures / agent.
 // allFeatures() reads entitlements module directly (so useAuth doesn't subscribe

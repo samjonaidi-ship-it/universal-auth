@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/react/PersonaGuard.test.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/react/PersonaGuard.test.tsx | v1.0.1 | 2026-10-27 | BB
 // PersonaGuard logic — UX-only client gate per §D2.7.
 
 import { describe, it, expect, beforeEach } from 'vitest';
