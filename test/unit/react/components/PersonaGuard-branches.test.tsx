@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/react/components/PersonaGuard-branches.test.tsx | v1.0.1 | 2026-05-08 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/react/components/PersonaGuard-branches.test.tsx | v1.0.2 | 2026-10-27 | BB
 // COV-1 finish (rc.5+ → GA): coverage tests for PersonaGuard.
 //
 // Targeted branches (per `pnpm test:unit` rc.5: 77.77% on this file):
@@ -19,12 +19,13 @@ import { vi } from 'vitest';
 function withAuth(
   status: 'loading' | 'anonymous' | 'authenticated',
   personas: ReadonlyArray<{ persona_type: string }>,
+  activeType?: string | null,
 ): void {
   vi.spyOn(useAuthModule, 'useAuth').mockReturnValue({
     identity: null,
     status,
     personas,
-    activePersona: null,
+    activePersona: activeType === null ? null : activeType === undefined ? (personas[0] ?? null) : (personas.find((p) => p.persona_type === activeType) ?? null),
     primary_persona: null,
     hasPersona: () => false,
     switchActivePersona: async () => undefined,
@@ -131,6 +132,28 @@ describe('PersonaGuard — branch coverage (COV-1 finish)', () => {
     );
     // The <span> should be the direct first child (no <div> wrapper)
     expect(container.firstElementChild?.tagName).toBe('SPAN');
+    vi.restoreAllMocks();
+  });
+
+  it('renders fallback once settled when personas exist but activePersona stays null', () => {
+    withAuth('authenticated', [{ persona_type: 'admin' }], null);
+    const { container } = render(
+      <PersonaGuard requires={['admin']} fallback={<span>fallback</span>}>
+        <span>protected</span>
+      </PersonaGuard>,
+    );
+    expect(container.textContent).toBe('fallback');
+    vi.restoreAllMocks();
+  });
+
+  it('renders fallback when authenticated with no personas at all', () => {
+    withAuth('authenticated', [], null);
+    render(
+      <PersonaGuard requires={['admin']} fallback={<span>fallback</span>}>
+        <span>protected</span>
+      </PersonaGuard>,
+    );
+    expect(screen.getByText('fallback')).toBeTruthy();
     vi.restoreAllMocks();
   });
 

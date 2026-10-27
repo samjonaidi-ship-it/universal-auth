@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/react/PersonaGuard.test.tsx | v1.0.0-rc.1 | 2026-04-24 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/react/PersonaGuard.test.tsx | v1.0.1 | 2026-10-27 | BB
 // PersonaGuard logic — UX-only client gate per §D2.7.
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -65,6 +65,35 @@ describe('react/components/PersonaGuard', () => {
     );
     expect(screen.queryByText('admin content')).toBeNull();
     expect(screen.getByText('denied')).toBeTruthy();
+  });
+
+  it('F2: active crew sign-in on an identity that also holds admin must NOT pass requires=[admin]', () => {
+    render(
+      <AuthProvider
+        initialSession={makeSession(['crew', 'admin'])}
+        resolveActivePersona={(ps) => ps.find((p) => p.persona_type === 'crew') ?? null}
+      >
+        <PersonaGuard requires={['admin']} fallback={<div>denied</div>}>
+          <div>admin content</div>
+        </PersonaGuard>
+      </AuthProvider>
+    );
+    expect(screen.queryByText('admin content')).toBeNull();
+    expect(screen.getByText('denied')).toBeTruthy();
+  });
+
+  it('F2: active admin sign-in on a multi-persona identity passes requires=[admin]', () => {
+    render(
+      <AuthProvider
+        initialSession={makeSession(['crew', 'admin'])}
+        resolveActivePersona={(ps) => ps.find((p) => p.persona_type === 'admin') ?? null}
+      >
+        <PersonaGuard requires={['admin']} fallback={<div>denied</div>}>
+          <div>admin content</div>
+        </PersonaGuard>
+      </AuthProvider>
+    );
+    expect(screen.getByText('admin content')).toBeTruthy();
   });
 
   it('renders fallback when anonymous (no session)', () => {

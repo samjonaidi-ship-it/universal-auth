@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/react/components/PersonaGuard.tsx | v1.1.0 | 2026-05-06 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/components/PersonaGuard.tsx | v1.2.0 | 2026-10-27 | BB
 // Client-side persona gate per §D2.7. UX-only — server is source of truth.
 //
 // Usage:
@@ -9,14 +9,24 @@
 // v1.1.0 (P1-A): + className/style — when either is provided, the rendered
 // branch is wrapped in a <div>. Without them, the component still renders a
 // bare fragment so it stays layout-neutral (the original v1.0 behavior).
+//
+// v1.2.0 (role unification F2): the guard tests ONLY the active sign-in persona
+// (useAuth().activePersona), never the union of every persona the identity
+// holds. A crew sign-in on an identity that also holds 'admin' must not pass
+// requires=['admin']. No personas => fallback; personas present but the active
+// one not yet resolved => render nothing for that one commit, then fallback.
+//
+// UX-only: the active persona is client state (URL segment / switchActivePersona),
+// not a server-proven sign-in. The server must enforce the role (F2 server side).
+// Apps must call switchActivePersona() when the user changes persona.
 
-import type { CSSProperties, ReactNode } from 'react';
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { useAuth } from '../useAuth.js';
 
 export interface PersonaGuardProps {
-  /** Persona types that pass the guard. Match logic = OR (any one is enough). */
+  /** Persona types that pass the guard. Match logic = OR against the ACTIVE persona only. */
   requires: readonly string[];
-  /** Rendered when no required persona is present. */
+  /** Rendered when the active persona is not one of `requires`. */
   fallback?: ReactNode;
   children: ReactNode;
   /** Optional class — when set, the rendered branch is wrapped in a <div>. */
@@ -32,7 +42,14 @@ export function PersonaGuard({
   className,
   style,
 }: PersonaGuardProps): ReactNode {
-  const { personas, status } = useAuth();
+  const { activePersona, personas, status } = useAuth();
+  // The personas array the provider's resolver effect has had a chance to run
+  // for. Child effects flush in the same batch as the provider's setActiveType,
+  // so by the render after this effect both are current.
+  const [settledFor, setSettledFor] = useState<unknown>(null);
+  useEffect(() => {
+    setSettledFor(personas);
+  }, [personas]);
   if (status === 'loading') return null;
 
   const wrap = (node: ReactNode): ReactNode =>
@@ -46,7 +63,14 @@ export function PersonaGuard({
 
   if (status === 'anonymous') return wrap(fallback);
 
-  const matched = personas.some((p) => requires.includes(p.persona_type));
+  // AuthProvider resolves the active persona in an effect, one commit AFTER the
+  // session lands (personas set, activePersona still null). Render nothing for
+  // that one commit so a fallback redirect cannot fire for a user who will pass;
+  // once settled, a still-null active persona is a real deny (fallback).
+  if (activePersona === null && personas.length > 0 && settledFor !== personas) return null;
+
+  const matched =
+    activePersona !== null && requires.includes(activePersona.persona_type);
   if (!matched) return wrap(fallback);
   return wrap(children);
 }

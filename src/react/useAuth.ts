@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | src/react/useAuth.ts | v1.1.0 | 2026-10-14 | BB
+// @samjonaidi-ship-it/universal-auth | src/react/useAuth.ts | v1.1.1 | 2026-10-27 | BB
 // Public useAuth hook — subscribes to IdentityContext + StatusContext only.
 // Per §D2.4: personas / activePersona / hasPersona / switchActivePersona / allFeatures / agent.
 // allFeatures() reads entitlements module directly (so useAuth doesn't subscribe
@@ -65,6 +65,9 @@ export function useAuth(): UseAuthReturn {
     throw new AuthProviderMissingError('useAuth');
   }
 
+  // Membership only: true if the identity HOLDS this persona. It is NOT a
+  // capability check — a sign-in gets only the capabilities of its active
+  // persona (`activePersona`). Gate UI/actions on activePersona, not on this.
   const hasPersona = useCallback(
     (personaType: string): boolean =>
       id.personas.some((p) => p.persona_type === personaType),
