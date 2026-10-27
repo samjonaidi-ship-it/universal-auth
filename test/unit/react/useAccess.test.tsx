@@ -1,10 +1,12 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/react/useAccess.test.tsx | v0.1.0 | 2026-05-06 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/react/useAccess.test.tsx | v0.1.1 | 2026-10-26 | BB
 // L3.3 useAccess + useAccessBulk hooks. Per ABAC_DESIGN_v1.0.md §5.1 + §8.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { useAccess } from '../../../src/react/useAccess.js';
 import { useAccessBulk } from '../../../src/react/useAccessBulk.js';
+import * as abac from '../../../src/core/abac.js';
+import { AuthSdkError } from '../../../src/errors.js';
 import {
   invalidateAccessCache,
   __resetAbacForTests,
@@ -60,7 +62,7 @@ describe('react/useAccess', () => {
   });
 
   afterEach(() => {
-    fetchSpy.mockRestore();
+    vi.restoreAllMocks();
   });
 
   it('returns null + loading=true initially, then allowed=true after fetch', async () => {
@@ -139,7 +141,7 @@ describe('react/useAccessBulk', () => {
   });
 
   afterEach(() => {
-    fetchSpy.mockRestore();
+    vi.restoreAllMocks();
   });
 
   it('returns ordered allowed[] after one bulk POST', async () => {
@@ -162,5 +164,77 @@ describe('react/useAccessBulk', () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.allowed).toEqual([]);
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  const checks = [{ resource_type: 'receipt', resource_id: 'a', action: 'read' }];
+
+  it.each([new AuthSdkError('DENIED', 'denied'), new Error('network failed'), 'offline'])(
+    'surfaces a failed bulk check without allowing access: %s', async (failure) => {
+      vi.spyOn(abac, 'canAccessBulk').mockRejectedValue(failure);
+      const { result } = renderHook(() => useAccessBulk(checks));
+      await waitFor(() => expect(result.current.loading).toBe(false));
+      expect(result.current.allowed).toBeNull();
+      expect(result.current.error).toBeInstanceOf(AuthSdkError);
+      if (failure instanceof AuthSdkError) expect(result.current.error).toBe(failure);
+      else {
+        expect(result.current.error?.code).toBe('UNKNOWN');
+        expect(result.current.error?.message).toBe(String(failure));
+      }
+    }
+  );
+
+  it.each(['resolve', 'reject'] as const)('ignores an obsolete initial request after %s', async (settlement) => {
+    let resolveOld!: (value: boolean[]) => void;
+    let rejectOld!: (reason: unknown) => void;
+    const old = new Promise<boolean[]>((resolve, reject) => { resolveOld = resolve; rejectOld = reject; });
+    const bulk = vi.spyOn(abac, 'canAccessBulk').mockReturnValueOnce(old).mockResolvedValue([false]);
+    const { result, rerender } = renderHook(({ id }) => useAccessBulk([{ ...checks[0], resource_id: id }]), {
+      initialProps: { id: 'old' },
+    });
+    rerender({ id: 'new' });
+    await waitFor(() => expect(result.current.allowed).toEqual([false]));
+    await act(async () => {
+      if (settlement === 'resolve') resolveOld([true]);
+      else rejectOld(new Error('obsolete request failed'));
+    });
+    expect(result.current.allowed).toEqual([false]);
+    expect(result.current.error).toBeNull();
+    expect(result.current.loading).toBe(false);
+    expect(bulk).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the last decision after a failed background refresh and accepts the next successful one', async () => {
+    const bulk = vi.spyOn(abac, 'canAccessBulk').mockResolvedValue([true]);
+    const { result } = renderHook(() => useAccessBulk(checks));
+    await waitFor(() => expect(result.current.allowed).toEqual([true]));
+    bulk.mockRejectedValueOnce(new Error('background offline'));
+    await act(async () => { invalidateAccessCache(); });
+    expect(result.current.allowed).toEqual([true]);
+    expect(result.current.error).toBeNull();
+    bulk.mockResolvedValueOnce([false]);
+    await act(async () => { invalidateAccessCache(); });
+    await waitFor(() => expect(result.current.allowed).toEqual([false]));
+    expect(result.current.loading).toBe(false);
+  });
+
+  it('ignores a background refresh from a previous input and does not refetch identical input', async () => {
+    let resolveBackground!: (value: boolean[]) => void;
+    const background = new Promise<boolean[]>((resolve) => { resolveBackground = resolve; });
+    const bulk = vi.spyOn(abac, 'canAccessBulk').mockResolvedValueOnce([true]);
+    const { result, rerender } = renderHook(({ id }) => useAccessBulk([{ ...checks[0], resource_id: id }]), {
+      initialProps: { id: 'old' },
+    });
+    await waitFor(() => expect(result.current.allowed).toEqual([true]));
+    rerender({ id: 'old' });
+    expect(bulk).toHaveBeenCalledTimes(1);
+    bulk.mockReturnValueOnce(background);
+    await act(async () => { invalidateAccessCache(); });
+    bulk.mockResolvedValueOnce([false]);
+    rerender({ id: 'new' });
+    await waitFor(() => expect(result.current.allowed).toEqual([false]));
+    await act(async () => { resolveBackground([true]); });
+    expect(result.current.allowed).toEqual([false]);
+    expect(result.current.error).toBeNull();
+    expect(bulk).toHaveBeenCalledTimes(3);
   });
 });

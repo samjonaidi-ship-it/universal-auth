@@ -1,9 +1,12 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/react/components/DelegationCenter.test.tsx | v0.1.0 | 2026-05-06 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/react/components/DelegationCenter.test.tsx | v0.1.1 | 2026-10-26 | BB
 // Coverage for <DelegationCenter>: empty states, list rendering, tab switching,
 // revoke confirm flow, GDPR export trigger, danger-scope styling.
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
+import { useAccessBulk } from '../../../../src/react/useAccessBulk.js';
+
+vi.mock('../../../../src/react/useAccessBulk.js', () => ({ useAccessBulk: vi.fn() }));
 
 // Mock the hook so the component is unit-tested in isolation.
 vi.mock('../../../../src/react/useDelegatedGrants.js', () => ({
@@ -104,6 +107,12 @@ function setHook(overrides: Partial<ReturnType<typeof useDelegatedGrants>> = {})
 describe('<DelegationCenter>', () => {
   beforeEach(() => {
     mockHook.mockReset();
+    vi.mocked(useAccessBulk).mockReset().mockReturnValue({ allowed: null, loading: false, error: null });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it('renders empty state in Active tab when no grants', () => {
@@ -229,6 +238,147 @@ describe('<DelegationCenter>', () => {
     expect(
       screen.getByText(/haven't been granted any active delegations/i)
     ).toBeInTheDocument();
+  });
+
+  it.each([null, [true, false]])('flattens valid incoming scopes with safe metadata and decision fallbacks: %j', (allowed) => {
+    const grants = [null, {}, { id: 'receipt-9' }, { id: 7 }].map((resource_match, i) => ({
+      ...TO_ME, id: `incoming-${i}`, resource_match,
+      scopes: ['profile:read', 'agent:act_on_behalf', 'unknown:do:extra', 'bad', ':read', 'profile:'],
+    }));
+    setHook({ grants_to_me: grants });
+    vi.mocked(useAccessBulk).mockReturnValue({ allowed, loading: false, error: null });
+    render(<DelegationCenter identity={SAM} scopeCatalog={CATALOG} showEffectiveAccess />);
+    fireEvent.click(screen.getByRole('tab', { name: /Effective access/i }));
+    expect(useAccessBulk).toHaveBeenLastCalledWith(grants.flatMap((g, i) => [
+      { resource_type: 'profile', resource_id: i === 2 ? 'receipt-9' : '*', action: 'read' },
+      { resource_type: 'agent', resource_id: i === 2 ? 'receipt-9' : '*', action: 'act_on_behalf' },
+      { resource_type: 'unknown', resource_id: i === 2 ? 'receipt-9' : '*', action: 'do:extra' },
+    ]));
+    const list = screen.getByRole('list', { name: 'Effective access' });
+    expect(within(list).getAllByRole('listitem')).toHaveLength(12);
+    expect(within(list).getAllByText('unknown:do:extra')).toHaveLength(4);
+    expect(list.querySelectorAll('.bb-delegation-effective-row--danger')).toHaveLength(4);
+    expect(list.querySelectorAll('.bb-delegation-effective-row--permit')).toHaveLength(allowed === null ? 0 : 1);
+    expect(list).toHaveTextContent('profile #receipt-9');
+  });
+
+  it.each(['loading', 'error'] as const)('renders effective-access %s without inventing permits', (state) => {
+    setHook({ grants_to_me: [TO_ME] });
+    vi.mocked(useAccessBulk).mockReturnValue({
+      allowed: null, loading: state === 'loading',
+      error: state === 'error' ? { message: 'policy service offline' } as never : null,
+    });
+    render(<DelegationCenter identity={SAM} scopeCatalog={CATALOG} showEffectiveAccess />);
+    fireEvent.click(screen.getByRole('tab', { name: /Effective access/i }));
+    if (state === 'loading') expect(screen.getByRole('status')).toHaveTextContent('Checking access');
+    else expect(screen.getByRole('alert')).toHaveTextContent('Could not verify access: policy service offline');
+    expect(screen.queryByRole('list', { name: 'Effective access' })).toBeNull();
+  });
+
+  it('ignores malformed-only scopes and revoked incoming grants', () => {
+    setHook({ grants_to_me: [
+      { ...TO_ME, scopes: ['malformed', ':missing', 'missing:'] },
+      { ...REVOKED, id: 'revoked-incoming' },
+    ] });
+    render(<DelegationCenter identity={SAM} scopeCatalog={CATALOG} showEffectiveAccess />);
+    fireEvent.click(screen.getByRole('tab', { name: /Effective access/i }));
+    expect(useAccessBulk).toHaveBeenLastCalledWith([]);
+    expect(screen.getByText(/haven't been granted any active delegations/i)).toBeInTheDocument();
+  });
+
+  it('renders all grantee kinds, provenance values, unknown scopes and expiration states', () => {
+    const kinds = ['identity', 'agent', 'iot_device', 'app', 'api_key', 'external_email'] as const;
+    const sources = ['user_consent', 'admin_provision', 'contract', 'automation'] as const;
+    const dates = ['invalid', '2000-01-01', new Date(Date.now() + 30_000).toISOString(), '2099-01-01'];
+    setHook({ grants_from_me: kinds.map((grantee_kind, i) => ({
+      ...FROM_ME, id: `grant-${i}`, grantee_id: `grantee-${i}`, grantee_kind,
+      granted_via: sources[i % sources.length], effective_until: dates[i % dates.length], scopes: ['unknown:scope'],
+    })) });
+    render(<DelegationCenter identity={SAM} scopeCatalog={{}} className="custom-delegations" heading="Shared access" />);
+    for (const label of ['Person', 'Agent', 'IoT device', 'App', 'API key', 'External email']) {
+      expect(screen.getByText(new RegExp(`^${label} · via`))).toBeInTheDocument();
+    }
+    expect(screen.getAllByText('unknown:scope')).toHaveLength(6);
+    expect(screen.getAllByText('Expired').length).toBeGreaterThan(0);
+    expect(screen.getByText('Expires in 1 day')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Shared access' })).toHaveClass('custom-delegations');
+  });
+
+  it('renders empty and malformed historical dates without crashing and sorts multiple revoked grants', () => {
+    setHook({ grants_from_me: [
+      REVOKED, { ...REVOKED, id: 'bad-date', revoked_at: 'invalid-date' },
+      { ...REVOKED, id: 'empty-date', revoked_at: '' },
+    ] });
+    render(<DelegationCenter identity={SAM} scopeCatalog={CATALOG} />);
+    fireEvent.click(screen.getByRole('tab', { name: /History/i }));
+    expect(screen.getByText('Revoked invalid-date')).toBeInTheDocument();
+    expect(screen.getByText('Revoked', { exact: true })).toBeInTheDocument();
+    expect(document.querySelectorAll('.bb-delegation-card')).toHaveLength(3);
+  });
+
+  it.each([new Error('revoke denied'), 'offline'])('keeps the confirmation after a failed revoke: %s', async (failure) => {
+    const revoke = vi.fn().mockRejectedValue(failure);
+    setHook({ grants_from_me: [FROM_ME], revoke });
+    render(<DelegationCenter identity={SAM} scopeCatalog={CATALOG} />);
+    fireEvent.click(screen.getByRole('button', { name: /Revoke grant to alice/i }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Revoke' }));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(
+      failure instanceof Error ? failure.message : 'Could not revoke grant.'
+    ));
+    expect(within(screen.getByRole('dialog')).getByRole('button', { name: 'Revoke' })).toBeEnabled();
+  });
+
+  it('blocks Escape and buttons during revoke, then calls the consumer and closes the dialog', async () => {
+    let finish!: () => void;
+    const revoke = vi.fn(() => new Promise<void>((resolve) => { finish = resolve; }));
+    const onGrantRevoked = vi.fn();
+    setHook({ grants_from_me: [FROM_ME_DANGER], revoke });
+    render(<DelegationCenter identity={SAM} scopeCatalog={CATALOG} onGrantRevoked={onGrantRevoked} />);
+    fireEvent.click(screen.getByRole('button', { name: /Revoke grant to auto-bot/i }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Revoke' }));
+    expect(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await act(async () => { finish(); });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(onGrantRevoked).toHaveBeenCalledWith(expect.objectContaining({ id: FROM_ME_DANGER.id, revoked_at: expect.any(String) }));
+  });
+
+  it('Escape closes a non-busy confirmation', () => {
+    setHook({ grants_from_me: [FROM_ME] });
+    render(<DelegationCenter identity={SAM} scopeCatalog={CATALOG} />);
+    fireEvent.click(screen.getByRole('button', { name: /Revoke grant to alice/i }));
+    fireEvent.keyDown(document, { key: 'Enter' });
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it.each([new Error('export denied'), 'offline'])('reports export errors and re-enables export: %s', async (failure) => {
+    setHook({ exportJson: vi.fn().mockRejectedValue(failure) });
+    render(<DelegationCenter identity={SAM} scopeCatalog={CATALOG} />);
+    fireEvent.click(screen.getByRole('tab', { name: /History/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Export delegated grants/i }));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(
+      failure instanceof Error ? failure.message : 'Could not export grants.'
+    ));
+    expect(screen.getByRole('button', { name: /Export delegated grants/i })).toBeEnabled();
+  });
+
+  it('exports JSON with a real download lifecycle and explicitly warns on CSV fallback', async () => {
+    const createObjectURL = vi.fn().mockReturnValue('blob:delegation-test');
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal('URL', { createObjectURL, revokeObjectURL });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    setHook();
+    render(<DelegationCenter identity={SAM} scopeCatalog={CATALOG} exportFormat="csv" />);
+    fireEvent.click(screen.getByRole('tab', { name: /History/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Export delegated grants/i }));
+    await waitFor(() => expect(click).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('alert')).toHaveTextContent('CSV export is not yet implemented');
+    expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:delegation-test');
+    expect(document.querySelector('a[download]')).toBeNull();
   });
 
   it('shows error from hook in alert', () => {

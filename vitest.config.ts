@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | vitest.config.ts | v1.1.0-rc.5 | 2026-05-08 | BB
+// @samjonaidi-ship-it/universal-auth | vitest.config.ts | v1.1.0-rc.6 | 2026-10-26 | BB
 // Vitest unit-test config. Coverage gates per §11 thresholds.
 
 import { defineConfig } from 'vitest/config';
@@ -11,6 +11,7 @@ export default defineConfig({
 
     coverage: {
       provider: 'v8',
+      include: ['src/**/*.{ts,tsx}'],
       reporter: ['text', 'lcov', 'html'],
       // Spec §11 thresholds — activated 2026-04-28 (Block 6 coverage push).
       // CI enforces; PRs that drop coverage below these fail the unit job.
