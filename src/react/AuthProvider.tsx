@@ -443,31 +443,20 @@ export function AuthProvider({
       setActiveType(null);
       return;
     }
-    // Role unification F2: a persona the user already holds and chose stays
-    // active across session refreshes (applySession hands us a fresh personas
-    // array on every token refresh). The resolver only picks the INITIAL
-    // persona, or a new one when the previous is no longer held.
-    const keepIfHeld = (prev: string | null, next: string | null): string | null =>
-      prev !== null && personas.some((p) => p.persona_type === prev) ? prev : next;
     if (resolveActivePersona !== undefined) {
       const p = resolveActivePersona(personas);
-      setActiveType((prev) => keepIfHeld(prev, p?.persona_type ?? null));
+      setActiveType(p?.persona_type ?? null);
       return;
     }
     // Default: read the URL's first path segment
     if (typeof window === 'undefined') {
-      setActiveType((prev) =>
-        keepIfHeld(prev, primaryPersona ?? personas[0]?.persona_type ?? null)
-      );
+      setActiveType(primaryPersona ?? personas[0]?.persona_type ?? null);
       return;
     }
     const first = window.location.pathname.split('/').filter(Boolean)[0];
     const matched = personas.find((p) => p.persona_type === first);
-    setActiveType((prev) =>
-      keepIfHeld(
-        prev,
-        matched?.persona_type ?? primaryPersona ?? personas[0]?.persona_type ?? null
-      )
+    setActiveType(
+      matched?.persona_type ?? primaryPersona ?? personas[0]?.persona_type ?? null
     );
   }, [personas, primaryPersona, resolveActivePersona]);
 
