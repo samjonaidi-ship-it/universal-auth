@@ -19,13 +19,13 @@ import { vi } from 'vitest';
 function withAuth(
   status: 'loading' | 'anonymous' | 'authenticated',
   personas: ReadonlyArray<{ persona_type: string }>,
-  activeType?: string,
+  activeType?: string | null,
 ): void {
   vi.spyOn(useAuthModule, 'useAuth').mockReturnValue({
     identity: null,
     status,
     personas,
-    activePersona: activeType === undefined ? (personas[0] ?? null) : (personas.find((p) => p.persona_type === activeType) ?? null),
+    activePersona: activeType === null ? null : activeType === undefined ? (personas[0] ?? null) : (personas.find((p) => p.persona_type === activeType) ?? null),
     primary_persona: null,
     hasPersona: () => false,
     switchActivePersona: async () => undefined,
@@ -132,6 +132,28 @@ describe('PersonaGuard — branch coverage (COV-1 finish)', () => {
     );
     // The <span> should be the direct first child (no <div> wrapper)
     expect(container.firstElementChild?.tagName).toBe('SPAN');
+    vi.restoreAllMocks();
+  });
+
+  it('renders nothing (no fallback) while personas exist but activePersona is still unresolved', () => {
+    withAuth('authenticated', [{ persona_type: 'admin' }], null);
+    const { container } = render(
+      <PersonaGuard requires={['admin']} fallback={<span>fallback</span>}>
+        <span>protected</span>
+      </PersonaGuard>,
+    );
+    expect(container.textContent).toBe('');
+    vi.restoreAllMocks();
+  });
+
+  it('renders fallback when authenticated with no personas at all', () => {
+    withAuth('authenticated', [], null);
+    render(
+      <PersonaGuard requires={['admin']} fallback={<span>fallback</span>}>
+        <span>protected</span>
+      </PersonaGuard>,
+    );
+    expect(screen.getByText('fallback')).toBeTruthy();
     vi.restoreAllMocks();
   });
 
