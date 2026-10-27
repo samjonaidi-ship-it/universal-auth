@@ -14,13 +14,13 @@
 // (useAuth().activePersona), never the union of every persona the identity
 // holds. A crew sign-in on an identity that also holds 'admin' must not pass
 // requires=['admin']. No personas => fallback; personas present but the active
-// one not yet resolved => render nothing (never a fallback flash/redirect).
+// one not yet resolved => render nothing for that one commit, then fallback.
 //
 // UX-only: the active persona is client state (URL segment / switchActivePersona),
 // not a server-proven sign-in. The server must enforce the role (F2 server side).
 // Apps must call switchActivePersona() when the user changes persona.
 
-import type { CSSProperties, ReactNode } from 'react';
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { useAuth } from '../useAuth.js';
 
 export interface PersonaGuardProps {
@@ -43,6 +43,13 @@ export function PersonaGuard({
   style,
 }: PersonaGuardProps): ReactNode {
   const { activePersona, personas, status } = useAuth();
+  // The personas array the provider's resolver effect has had a chance to run
+  // for. Child effects flush in the same batch as the provider's setActiveType,
+  // so by the render after this effect both are current.
+  const [settledFor, setSettledFor] = useState<unknown>(null);
+  useEffect(() => {
+    setSettledFor(personas);
+  }, [personas]);
   if (status === 'loading') return null;
 
   const wrap = (node: ReactNode): ReactNode =>
@@ -57,10 +64,10 @@ export function PersonaGuard({
   if (status === 'anonymous') return wrap(fallback);
 
   // AuthProvider resolves the active persona in an effect, one commit AFTER the
-  // session lands (personas set, activePersona still null). Render nothing in
-  // that window so a fallback redirect cannot fire for a user who will pass.
-  // No personas at all is a settled state: fall through to the fallback.
-  if (activePersona === null && personas.length > 0) return null;
+  // session lands (personas set, activePersona still null). Render nothing for
+  // that one commit so a fallback redirect cannot fire for a user who will pass;
+  // once settled, a still-null active persona is a real deny (fallback).
+  if (activePersona === null && personas.length > 0 && settledFor !== personas) return null;
 
   const matched =
     activePersona !== null && requires.includes(activePersona.persona_type);

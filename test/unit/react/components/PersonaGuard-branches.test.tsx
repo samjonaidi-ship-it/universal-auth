@@ -135,14 +135,14 @@ describe('PersonaGuard — branch coverage (COV-1 finish)', () => {
     vi.restoreAllMocks();
   });
 
-  it('renders nothing (no fallback) while personas exist but activePersona is still unresolved', () => {
+  it('renders fallback once settled when personas exist but activePersona stays null', () => {
     withAuth('authenticated', [{ persona_type: 'admin' }], null);
     const { container } = render(
       <PersonaGuard requires={['admin']} fallback={<span>fallback</span>}>
         <span>protected</span>
       </PersonaGuard>,
     );
-    expect(container.textContent).toBe('');
+    expect(container.textContent).toBe('fallback');
     vi.restoreAllMocks();
   });
 
