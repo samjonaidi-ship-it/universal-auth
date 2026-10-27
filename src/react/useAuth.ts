@@ -65,6 +65,9 @@ export function useAuth(): UseAuthReturn {
     throw new AuthProviderMissingError('useAuth');
   }
 
+  // Membership only: true if the identity HOLDS this persona. It is NOT a
+  // capability check — a sign-in gets only the capabilities of its active
+  // persona (`activePersona`). Gate UI/actions on activePersona, not on this.
   const hasPersona = useCallback(
     (personaType: string): boolean =>
       id.personas.some((p) => p.persona_type === personaType),

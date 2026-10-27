@@ -19,12 +19,13 @@ import { vi } from 'vitest';
 function withAuth(
   status: 'loading' | 'anonymous' | 'authenticated',
   personas: ReadonlyArray<{ persona_type: string }>,
+  activeType?: string,
 ): void {
   vi.spyOn(useAuthModule, 'useAuth').mockReturnValue({
     identity: null,
     status,
     personas,
-    activePersona: null,
+    activePersona: activeType === undefined ? (personas[0] ?? null) : (personas.find((p) => p.persona_type === activeType) ?? null),
     primary_persona: null,
     hasPersona: () => false,
     switchActivePersona: async () => undefined,
