@@ -1,7 +1,9 @@
-// @samjonaidi-ship-it/universal-auth | test/unit/react/components/AvatarPicker.test.tsx | v1.0.4 | 2026-05-04 | BB
+// @samjonaidi-ship-it/universal-auth | test/unit/react/components/AvatarPicker.test.tsx | v1.0.5 | 2026-10-26 | BB
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import * as profileHooks from '../../../../src/react/useProfile.js';
+import { AuthSdkError } from '../../../../src/errors.js';
 import { AuthProvider } from '../../../../src/react/AuthProvider.js';
 import { AvatarPicker } from '../../../../src/react/components/AvatarPicker.js';
 import type { Session } from '../../../../src/types/api.js';
@@ -81,7 +83,7 @@ describe('AvatarPicker', () => {
   });
 
   afterEach(() => {
-    fetchSpy.mockRestore();
+    vi.restoreAllMocks();
   });
 
   it('renders nothing while profile is loading', () => {
@@ -119,5 +121,89 @@ describe('AvatarPicker', () => {
     );
     expect(screen.getByRole('button', { name: /upload photo/i })).toBeTruthy();
     expect(screen.getByText(/jpeg up to 5 mb/i)).toBeTruthy();
+  });
+
+  function mockActions() {
+    const uploadAvatar = vi.fn().mockResolvedValue(undefined);
+    const selectPreset = vi.fn().mockResolvedValue(undefined);
+    const clearAvatar = vi.fn().mockResolvedValue(undefined);
+    vi.spyOn(profileHooks, 'useProfile').mockReturnValue({
+      profile: { ...PROFILE, avatar_url: 'https://images.test/avatar.jpg' },
+      uploadAvatar, selectPreset, clearAvatar,
+    } as unknown as ReturnType<typeof profileHooks.useProfile>);
+    return { uploadAvatar, selectPreset, clearAvatar };
+  }
+
+  it.each([
+    [new AuthSdkError('AVATAR_UNSUPPORTED_FORMAT', 'unsupported'), 'Photo must be a JPEG, PNG, or WebP image.'],
+    [new AuthSdkError('AVATAR_TOO_LARGE', 'too large'), 'Photo is too large. Please choose a file under 5 MB.'],
+    [new AuthSdkError('UNKNOWN', 'server rejected photo'), 'server rejected photo'],
+    [new Error('connection failed'), 'connection failed'],
+    ['offline', 'Upload failed'],
+  ])('maps upload errors and re-enables controls: %s', async (failure, message) => {
+    const { uploadAvatar } = mockActions();
+    uploadAvatar.mockRejectedValue(failure);
+    render(<AvatarPicker />);
+    const input = screen.getByLabelText('Upload photo', { selector: 'input' }) as HTMLInputElement;
+    const file = new File(['image'], 'photo.jpg', { type: 'image/jpeg' });
+    fireEvent.change(input, { target: { files: [file] } });
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(String(message)));
+    expect(uploadAvatar).toHaveBeenCalledWith(file);
+    expect(screen.getByRole('button', { name: 'Upload photo' })).toBeEnabled();
+    expect(input.value).toBe('');
+  });
+
+  it('does not upload an empty file selection', () => {
+    const { uploadAvatar } = mockActions();
+    render(<AvatarPicker />);
+    fireEvent.change(screen.getByLabelText('Upload photo', { selector: 'input' }), { target: { files: [] } });
+    expect(uploadAvatar).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('disables mutation buttons during upload and clears an earlier error on retry', async () => {
+    const { uploadAvatar } = mockActions();
+    uploadAvatar.mockRejectedValueOnce(new Error('try again'));
+    render(<AvatarPicker />);
+    const input = screen.getByLabelText('Upload photo', { selector: 'input' });
+    const file = new File(['image'], 'photo.png', { type: 'image/png' });
+    fireEvent.change(input, { target: { files: [file] } });
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('try again'));
+    let finish!: () => void;
+    uploadAvatar.mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve; }));
+    fireEvent.change(input, { target: { files: [file] } });
+    expect(screen.queryByRole('alert')).toBeNull();
+    for (const button of screen.getAllByRole('button')) expect(button).toBeDisabled();
+    await act(async () => { finish(); });
+    for (const button of screen.getAllByRole('button')) expect(button).toBeEnabled();
+    expect(uploadAvatar).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ['preset', new Error('preset rejected'), 'preset rejected'],
+    ['preset', 'offline', 'Could not save preset'],
+    ['clear', new Error('clear rejected'), 'clear rejected'],
+    ['clear', 'offline', 'Could not clear'],
+  ])('reports a failed %s and leaves controls usable', async (operation, failure, message) => {
+    const { selectPreset, clearAvatar } = mockActions();
+    const action = operation === 'preset' ? selectPreset : clearAvatar;
+    action.mockRejectedValueOnce(failure);
+    render(<AvatarPicker />);
+    const button = operation === 'preset'
+      ? screen.getAllByRole('button', { name: /^Preset / })[0]!
+      : screen.getByRole('button', { name: 'Clear' });
+    fireEvent.click(button);
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(String(message)));
+    expect(action).toHaveBeenCalledTimes(1);
+    expect(button).toBeEnabled();
+  });
+
+  it('restores controls after a successful clear', async () => {
+    const { clearAvatar } = mockActions();
+    render(<AvatarPicker />);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Clear' })); });
+    expect(clearAvatar).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Clear' })).toBeEnabled();
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 });
