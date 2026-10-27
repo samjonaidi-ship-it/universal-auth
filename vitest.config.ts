@@ -11,6 +11,7 @@ export default defineConfig({
 
     coverage: {
       provider: 'v8',
+      include: ['src/**/*.{ts,tsx}'],
       reporter: ['text', 'lcov', 'html'],
       // Spec §11 thresholds — activated 2026-04-28 (Block 6 coverage push).
       // CI enforces; PRs that drop coverage below these fail the unit job.
