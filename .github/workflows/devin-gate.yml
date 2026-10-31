@@ -1,7 +1,11 @@
-# BB_Tools | guardrails/devin-gate.yml | v1.8 | 2026-10-23 | BB
+# BB_Tools | guardrails/devin-gate.yml | v1.9 | 2026-10-25 | BB
 # CANONICAL. Every managed repo carries a byte-identical copy at
 # .github/workflows/devin-gate.yml; edit THIS file, then
 # `node sync-guardrails.mjs --pr` (BB_Tools). The gate is scripts/devin-gate.mjs.
+#
+# v1.9 (2026-10-25): REVIEW_COMMIT env for the gate's provenance line (devin-gate.mjs v1.11.0) - the sha the
+# triggering pull_request_review was submitted on. Empty for pull_request_target/status/schedule events: the
+# script treats it as provenance only; the verdict is still judged on the live head it reads itself.
 #
 # v1.8 (2026-10-23): ubuntu-slim runner (GH Actions cost audit: ~17,000 billed min/mo on guardrail
 # fabric; this job's work is a bounded 8-min wait plus API calls, and slim's 15-min job cap is never
@@ -113,7 +117,7 @@ jobs:
       # pull_request_review run would otherwise check out the PR's merge commit and run
       # PR-supplied code with this job's token.
       - name: Checkout the BASE ref
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # was @v7
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
@@ -124,6 +128,9 @@ jobs:
           STATUS_SHA: ${{ github.event.sha }}
           STATUS_CONTEXT: ${{ github.event.context }}
           STATUS_STATE: ${{ github.event.state }}
+          # The commit the triggering pull_request_review was submitted on (empty for other events).
+          # A sha, never PR-controlled text; the script reads the live head itself - this is a log crumb only.
+          REVIEW_COMMIT: ${{ github.event.review.commit_id }}
         run: |
           if [ ! -f scripts/devin-gate.mjs ]; then
             echo "::warning::scripts/devin-gate.mjs is not on the default branch yet; devin-gate skipped, nothing was judged"

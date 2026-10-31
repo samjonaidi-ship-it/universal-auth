@@ -57,7 +57,7 @@ jobs:
       issues: write          # the re-arm note when a hold is lifted mid-disarm
     steps:
       - name: Checkout the BASE ref
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # was @v7
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
@@ -94,7 +94,7 @@ jobs:
       issues: write          # v1.8.x fallback: the re-arm note
     steps:
       - name: Checkout the BASE ref
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # was @v7
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
