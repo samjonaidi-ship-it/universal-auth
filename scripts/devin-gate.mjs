@@ -1,5 +1,10 @@
 #!/usr/bin/env node
-// BB_Tools | guardrails/devin-gate.mjs | v1.11.1 | 2026-10-31 | BB
+// BB_Tools | guardrails/devin-gate.mjs | v1.11.2 | 2026-10-31 | BB
+// v1.11.2: lint-clean for consumers that eslint scripts/ (universal-auth `pnpm lint` runs eslint on scripts/ in its
+//   pre-push hook and in CI; the v1.11.1 copy failed it with 7 errors, so its sync PR could not be pushed). No behaviour
+//   change: the control-character class is built from char codes (no-control-regex rejects \x00-\x1f in a regex
+//   literal AND in a RegExp string) and five declaration initializers that every path overwrote before a read are
+//   dropped (no-useless-assignment). test/devin-gate.test.mjs pins the source free of \x00-\x1f escapes.
 // v1.11.1: a trusted bb-review FAILURE the status-list read has already seen outranks a stale combined pick.
 //   Race (codex P1 on the guardrails-sync push, 2026-10-31): the combined read returns the older success, a
 //   trusted failure lands before the list read; the two differ, so the slot went unverifiable/contested and
@@ -326,6 +331,12 @@ export const GUARDRAIL_PATHS = Object.freeze([
 export const FILES_PAGE_LIMIT = 30;
 
 const errLine = (e) => String(e?.message || e).split(/\r?\n/)[0];
+// v1.11.2: control characters U+0000-U+001F as a regex-class range built from char codes (DEL \x7f is not one and
+// stays literal). An escaped \x00-\x1f fails eslint no-control-regex in a literal AND in a RegExp string, and
+// universal-auth lints scripts/ - so the class is assembled at load time. Same characters, same replacement.
+const CTRL_RANGE = `${String.fromCharCode(0)}-${String.fromCharCode(31)}`;
+const CTRL_RE = new RegExp(`[\`${CTRL_RANGE}\x7f]`, 'g');
+const MD_CTRL_RE = new RegExp(`[\`${CTRL_RANGE}\x7f()!<>|]`, 'g');
 
 /**
  * A status's description/creator/target_url are attacker-influenceable (a forged status controls them), and
@@ -356,7 +367,7 @@ const clean = (v) => {
     // Round-10 P3: GitHub autolinks a bare "www." host without a scheme - break it too.
     .replace(/\bwww\./gi, 'www ')
     .replace(/\]\(/g, '] (')
-    .replace(/[`\x00-\x1f\x7f]/g, ' ').slice(0, 300);
+    .replace(CTRL_RE, ' ').slice(0, 300);
 };
 // A field that IS a url (a thread url, a review url, a status target_url) keeps a well-formed https url and
 // nothing else: one token, https only, url characters only (no whitespace, quotes, brackets, backticks or
@@ -755,7 +766,7 @@ function devinVerdict({ devin, threads, elapsedMin, nudged, nudgeMin, maxMin, st
 
 /** Markdown for the job summary. Pure. Status-derived text is clean()ed AND markdown-escaped: a forged
  * status description must not render a link/image in the summary a reviewer reads (bb-review P3). */
-const mdSafe = (v) => String(v ?? '').replace(/[`\x00-\x1f\x7f()!<>|]/g, ' ');
+const mdSafe = (v) => String(v ?? '').replace(MD_CTRL_RE, ' ');
 export function summaryMarkdown({ sha, result, elapsedMin, warnings = [], provenance } = {}) {
   const head = result.action === 'fail' ? 'FAIL' : result.unreviewed ? 'PASS (unreviewed)' : 'PASS';
   const out = [`## devin-gate: ${head}`, '', `Head \`${String(sha).slice(0, 8)}\` after ${elapsedMin.toFixed(1)} min. ${mdSafe(result.reason)}.`];
@@ -889,7 +900,7 @@ export async function runGate(io, cfg = {}) {
   let filesSha = null;
   let files = null;
   // v1.11.0: the inputs the verdict was judged on, kept for the provenance record (set every poll).
-  let lastPr = null; let lastDevin = null; let lastBb = null; let lastThreads; let lastBbContested = false;
+  let lastPr = null; let lastDevin; let lastBb; let lastThreads; let lastBbContested;
   let provWarned = false;
   // Cache for the status-list read: statuses only append, so (sha, state|description) identifies the set.
   // Round-8 P2 (paging cost): a hot slot is re-read every poll, so the 10-page read ran up to 32 x 10 pages x retries
@@ -1413,9 +1424,9 @@ export function githubIo(env = process.env, fetchFn = fetch, { requestTimeoutMs 
     // between-polls read: it caps at 3 pages and flags the unresolved slot for the next deep read to settle.
     getStatusDetails: async (sha, { expectBb = false, deep = true } = {}) => {
       const latest = {};
-      let lastFull = false;
+      let lastFull;
       let capped = false;
-      let bbUnresolved = false;
+      let bbUnresolved;
       for (let page = 1; ; page++) {
         const list = await api('GET', `/repos/${repo}/commits/${sha}/statuses?per_page=100&page=${page}`);
         if (!Array.isArray(list)) throw new Error('status list unreadable');
