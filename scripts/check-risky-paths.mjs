@@ -1,7 +1,10 @@
 #!/usr/bin/env node
-// BB_Tools | guardrails/check-risky-paths.mjs | v1.7.1 | 2026-10-23 | BB
+// BB_Tools | guardrails/check-risky-paths.mjs | v1.7.2 | 2026-10-31 | BB
 // CANONICAL. Every managed repo carries a byte-identical copy at scripts/check-risky-paths.mjs;
 // edit THIS file, then `node sync-guardrails.mjs --pr` (BB_Tools). Per-repo config is scripts/risky-paths.json.
+//
+// v1.7.2: the advisory warning no longer offers the label — contract v2.1 puts the
+//   label on a red gate only, and a green advisory has nothing for it to clear.
 //
 // v1.7.1: only the exact value 'fast' relaxes the verdict — no trim/case-fold
 //   (the var is machine-set by sync-branch-protection --pace, which writes
@@ -704,9 +707,12 @@ if (isMain) {
   // it can only fill a needs-you list with noise. The warning is the honest
   // verdict: a human should still look, the check will not make them.
   if (atFast) {
+    // Only an all-advisory diff stays green. A gate-critical hit in the same diff
+    // holds the check red, and its own BLOCKED text below asks for the label.
+    const greenNote = blocking.length ? '' : ', no label needed (the check stays green)';
     for (const h of advisory) {
       console.log(`::warning title=Risky path (${h.name})::${h.files.length} file(s) — ${h.why}. `
-        + `Advisory at BB_PACE=fast; a human should still review (the "${CONFIG.label}" label clears it).`);
+        + `Advisory at BB_PACE=fast; a human should still review${greenNote}.`);
       for (const f of h.files) {
         console.log(`::warning file=${ann(f)}::${h.name} — needs human review`);
       }

@@ -1,7 +1,11 @@
-# BB_Tools | guardrails/devin-gate-hold.yml | v1.2 | 2026-10-23 | BB
+# BB_Tools | guardrails/devin-gate-hold.yml | v1.3 | 2026-10-31 | BB
 # CANONICAL. Every managed repo carries a byte-identical copy at
 # .github/workflows/devin-gate-hold.yml; edit THIS file, then
 # `node sync-guardrails.mjs --pr` (BB_Tools). The script is scripts/devin-gate.mjs (HOLD MODE, v1.9.0 for the two phases).
+#
+# v1.3 (2026-10-31): watermark only. BB_Tools #357 pinned actions/checkout to a SHA in this file without bumping the
+# header; a consumer whose watermark gate judges copied files (universal-auth scripts/verify-watermark-bump.ts) then
+# refuses the byte-identical sync. The workflow itself is unchanged.
 #
 # v1.2 (2026-10-23): ubuntu-slim on hold-disarm only (GH Actions cost audit). hold-recheck stays ubuntu-latest: single-CPU
 # jobs are killed at 15 min and HOLD_WAIT_MS is 16 (test/devin-gate.test.mjs:1531 requires this job to outlive that wait).
@@ -57,7 +61,7 @@ jobs:
       issues: write          # the re-arm note when a hold is lifted mid-disarm
     steps:
       - name: Checkout the BASE ref
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # was @v7
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
@@ -94,7 +98,7 @@ jobs:
       issues: write          # v1.8.x fallback: the re-arm note
     steps:
       - name: Checkout the BASE ref
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # was @v7
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
