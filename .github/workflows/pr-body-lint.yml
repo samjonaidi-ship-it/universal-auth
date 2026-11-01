@@ -1,7 +1,11 @@
-# BB_Tools | guardrails/pr-body-lint.yml | v1.2 | 2026-10-23 | BB
+# BB_Tools | guardrails/pr-body-lint.yml | v1.3 | 2026-10-31 | BB
 # CANONICAL. Every managed repo carries a byte-identical copy at
 # .github/workflows/pr-body-lint.yml; edit THIS file, then
 # `node sync-guardrails.mjs --pr` (BB_Tools). The checker is scripts/check-pr-body.mjs.
+#
+# v1.3 (2026-10-31): watermark only. BB_Tools #357 pinned actions/checkout to a SHA in this file without bumping the
+# header; a consumer whose watermark gate judges copied files (universal-auth scripts/verify-watermark-bump.ts) then
+# refuses the byte-identical sync. The workflow itself is unchanged.
 #
 # v1.2 (2026-10-23): ubuntu-slim runner (GH Actions cost audit - a ~30 s lint job bills 1/3 on slim).
 #
