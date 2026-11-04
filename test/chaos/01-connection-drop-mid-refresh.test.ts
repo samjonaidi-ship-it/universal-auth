@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | test/chaos/01-connection-drop-mid-refresh.test.ts | v1.0.1 | 2026-05-22 | BB
+// @samjonaidi-ship-it/universal-auth | test/chaos/01-connection-drop-mid-refresh.test.ts | v1.0.2 | 2026-11-04 | BB
 // Spec §11.6 scenario 1 — connection drop mid-refresh.
 //
 // Scenario:
@@ -33,10 +33,24 @@ async function bffPost(path: string, body: unknown, headers: Record<string, stri
   return { status: r.status, body: await r.json().catch(() => null) as unknown };
 }
 
+async function bffPostRetryOnce(
+  path: string,
+  body: unknown,
+  headers: Record<string, string> = {}
+) {
+  try {
+    return await bffPost(path, body, headers);
+  } catch {
+    return await bffPost(path, body, headers);
+  }
+}
+
 // Sign in a fresh seeded session through the proxy (clean path) and return
 // its refresh token. Each call yields a brand-new, unused refresh token.
 async function signInFresh(): Promise<string> {
-  const r = await bffPost(
+  // Clean path only (no toxic active): one retry on a connection-class error
+  // covers a stale pooled keep-alive socket. Never used for the faulted call.
+  const r = await bffPostRetryOnce(
     '/auth/v1/code/verify',
     {
       destination: 'test-crew-1@test.bainbridgebuilders.com',

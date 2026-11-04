@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | test/chaos/setup.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @samjonaidi-ship-it/universal-auth | test/chaos/setup.ts | v1.0.1 | 2026-11-04 | BB
 // Chaos test setup — verifies Toxiproxy + CT BFF stack are reachable.
 // Tests reset toxics in beforeEach so each scenario starts clean.
 
@@ -67,12 +67,23 @@ beforeEach(async () => {
       /* if proxy isn't there, fail later in the actual test */
     });
 
-  // Re-enable proxy if a prior test disabled it
-  await fetch(`${TOXIPROXY_API}/proxies/${PROXY_NAME}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ enabled: true }),
-  }).catch(() => {});
+  // Re-enable proxy ONLY if a prior test disabled it. A POST /proxies/<name>
+  // makes Toxiproxy stop and restart the listener, which resets every open
+  // connection — including the keep-alive socket undici pooled from the
+  // health poll, so the first real request of the run died with
+  // "SocketError: other side closed" (nightly 2026-11-04, scenario #1).
+  await fetch(`${TOXIPROXY_API}/proxies/${PROXY_NAME}`)
+    .then((r) => r.json())
+    .then(async (proxy: { enabled?: boolean }) => {
+      if (proxy.enabled === false) {
+        await fetch(`${TOXIPROXY_API}/proxies/${PROXY_NAME}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled: true }),
+        });
+      }
+    })
+    .catch(() => {});
 });
 
 afterEach(async () => {
