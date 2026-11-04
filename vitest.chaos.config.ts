@@ -1,4 +1,4 @@
-// @samjonaidi-ship-it/universal-auth | vitest.chaos.config.ts | v1.0.0-rc.1 | 2026-04-28 | BB
+// @samjonaidi-ship-it/universal-auth | vitest.chaos.config.ts | v1.0.1 | 2026-11-04 | BB
 // Chaos test config per spec §11.6 + plan Block 6 Day 20-21.
 //
 // Tests run against the integration docker-compose stack PLUS a Toxiproxy
@@ -15,7 +15,13 @@ export default defineConfig({
     include: ['test/chaos/**/*.test.ts'],
     environment: 'node',
     pool: 'forks',
-    poolOptions: { forks: { singleFork: true } },
+    // Vitest 4 removed test.poolOptions, so `singleFork` was silently ignored
+    // and the chaos files ran in parallel against one shared Toxiproxy — each
+    // file's toxics/proxy changes reset the others' connections (nightly
+    // 2026-11-04: "SocketError: other side closed" across scenarios 1 and 6).
+    // One file at a time, one worker.
+    fileParallelism: false,
+    maxWorkers: 1,
     testTimeout: 60_000,
     hookTimeout: 90_000,
     setupFiles: ['./test/chaos/setup.ts'],
