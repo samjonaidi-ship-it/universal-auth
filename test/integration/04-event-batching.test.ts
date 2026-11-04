@@ -9,7 +9,7 @@
 //   4. Server returns 200 + records appear in ct_bff.app_events
 //   5. UNKNOWN_EVENT_TYPE on unknown type → SDK drops permanently (no retry loop)
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { bff, signInSeeded } from './helpers.js';
 import {
   configureEventReporter,
@@ -20,10 +20,19 @@ import {
 import { configureClient, __resetClientForTests } from '../../src/core/client.js';
 import { __resetTokenManagerForTests, setSession } from '../../src/core/token-manager.js';
 import { __resetDbForTests } from '../../src/core/storage.js';
-import { BFF_BASE_URL } from './setup.js';
+import { BFF_BASE_URL, TEST_MODE_KEY } from './setup.js';
+import { withTestModeIngest } from './test-mode-ingest-fetch.js';
 
 describe('Integration #4 — event batching → ingest (§11.3, §3.2, §6.3)', () => {
+  // CT PR #863 drops is_test_user events at ingest unless the request proves
+  // test mode (X-Test-Mode-Key, non-prod). The SDK never sends it itself.
+  const realFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+
   beforeEach(async () => {
+    globalThis.fetch = withTestModeIngest(realFetch, TEST_MODE_KEY);
     __resetClientForTests();
     __resetTokenManagerForTests();
     __resetEventReporterForTests();
