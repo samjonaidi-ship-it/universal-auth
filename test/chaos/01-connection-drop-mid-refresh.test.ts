@@ -75,7 +75,10 @@ describe('Chaos #1 — connection drop mid-refresh (§11.6)', () => {
 
   it('reset_peer during /session/refresh surfaces network error, not session-expired', async () => {
     // Inject reset_peer with 1ms timeout — kills any in-flight connection
-    await addToxic('reset_peer', { timeout: 1 }, { name: 'drop-refresh' });
+    // Upstream (client -> ct-bff): the RST lands while the request is in flight.
+    // A downstream reset races the BFF's reply, and on a fresh connection the
+    // reply can win, which made this assertion pass or fail by timing alone.
+    await addToxic('reset_peer', { timeout: 1 }, { name: 'drop-refresh', stream: 'upstream' });
 
     let networkError: Error | null = null;
     try {
@@ -94,11 +97,9 @@ describe('Chaos #1 — connection drop mid-refresh (§11.6)', () => {
     // setup.ts beforeEach already cleared the toxic. Verify the SDK→ct-bff
     // path recovered by doing one clean refresh.
     //
-    // We sign in fresh rather than reuse the beforeAll token: `reset_peer`
-    // with timeout:1 still forwards the request body to ct-bff before sending
-    // the RST, so the previous test's "dropped" refresh actually reached the
-    // server and consumed that token (refresh tokens are single-use / rotated
-    // — ct-bff issues a new one each refresh). Reusing it here would 401 on a
+    // We sign in fresh rather than reuse the beforeAll token: the faulted
+    // refresh may or may not have reached ct-bff before the RST, and refresh
+    // tokens are single-use / rotated, so reusing it could 401 on a
     // legitimately-consumed token and tell us nothing about post-toxic health.
     const freshToken = await signInFresh();
     const r = await bffPost('/auth/v1/session/refresh', { refresh_token: freshToken });
