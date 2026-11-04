@@ -8,6 +8,20 @@ export const TOXIPROXY_API = process.env.TOXIPROXY_API ?? 'http://localhost:8474
 export const BFF_PROXY_URL = process.env.BFF_PROXY_URL ?? 'http://localhost:13300';
 export const PROXY_NAME = 'ct-bff';
 
+// Every request to the proxied BFF opens a fresh connection (Connection:
+// close). Toxiproxy resets or restarts links when toxics are added/removed, so
+// a pooled keep-alive socket can be dead by the time the next request reuses
+// it ("SocketError: other side closed", nightly 2026-11-04). Chaos tests care
+// about fault behaviour, not connection reuse.
+const realFetch = globalThis.fetch;
+globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+  if (!url.startsWith(BFF_PROXY_URL)) return realFetch(input, init);
+  const headers = new Headers(init?.headers);
+  headers.set('Connection', 'close');
+  return realFetch(input, { ...init, headers });
+}) as typeof fetch;
+
 const HEALTH_TIMEOUT_MS = 60_000;
 const POLL_INTERVAL_MS = 500;
 
