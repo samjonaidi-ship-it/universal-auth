@@ -1,3 +1,4 @@
+// @samjonaidi-ship-it/universal-auth | test/unit/integration-test-mode-ingest-fetch.test.ts | v1.0.0 | 2026-11-04 | BB
 // Guards the integration-suite helper that keeps ingest working for test
 // users after BB_ControlTower PR #863 (TEST_USER drop + X-Test-Mode-Key exemption).
 import { describe, it, expect, vi } from 'vitest';
