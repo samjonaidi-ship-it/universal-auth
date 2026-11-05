@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-// BB_Tools | guardrails/devin-gate.mjs | v1.12.5 | 2026-11-05 | BB
+// BB_Tools | guardrails/devin-gate.mjs | v1.12.7 | 2026-11-05 | BB
+// v1.12.7 (case table docs/DEVIN_GATE_V1_12_7_CASE_TABLE_2026-11-05.md, Devin SEC red on universal-auth #66): an allow mark on a net row clears an earlier-commit copy ONLY when the net diff is pinned to the head (netIsPinned) or the row came from the head-pinned compare; a stale PR files list after a force push is no source.
+// v1.12.6: (a) a single-commit PR whose net diff is the UNPINNED PR files list (over 300 files, or the compare failed late) is read per commit by sha too (a force-pushed head the list still lags no longer escapes); (b) a listed commit without a sha is a failing gap, not a skip. Rows K17-K18 in the case table.
 // v1.12.5 also: (7) the compare must show the SAME ADDED LINES as the PR merge-base diff, not just the same file names (C01/C02: early window retries, late window scans the PR list unpinned); (8) a key-body line joins a marked header only inside the same patch (C03). Rows C01-C04, M04 in the case table.
 // v1.12.5 (case table docs/DEVIN_GATE_V1_12_5_CASE_TABLE_2026-11-05.md): (1) a commit history the gate could not read COMPLETELY fails the gate (commit list or one commit unreadable after the fallback window, or more than 50 commits) - it no longer passes "unreviewed"; a patch-less FILE in an earlier commit is still an unreviewed pass; (2) merge commits are still not read but are counted in a warning; (3) an allow mark on the pushed line also clears the same line (same path, same text) in an EARLIER commit; (4) a Kubernetes/Helm reference name (secretName / existingSecret / ...Ref, lowercase hyphenated value) is not a secret; (5) the "could not read the diff" warning fires once per head and per HTTP status.
 // v1.12.4: (1) the allow mark NEVER clears a high-confidence token (any path); it clears a database URL with a password only when every host on the line is a single-label name (a docker service / placeholder such as postgres, your-db-host) - a host with a dot (a real server or IP) is never clearable; the full case table is docs/DEVIN_GATE_HISTORY_READ_CASE_TABLE_2026-11-04.md; (2) new shapes: a SendGrid SG. key (high-confidence) and a Google AIza key (markable: Firebase / Maps browser keys are public), JWTs, dotted quoted values, ROLE_KEY/PRIVATE_KEY names, and an UNQUOTED KEY=value assignment (24+ chars, a digit and a letter); (3) the scan also reads each non-merge commit of the PR, so a secret added in one commit and removed in a later one is no longer invisible (the NEWEST 50 commits; beyond that a notice row marks the pass unreviewed but does not hold the Devin request; a single-commit PR needs no extra reads); (4) a secret hit fails the gate at once (no waiting out the window); (5) history reads are cached per commit, paged, and flag patch-less files; history lines are judged on EVERY kind exactly like the net diff (a history hit on any kind fails the gate at once, and only a mark already on the pushed line clears it; a mark already on the pushed line still clears it), the unquoted KEY=value kind skips source-code files only (N33), dotted local DB hosts host.docker.internal / *.localhost are exempt in the test-path allowlist (N34; a generic *.local is a real corporate domain and is NOT exempt); a bare UPPERCASE shell $VAR outside source-code files (checked case-sensitively in allKinds) or ${{secrets.X}} is a template (N35). Still open: 72h Devin expiry for label-parked PRs; the dead failSeen replacement.
@@ -388,7 +390,7 @@ function* addedLines(patches) {
       if (!isAdd && /-----BEGIN [^-]*PRIVATE KEY(?: BLOCK)?-----/.test(raw)) { inKey = true; keyLn = ln; addHdr = -1; } // also in test/fixture paths and across hunks (Devin red: a swapped key body must not slip through), but only within KEY_SPAN lines
       else if (/-----END [^-]*PRIVATE KEY(?: BLOCK)?-----/.test(raw)) { inKey = false; addHdr = -1; }
       else if (isAdd && /-----BEGIN [^-]*PRIVATE KEY(?: BLOCK)?-----/.test(raw)) { inKey = false; addHdr = ln; addHdrHunk = hunk; } // an added header is judged as itself (with its mark rules); a swapped body under it, in a later hunk of the same file, is still its body
-      if (isAdd) yield { raw, path, pi, line: ln, hunk, skipPath, markOk, history: f.history === true, cmpOnly: f.cmpOnly === true, keyBody: ((inKey && ln - keyLn <= KEY_SPAN) || (addHdr >= 0 && hunk !== addHdrHunk && ln - addHdr <= KEY_SPAN)) && isKeyBodyLine(raw) };
+      if (isAdd) yield { raw, path, pi, line: ln, hunk, skipPath, markOk, history: f.history === true, head: f.head === true, cmpOnly: f.cmpOnly === true, keyBody: ((inKey && ln - keyLn <= KEY_SPAN) || (addHdr >= 0 && hunk !== addHdrHunk && ln - addHdr <= KEY_SPAN)) && isKeyBodyLine(raw) };
     }
   }
 }
@@ -456,14 +458,17 @@ const keyBodyFollows = (ls, i) => { const l = ls[i]; const after = l.raw.split(/
 /** v1.12.5: a line with the allow mark removed and a trailing comment opener/closer and spaces dropped, so the marked copy and the unmarked earlier copy compare equal. Pure. */
 const markNorm = (raw) => String(raw).split(SECRET_ALLOW_MARK).join('').replace(/\s*(?:\/\/|#|--|\/\*|<!--)\s*$/, '').replace(/\s*(?:\*\/|-->)\s*$/, '').replace(/\s*(?:\/\/|#|--|\/\*|<!--)\s*$/, '').trim(); // round 8 (bb-review P3): whitespace INSIDE the line is kept, so a mark never clears a different value
 /** v1.12.5: the pushed (net) lines whose allow mark may clear the same line in an earlier commit (path + normalized text). Pure. */
-const netMarkSet = (ls) => new Set(ls.filter((l, i) => { if (l.history || !l.raw.includes(SECRET_ALLOW_MARK)) return false; const ks = allKinds(l.raw, l.skipPath, l.path); const body = ks.includes('private key block') && keyBodyFollows(ls, i); return ks.length > 0 && ks.every((k) => markClears(k, l.markOk, body, l.raw)); }).map((l) => l.path + LF + markNorm(l.raw)));
+/** v1.12.7 (Devin SEC red, #66): is the NET diff pinned to the head commit? The two placeholder rows the net read adds when it fell back to the PR files list (which can lag a force push) say no. ONE definition, used by getPatches (per-commit reads) and by the mark logic (who may clear an earlier copy). Pure. */
+const NET_UNPINNED_RE = /^\((?:file list is not pinned|files beyond)/;
+export const netIsPinned = (rows) => !(rows || []).some((f) => f && NET_UNPINNED_RE.test(String(f.path || '')));
+const netMarkSet = (ls, pinned) => new Set(ls.filter((l, i) => { if ((l.history && !l.head) || !l.raw.includes(SECRET_ALLOW_MARK)) return false; if (!pinned && !l.cmpOnly && !l.head) return false; /* v1.12.7: a net row from an UNPINNED (possibly stale) file list is no source for an earlier-commit copy - only head-pinned rows are: compare rows (cmpOnly) and the head commit's own rows read by sha (head) */ const ks = allKinds(l.raw, l.skipPath, l.path); const body = ks.includes('private key block') && keyBodyFollows(ls, i); return ks.length > 0 && ks.every((k) => markClears(k, l.markOk, body, l.raw)); }).map((l) => l.path + LF + markNorm(l.raw)));
 /** Returns [{kind, path, line}] for ADDED lines. Test/fixture/example paths only get SECRET_TEST_PATH_KINDS (high-confidence + database URL with password); a line carrying the allow mark is not a hit unless the mark may clear its kind: never a high-confidence kind, a database URL only when dbMarkable (see markClears, scanAllowedMarks). Pure. */
 export function scanSecrets(patches) {
   const hits = [];
   const ls = [...addedLines(patches)];
   // v1.12.5: an allow mark on a PUSHED (net) line also clears the same line (same path, same text apart from the mark) in an EARLIER commit; only net rows are sources, and markClears still refuses high-confidence kinds
   // round 3: a pushed line is a source ONLY when scanAllowedMarks would list it (secret-shaped, every kind clearable), so a clearing mark is always named and the pass unreviewed
-  const netMarks = netMarkSet(ls);
+  const netMarks = netMarkSet(ls, netIsPinned(patches));
   for (let i = 0; i < ls.length; i++) {
     const l = ls[i];
     if (l.keyBody) { hits.push({ kind: 'private key block', path: l.path, line: l.line, history: l.history === true, cmp: l.cmpOnly === true }); continue; } // body of a key whose header line did not change: no mark can be on it
@@ -482,7 +487,7 @@ export function scanSecrets(patches) {
 export function scanAllowedMarks(patches) {
   const out = [];
   const ls = [...addedLines(patches)];
-  const netMarks = netMarkSet(ls); // bb-review P3: an earlier commit's copy that a pushed mark clears is named too ([earlier commit])
+  const netMarks = netMarkSet(ls, netIsPinned(patches)); // bb-review P3: an earlier commit's copy that a pushed mark clears is named too ([earlier commit])
   for (let i = 0; i < ls.length; i++) { const l = ls[i]; if (!l.raw.includes(SECRET_ALLOW_MARK) && !(l.history && netMarks.has(l.path + LF + markNorm(l.raw)))) continue; const ks = allKinds(l.raw, l.skipPath, l.path); const body = ks.includes('private key block') && keyBodyFollows(ls, i); if (ks.length && ks.every((k) => markClears(k, l.markOk, body, l.raw))) out.push({ path: l.path, line: l.line, history: l.history === true }); }
   return out;
 }
@@ -1691,12 +1696,13 @@ export function githubIo(env = process.env, fetchFn = fetch, { requestTimeoutMs 
       const gap = (why, readError) => ({ path: `(per-commit history: ${why})`, patch: '', unscanned: true, history: true, gap: true, readError: !!readError }); // v1.12.5: gap = the history was not read completely - the gate FAILS on it (a file without a patch is not a gap)
       let commits;
       try { commits = []; for (let pg = 1; pg <= 3; pg++) { const one = await api('GET', `/repos/${repo}/pulls/${pr}/commits?per_page=100&page=${pg}`); if (!Array.isArray(one)) throw new Error('pull commits unreadable'); commits.push(...one); if (one.length < 100) break; } if (commits.length < 250 && (!commits.length || !commits.some((x) => x && x.sha === sha))) throw new Error('pull commits list does not end at the head (lagging copy; retried next poll)'); } catch (e) { if (!fallbackOk) throw e; return [...net, gap('could not be read', true)]; }
-      const keyOf = (f) => (f.gap ? 'G' : f.unscanned ? 'U' : 'S') + LF + f.path + LF + f.patch; const seen = new Set(net.filter((f) => !f.cmpOnly).map(keyOf)); const extra = [];
+      const keyOf = (f) => (f.gap ? 'G' : f.unscanned ? 'U' : 'S') + LF + f.path + LF + f.patch; const seen = new Set(net.filter((f) => !f.cmpOnly).map(keyOf)); const extra = []; const extraKeys = new Set();
       const isMerge = (c) => Array.isArray(c?.parents) && c.parents.length > 1;
       const real = commits.filter((c) => !isMerge(c)); // v1.12.5 (bb-review P3): merge commits are never read, so they count toward neither the 50-commit limit nor the newest-50 slice
       const mergesSkipped = commits.length - real.length;
-      for (const c of commits.length === 1 ? [] : real.slice(-HISTORY_MAX_COMMITS)) { // one commit: the net diff IS that commit, so no extra reads (most PRs)
-        if (!c || !c.sha) continue;
+      const netPinned = netIsPinned(net); // bb-review P3: the over-3000-files early return is unpinned too // v1.12.6 (#410, Devin SEC red): the net diff is the head commit only when it came from the head-pinned compare
+      for (const c of commits.length === 1 && netPinned ? [] : real.slice(-HISTORY_MAX_COMMITS)) { // one commit AND a pinned net diff: the net diff IS that commit, so no extra reads (most PRs)
+        if (!c || !c.sha) { extra.push(gap('a listed commit has no sha, so its diff cannot be read')); continue; } // v1.12.6 (Devin SEC): a commit that cannot be read is a gap that FAILS, never a silent skip
         let rows = cc.get(c.sha);
         if (!rows) {
           try {
@@ -1711,7 +1717,7 @@ export function githubIo(env = process.env, fetchFn = fetch, { requestTimeoutMs 
             cc.set(c.sha, rows);
           } catch (e) { if (!fallbackOk) throw e; extra.push(gap('a commit could not be read', true)); continue; }
         }
-        for (const r of rows) { const key = keyOf(r); if (seen.has(key)) continue; seen.add(key); extra.push(r); }
+        const isHead = c.sha === sha; for (const r of rows) { const key = keyOf(r); if (seen.has(key) && !(isHead && !netPinned && !extraKeys.has(key))) continue; seen.add(key); extraKeys.add(key); extra.push(isHead ? { ...r, head: true } : r); } // v1.12.7: the head commit's own rows are head state (read by sha): a mark source even when the net list is unpinned
       }
       if (commits.length >= 250) extra.push(gap('GitHub lists at most 250 commits; the newest may be unread')); // v1.12.5: fails the gate, like every gap
       else if (real.length > HISTORY_MAX_COMMITS) extra.push(gap('the ' + (real.length - HISTORY_MAX_COMMITS) + ' oldest of ' + real.length + ' commits were not read (newest ' + HISTORY_MAX_COMMITS + ' were); squash the branch into ' + HISTORY_MAX_COMMITS + ' commits or fewer (a plain rebase keeps every commit and does not help)')); // bounds the API calls per run (about 50 + pages); v1.12.5: no longer a notice that passes
