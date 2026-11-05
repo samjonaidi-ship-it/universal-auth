@@ -1,5 +1,24 @@
 #!/usr/bin/env node
-// BB_Tools | guardrails/devin-gate.mjs | v1.11.2 | 2026-10-31 | BB
+// BB_Tools | guardrails/devin-gate.mjs | v1.12.5 | 2026-11-05 | BB
+// v1.12.5 also: (7) the compare must show the SAME ADDED LINES as the PR merge-base diff, not just the same file names (C01/C02: early window retries, late window scans the PR list unpinned); (8) a key-body line joins a marked header only inside the same patch (C03). Rows C01-C04, M04 in the case table.
+// v1.12.5 (case table docs/DEVIN_GATE_V1_12_5_CASE_TABLE_2026-11-05.md): (1) a commit history the gate could not read COMPLETELY fails the gate (commit list or one commit unreadable after the fallback window, or more than 50 commits) - it no longer passes "unreviewed"; a patch-less FILE in an earlier commit is still an unreviewed pass; (2) merge commits are still not read but are counted in a warning; (3) an allow mark on the pushed line also clears the same line (same path, same text) in an EARLIER commit; (4) a Kubernetes/Helm reference name (secretName / existingSecret / ...Ref, lowercase hyphenated value) is not a secret; (5) the "could not read the diff" warning fires once per head and per HTTP status.
+// v1.12.4: (1) the allow mark NEVER clears a high-confidence token (any path); it clears a database URL with a password only when every host on the line is a single-label name (a docker service / placeholder such as postgres, your-db-host) - a host with a dot (a real server or IP) is never clearable; the full case table is docs/DEVIN_GATE_HISTORY_READ_CASE_TABLE_2026-11-04.md; (2) new shapes: a SendGrid SG. key (high-confidence) and a Google AIza key (markable: Firebase / Maps browser keys are public), JWTs, dotted quoted values, ROLE_KEY/PRIVATE_KEY names, and an UNQUOTED KEY=value assignment (24+ chars, a digit and a letter); (3) the scan also reads each non-merge commit of the PR, so a secret added in one commit and removed in a later one is no longer invisible (the NEWEST 50 commits; beyond that a notice row marks the pass unreviewed but does not hold the Devin request; a single-commit PR needs no extra reads); (4) a secret hit fails the gate at once (no waiting out the window); (5) history reads are cached per commit, paged, and flag patch-less files; history lines are judged on EVERY kind exactly like the net diff (a history hit on any kind fails the gate at once, and only a mark already on the pushed line clears it; a mark already on the pushed line still clears it), the unquoted KEY=value kind skips source-code files only (N33), dotted local DB hosts host.docker.internal / *.localhost are exempt in the test-path allowlist (N34; a generic *.local is a real corporate domain and is NOT exempt); a bare UPPERCASE shell $VAR outside source-code files (checked case-sensitively in allKinds) or ${{secrets.X}} is a template (N35). Still open: 72h Devin expiry for label-parked PRs; the dead failSeen replacement.
+// v1.12.3: a secret hit is recorded BEFORE anything else in the scan block can throw (scannedSha is set last); the skipped-file warning says "too large or binary"; the scan comments match the code (an unreadable diff fails the gate at the deadline).
+// v1.12.2: failSeen is sticky only while the diff is unread; a fail verdict leaves the loop at once; the compare's file names must equal the PR's file list; a REST api() error message carries method, path and status only (GraphQL error objects at the reviewThreads/auto-merge reads still echo up to 200 chars - follow-up); a host=/hostaddr= override is flagged only when its value is not local.
+// v1.12.1: the secret scan now also runs the "database URL with password" kind inside test/fixture/example paths (Devin
+//   SEC_ on v1.12.0: a prod DB URL under tests/ passed the scan). Local/example hosts stay exempt; the allow mark still clears it there.
+// v1.12.0: reviewer provenance, Parity plan W3. (1) IDENTITY: every verdict records, per reviewer, the provider, model and
+//   effort next to the head sha (provenance.devin / .bbReview; a field the status does not carry is the word
+//   "unrecorded", never a guess). (2) INDEPENDENCE: a Devin review of a PR that Devin itself wrote (author login or a
+//   devin/ branch) is the same provider reviewing its own work - not independent evidence, so the verdict is an
+//   unreviewed pass plus the devin-unreviewed label (never-stuck, as for a forged status); an author whose provider
+//   cannot be told (agent/ branches are Claude or Codex) is recorded "unknown" and is NOT rejected. (3) EXPIRY: a
+//   DEVIN status older than EVIDENCE_MAX_AGE_H (default 72, env DEVIN_GATE_EVIDENCE_MAX_AGE_H) is stale evidence (the bb-review slot is bound to the head by its own per-sha status and is not aged here) -
+//   unreviewed pass; a status with no timestamp is judged as before. Evidence is bound to the head by construction
+//   (statuses are per-sha, #351) and the record carries the head and the status time. (4) SECRET SCAN: before the gate
+//   sends a review request for a head it scans the ADDED lines of the diff for secret shapes; a hit (or a diff it could not
+//   read) withholds the request and warns, naming the kind and file, never the value. Pure helpers: providerOf,
+//   reviewerIdentity, evidenceAgeH, scanSecrets. Tests: test/devin-gate.test.mjs "W3".
 // v1.11.2: lint-clean for consumers that eslint scripts/ (universal-auth `pnpm lint` runs eslint on scripts/ in its
 //   pre-push hook and in CI; the v1.11.1 copy failed it with 7 errors, so its sync PR could not be pushed). No behaviour
 //   change: the control-character class is built from char codes (no-control-regex rejects \x00-\x1f in a regex
@@ -286,6 +305,187 @@ export const LABEL = 'devin-unreviewed';
 export const DEVIN_LOGINS = Object.freeze(['devin-ai-integration', 'devin-ai-integration[bot]']);
 /** GitHub logins compare case-insensitively: a differently-cased casing of Devin's slug is still Devin. */
 export const isDevinLogin = (l) => DEVIN_LOGINS.includes(String(l || '').toLowerCase());
+/** v1.12.0 (W3): a reviewer status older than this many hours is stale evidence, not a current verdict. */
+export const EVIDENCE_MAX_AGE_H_DEFAULT = 72;
+export const UNRECORDED = 'unrecorded';
+/**
+ * The provider that WROTE a PR, from what the API gives us for free: the author login and the head branch.
+ * Devin writes as the Devin app / on devin/ branches. agent/ branches are Claude or Codex (indistinguishable here),
+ * so they are 'unknown' - recorded, and never grounds to reject a review. Pure.
+ */
+export function providerOf({ login, headRef } = {}) {
+  if (isDevinLogin(login) || /^devin\//i.test(String(headRef || ''))) return 'devin';
+  return 'unknown';
+}
+/** {provider, model, effort} of a reviewer status. Devin's status names none of model/effort; bb-review's carries none either. Pure. */
+export function reviewerIdentity(kind, creator) {
+  const forged = !isDevinLogin(creator); // an unknown poster counts as unverified too; a 'Devin Review' status posted by anyone else is not a Devin record
+  return { provider: kind === 'devin' && !forged ? 'devin' : UNRECORDED, model: UNRECORDED, effort: UNRECORDED };
+}
+/** Hours between a status timestamp and now; null when the timestamp is missing or unparseable (judged as before). Pure. */
+export function evidenceAgeH(at, nowMs) {
+  const t = Date.parse(String(at || ''));
+  if (!Number.isFinite(t) || !Number.isFinite(nowMs)) return null;
+  return Math.max(0, (nowMs - t) / 3600000);
+}
+/**
+ * Secret shapes scanned in the ADDED lines of a diff before a review request goes out. Each entry is a kind and a
+ * regex; the scan reports kind + file + line number only, NEVER the matched text. Pure.
+ */
+export const SECRET_PATTERNS = Object.freeze([
+  ['private key block', /-----BEGIN (?:[A-Z]+ )?PRIVATE KEY(?: BLOCK)?-----/],
+  ['AWS access key id', /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/],
+  ['GitHub token', /\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,})\b/],
+  ['Anthropic/OpenAI style key', /\bsk-(?:ant-)?[A-Za-z0-9_-]{32,}\b/],
+  ['Slack token', /\bxox[abprs]-[A-Za-z0-9-]{10,}\b/],
+  ['Stripe live key', /\b[sr]k_live_[A-Za-z0-9]{16,}\b/],
+  ['Google API key', /\bAIza[0-9A-Za-z_-]{35}(?![0-9A-Za-z_-])/],
+  ['SendGrid key', /\bSG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}(?![A-Za-z0-9_-])/],
+  ['JWT', /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/],
+  ['database URL with password', /\b(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?):\/\/[^\s:@/]+:(?!(?:\$\{[A-Za-z_][A-Za-z0-9_]*\}|%\([A-Za-z_]+\)s|\{\{[A-Za-z_][A-Za-z0-9_.]*\}\}|\$\{\{[A-Za-z_][A-Za-z0-9_.-]*\}\})@)[^\s@/]{3,}@(?!(?:localhost|host|hostname|db|127\.\d+\.\d+\.\d+|\[::1\]|(?:[\w-]+\.)*example(?:\.(?:com|net|org))?)(?:[:/?\s]|$))/i],
+  ['hard-coded secret assignment', /(?:api[_-]?key|secret|token|passw(?:or)?d|role[_-]?key|private[_-]?key)[A-Za-z0-9_-]{0,24}["']?(?:[ \t]*:[ \t]*[A-Za-z_][\w.<>[\]|, ]{0,40})?[ \t]*:?[:=]\s*[fbru]{0,2}["'`]{1,3}(?=[A-Za-z0-9+/_=.-]*[0-9])(?![A-Za-z0-9+/_=.-]*(?:(?<![A-Za-z0-9])(?:example|replace|your|placeholder|change|dummy|sample)(?![A-Za-z0-9])|xxxx))[A-Za-z0-9+/_=.-]{20,}(?<!\.(?:json|ya?ml|pem|txt|toml|ini|env|xml|key|crt|cer|js|ts|md))["'`]/i],
+  // v1.12.4: UNQUOTED KEY=value (.env / shell / yaml): 24+ plain chars with a digit touching a letter (N32: a snake_case name ending _1 or a path value is not a secret), ending the token; a call (`x.y(`) is not matched; a dotted value (`MTk4.Cl2FM.ZnCj`, N48) is
+  ['unquoted secret assignment', /(?:api[_-]?key|secret|token|passw(?:or)?d|role[_-]?key|private[_-]?key)[A-Za-z0-9_-]{0,24}["']?[ \t]*[:=][ \t]*(?!\/[\w.-]+\/[\w.-]+)(?=[A-Za-z0-9+/_=.-]*(?:[A-Za-z][0-9]|[0-9][A-Za-z]))(?![A-Za-z0-9+/_=.-]*(?:(?<![A-Za-z0-9])(?:example|replace|your|placeholder|change|dummy|sample)(?![A-Za-z0-9])|xxxx))[A-Za-z0-9+/_=.-]{24,}(?![A-Za-z0-9+/_=.(-]|\.[A-Za-z0-9_.-]*\()/i],
+]);
+/** patches = [{path, patch}] (GitHub's per-file unified diff). Returns [{kind, path, line}], in order. Only '+' lines count. Pure. */
+export const SECRET_SCAN_SKIP_PATH_RE = /(?:^|\/)(?:tests?|__tests__|fixtures?|__fixtures__)\/|\.(?:test|spec)\.[cm]?[jt]sx?$|\.(?:example|sample)$|\.(?:example|sample)\./i;
+/** Paths where scanSecrets runs only the high-confidence kinds plus database URLs with passwords (SECRET_TEST_PATH_KINDS): returned so the caller can NAME them - a partial read is never silent. Pure. */
+export const secretScanSkippedPaths = (patches) => (patches || []).filter((f) => f && SECRET_SCAN_SKIP_PATH_RE.test(String(f.path || ''))).map((f) => String(f.path));
+/** Binary file types that hold credentials (keystores, certificates with keys, password vaults): a diff-less one is flagged unscanned, never read as clean. */
+// Files that hold credentials: key containers, AND text config/secret files (a UTF-16 .env or a .gitattributes `binary` file reaches GitHub with no patch and 0 changes, so it must not read as clean).
+export const BINARY_SECRET_EXT_RE = /\.(?:p12|pfx|jks|keystore|kdbx|der|p8|pk8|bks|ppk|gpg|pem|key|env|ini|cfg|conf|properties|json|ya?ml|toml|sh|ps1|txt|npmrc|netrc|tfvars|xml)$|(?:^|\/)(?:\.(?:env|npmrc|netrc)[^/]*|id_(?:rsa|dsa|ecdsa|ed25519))$/i;
+/** Binary types that cannot hold a pasted credential: the only diff-less files read as clean (images, fonts, archives, media, pdf). */
+export const HARMLESS_BINARY_EXT_RE = /\.(?:png|jpe?g|gif|webp|ico|bmp|tiff?|svg|woff2?|ttf|otf|eot|pdf|zip|gz|tgz|bz2|xz|7z|mp[34]|mov|webm|wav|ogg)$/i;
+/** A file GitHub gave no diff for that could still hold a secret: not a deletion, not a pure rename or mode change (changes 0), and either it had changed lines (too large to diff) or it is not a known harmless binary type (UTF-16 text, extensionless or dotfile secrets). */
+export const fileUnscanned = (f) => {
+  if (!f || typeof f.patch === 'string') return false;
+  if (f.status === 'removed') return false;
+  if ((f.status === 'renamed' || f.status === 'changed') && !(Number(f.changes) > 0)) return false;
+  return Number(f.changes) > 0 || !HARMLESS_BINARY_EXT_RE.test(String(f.filename || '')); // fail closed: only a known harmless binary type reads as clean
+};
+/** Key containers and secret files: a diff-less one withholds the review request (so does every other diff-less file now, see holdsRequest). */
+export const SECRET_CONTAINER_RE = /\.(?:p12|pfx|jks|keystore|kdbx|der|p8|pk8|bks|ppk|gpg|pem|key)$|(?:^|\/)(?:\.(?:env|npmrc|netrc)[^/]*|id_(?:rsa|dsa|ecdsa|ed25519))$/i;
+/** RAW path (never the display-cleaned one, which truncates): any diff-less (unscanned) entry withholds the request, the placeholders for unlisted or unpinned files included; lockfiles too (a registry token can sit in a resolved URL). */
+export const holdsRequest = () => true; // every other diff-less file (any name, any size) may hold a live key: withhold
+export const SECRET_ALLOW_MARK = 'devin-gate:allow-secret';
+/** Kinds that are near-certain real credentials: these are scanned even inside test/fixture/example paths. */
+export const SECRET_HIGH_CONFIDENCE_KINDS = Object.freeze(['private key block', 'AWS access key id', 'GitHub token', 'Anthropic/OpenAI style key', 'Slack token', 'Stripe live key', 'SendGrid key']);
+/** A key-body line once a key block is open: strip quotes, escaped newlines, `+`, commas and spaces; 20+ base64 chars with nothing else is body (quoted, concatenated or rewrapped bodies included). Pure. */
+const isKeyBodyLine = (raw) => /^[A-Za-z0-9+/=]{20,}$/.test(String(raw).replace(/^\+/, '').replace(/\\[nrt]/g, '').replace(/["'`,;]/g, '').replace(/^\s*\+?\s*/, '').replace(/\s*\+?\s*$/, '')); // inner whitespace stays, so prose never collapses into a "body"
+function* addedLines(patches) {
+  let pi = -1; // v1.12.5: the index of the patch (one file in one commit) a row came from - keyBodyFollows never joins rows of two patches
+  for (const f of patches || []) {
+    pi++;
+    if (!f || typeof f.patch !== 'string') continue;
+    const path = String(f.path || '?'); const skipPath = SECRET_SCAN_SKIP_PATH_RE.test(path); const markOk = skipPath;
+    let ln = 0; let hunk = 0; let inKey = false; let keyLn = -1; let addHdr = -1; let addHdrHunk = -1; // inKey: an UNCHANGED (context) key header opened a block, so added base64 lines until its END are a swapped key body
+    for (const raw of f.patch.split('\n')) {
+      const h = /^@@ -\d+(?:,\d+)? \+(\d+)/.exec(raw);
+      if (h) { ln = Number(h[1]) - 1; hunk++; continue; }
+      if (raw.startsWith('-') || raw.startsWith('\\')) continue;
+      ln++;
+      const isAdd = raw.startsWith('+');
+      if (!isAdd && /-----BEGIN [^-]*PRIVATE KEY(?: BLOCK)?-----/.test(raw)) { inKey = true; keyLn = ln; addHdr = -1; } // also in test/fixture paths and across hunks (Devin red: a swapped key body must not slip through), but only within KEY_SPAN lines
+      else if (/-----END [^-]*PRIVATE KEY(?: BLOCK)?-----/.test(raw)) { inKey = false; addHdr = -1; }
+      else if (isAdd && /-----BEGIN [^-]*PRIVATE KEY(?: BLOCK)?-----/.test(raw)) { inKey = false; addHdr = ln; addHdrHunk = hunk; } // an added header is judged as itself (with its mark rules); a swapped body under it, in a later hunk of the same file, is still its body
+      if (isAdd) yield { raw, path, pi, line: ln, hunk, skipPath, markOk, history: f.history === true, cmpOnly: f.cmpOnly === true, keyBody: ((inKey && ln - keyLn <= KEY_SPAN) || (addHdr >= 0 && hunk !== addHdrHunk && ln - addHdr <= KEY_SPAN)) && isKeyBodyLine(raw) };
+    }
+  }
+}
+const KEY_SPAN = 80; // lines: a PEM key body (even RSA-8192) ends well inside this, a base64 line farther away is unrelated
+/** A documented sample, not a credential: ends in EXAMPLE (AWS's AKIAIOSFODNN7EXAMPLE) or the part after the prefix is one repeated character (ghp_xxxx...). */
+const isSampleValue = (m) => /EXAMPLE$/i.test(m) || /(?:^|[^A-Za-z0-9])(?:your|placeholder|redacted|changeme|replace|token-?here|key-?here|dummy|fake|sample)(?:[^A-Za-z0-9]|$)/i.test(m) || m === 'ghp_' + '16C7e42F292c6912E7710c838347Ae178B4a' || /^[A-Za-z]{2,4}[_-]?(?:ant-)?(.)\1{15,}$/i.test(m);
+/** v1.12.1: kinds scanned inside test/fixture/example paths: the high-confidence ones PLUS a database URL with a password (its pattern already exempts localhost, example and placeholder hosts, so only a real-looking host reaches here; Devin SEC_: tests/ must not hide a prod credential). The noisy hard-coded-assignment kind stays skipped there. */
+export const SECRET_TEST_PATH_KINDS = Object.freeze([...SECRET_HIGH_CONFIDENCE_KINDS, 'database URL with password']);
+/** v1.12.1: in test/fixture/example paths ONLY, a database URL is exempt when EVERY host in its (comma-separated) host list is a local, service-container or exact placeholder name. Elsewhere the pattern's own exemption list is unchanged. */
+const TEST_PATH_OK_HOST_RE = /^(?:localhost|host|hostname|db|database|postgres(?:ql)?|mysql|mariadb|mongo(?:db)?|0\.0\.0\.0|your[-_](?:db|database|host|server)(?:[-_]host)?|yourhost|127\.\d+\.\d+\.\d+|\[::1\]|host\.docker\.internal|(?:[\w-]+\.)*localhost|(?:[\w-]+\.)*example(?:\.(?:com|net|org))?)$/i;
+const testPathDbUrlIsLocal = (raw, m) => { const hosts = (/^[^\s/?"'`)]*/.exec(raw.slice(m.index + m[0].length)) || [''])[0].split(/[,;]/).filter(Boolean); return hosts.length > 0 && hosts.every((h) => TEST_PATH_OK_HOST_RE.test(h.replace(/:\d*$/, ''))); };
+/** v1.12.1, EVERY path: the base pattern exempts a local/service host, so a URL like `@db/app?host=real` or `@localhost:27017,real-host` never reaches testPathDbUrlIsLocal. This catches those two shapes: a host=/hostaddr= query override, or a host list holding a host that is not local/service/placeholder. */
+const TEST_PATH_DB_URL_RE = /\b(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?):\/\/[^\s:@/]+:(?!(?:\$\{[A-Za-z_][A-Za-z0-9_]*\}|%\([A-Za-z_]+\)s|\{\{[A-Za-z_][A-Za-z0-9_.]*\}\}|\$\{\{[A-Za-z_][A-Za-z0-9_.-]*\}\})@)[^\s@/]{3,}@([^\s/?"'`)]*)([^\s"'`)]*)/gi;
+const testPathDbUrlOverride = (raw) => { for (const m of raw.matchAll(TEST_PATH_DB_URL_RE)) { for (const q of m[2].matchAll(/[?&]host(?:addr)?=([^&#]*)/gi)) { let dec; try { dec = decodeURIComponent(q[1].replace(/%(?![0-9a-f]{2})/gi, '%25')); } catch { return true; } /* invalid %XX: cannot prove it local, so flag it by name instead of throwing */ const vals = dec.split(/[,;]/).filter(Boolean); if (!vals.length || !vals.every((h) => TEST_PATH_OK_HOST_RE.test(h.replace(/:\d*$/, '')))) return true; } const hosts = m[1].split(/[,;]/).filter(Boolean); if (hosts.length > 1 && !hosts.every((h) => TEST_PATH_OK_HOST_RE.test(h.replace(/:\d*$/, '')))) return true; } return false; };
+const VENDOR_SAMPLE = 'ghp_' + '16C7e42F292c6912E7710c838347Ae178B4a';
+/** The vendor docs sample is exempt only when the matched VALUE is exactly the sample (a longer value, or a DB URL, that merely contains it is judged normally). */
+const vendorSampleValue = (kind, m) => { if (kind === 'database URL with password') return false; const v = kind === 'GitHub token' ? m : m.replace(/^[^:=]*[:=]\s*["']?/, '').replace(/["']$/, ''); return v === VENDOR_SAMPLE; };
+/** EVERY secret kind on the line (not just the first), so a mark that clears one kind cannot hide another. */
+/** N33: the unquoted KEY=value kind skips SOURCE-CODE files only (in code `token: some_identifier1` is a name, not a secret; the quoted kind still covers code). Every other path - .npmrc, .envrc, Dockerfile, .bat/.cmd/.ps1, yaml, json, unknown - is read. */
+/** N35: only files a shell / compose / CI runner expands `$VAR` in; JSON, TOML, .properties, .ini, XML, .env (dotenv) keep the `$` as part of a real password. */
+const VAR_EXPAND_PATH_RE = /(?:\.(?:sh|bash|zsh|ya?ml|ps1|mk)|(?:^|\/)(?:Dockerfile[^/]*|Makefile|docker-compose[^/]*))$/i;
+const CODE_PATH_RE = /\.(?:m?[jt]sx?|cjs|cts|py|rb|go|java|kt|cs|php|rs|swift|scala|c|cc|cpp|h|hpp|vue|svelte|dart|lua|pl)$/i;
+/** N46: an env-style assignment (`STRIPE_WEBHOOK_SECRET=value`: ALL-CAPS key, `=` with no spaces) is read even in a code file (an embedded .env in a template literal or a docstring); a code identifier is `token: x` or `const x = y`. Pure. */
+const envStyleKey = (raw, m) => { const pre = (/[A-Za-z0-9_]*$/.exec(raw.slice(0, m.index)) || [''])[0]; const kw = /^[A-Za-z0-9_-]+/.exec(m[0]); return !!kw && /^[A-Z0-9_-]+$/.test(pre + kw[0]) && /^[A-Za-z0-9_-]+["']?[ \t]*=/.test(m[0]); }; // N46/N54: the whole ALL-CAPS name (digits allowed, `STRIPE_SECRET_2`) with `=` (spaces around it allowed, dotenv accepts them)
+/** v1.12.5: a key such as secretName, existingSecret or a Ref-suffixed key; the KEY names a Kubernetes/Helm object and the VALUE is a lowercase hyphenated object name (needs a hyphen), never a credential. A mixed-case or hyphen-less value, or a plain `secret:` key, still hits. Pure. */
+const K8S_NAME_KEY_RE = /(?:secretname|tokenname|existingsecret|(?:secret|token|password|credentials?)ref)$/i; // round 3: bare `ref` dropped (any key ending ref), and only YAML paths (see k8sRefName)
+const K8S_RESOURCE_WORDS = new Set(['secret', 'secrets', 'credential', 'credentials', 'creds', 'tls', 'cert', 'certs', 'certificate', 'auth', 'token', 'tokens', 'apikey', 'webhook', 'smtp', 'ldap', 'dsn', 'signing', 'postgres', 'postgresql', 'mysql', 'mariadb', 'redis', 'mongodb', 'rabbitmq', 'oauth', 'registry', 'jwt', 'ssh', 'sealed']);
+const k8sRefName = (raw, m, path) => {
+  if (path === undefined || !/\.ya?ml$/i.test(String(path))) return false; // round 3: Kubernetes/Helm names live in YAML; code and .env keep the full read
+  const kw = /^[A-Za-z0-9_-]+/.exec(m[0]); const val = /([A-Za-z0-9+/_=.-]+)["'`]?$/.exec(m[0]);
+  if (!kw || !val) return false;
+  // round 5 (bb-review P2): the match must be ONE plain `key: value` pair (an optional quote around the key, then the separator, then the value); a type-annotation tail such as `, password` inside the match means a second key was swallowed, so the exemption must not apply.
+  if (!/^["']?[ \t]*[:=]\s*[fbru]{0,2}["'`]{0,3}[A-Za-z0-9+/_=.-]+["'`]?$/i.test(m[0].slice(kw[0].length))) return false;
+  const key = (/[A-Za-z0-9_-]*$/.exec(raw.slice(0, m.index)) || [''])[0] + kw[0];
+  // round 2 (Devin SEC_ + bb-review P3): a lowercase hyphenated value is also the shape of a UUID key or a passphrase, so the VALUE must read as an object name: at most 5 segments, no UUID shape, and one segment is a resource word (secret, credentials, tls ...). A bare passphrase or UUID under a Ref/Name key is a hit. Residual: a passphrase containing a resource word (limit L3).
+  return K8S_NAME_KEY_RE.test(key) && /^[a-z0-9]+(?:-[a-z0-9]+)+$/.test(val[1]) && val[1].split('-').length <= 5 && !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(val[1]) && val[1].split('-').some((w) => K8S_RESOURCE_WORDS.has(w)) && val[1].split('-').every((w) => /^(?:(?:\d{1,2})?[a-z]{1,14}\d{0,4}|v?\d{1,8}|k8s|m2m|b2b|e2e|oauth2)$/.test(w)); // round 8 (Devin + bb-review P2): a short word may carry up to 2 leading and 4 trailing digits (2fa, prod2024); a version or date is up to 8 digits; round 6 (bb-review P2): every part is a short word (letters, at most 2 trailing digits) or a short version number, so a random token after a resource word (k3j9x8f2h1q7-secret) is a hit
+};
+const allKinds = (raw, skipPath, path) => {
+  const kinds = [];
+  for (const [kind, re] of SECRET_PATTERNS) {
+    if (skipPath && !SECRET_TEST_PATH_KINDS.includes(kind)) continue;
+    const codeUnquoted = kind === 'unquoted secret assignment' && path !== undefined && CODE_PATH_RE.test(String(path)); // N33: in code only a URL query parameter (`?api_key=...`, `&token=...`) is read, anything else unquoted is a name
+    const all = new RegExp(re.source, re.flags.replace('g', '') + 'g');
+    for (const m of raw.matchAll(all)) {
+      if (codeUnquoted && !/[?&][\w.-]*$/.test(raw.slice(0, m.index)) && !envStyleKey(raw, m)) continue; // the key name may carry a prefix (`?access_token=`)
+      if (kind === 'database URL with password' && (path === undefined || VAR_EXPAND_PATH_RE.test(String(path))) && /^\w+(?:\+\w+)?:\/\/[^\s:@/]+:\$[A-Z_]+(?:_[0-9]+)?@/.test(m[0])) continue; // N35: a bare UPPERCASE shell variable is a template (case-sensitive here: the pattern carries /i, so it cannot be told apart in the regex); $uperS3cret still hits
+      if (skipPath && kind === 'database URL with password' && testPathDbUrlIsLocal(raw, m)) continue; // test paths: local / service / placeholder hosts only
+      if ((kind === 'unquoted secret assignment' || kind === 'hard-coded secret assignment') && k8sRefName(raw, m, path)) continue; // v1.12.5: a Kubernetes/Helm reference NAME is not a secret
+      if ((SECRET_HIGH_CONFIDENCE_KINDS.includes(kind) && isSampleValue(m[0])) || vendorSampleValue(kind, m[0])) continue; // v1.12.4: the vendor docs sample is exempt under every kind (an assignment pattern matches it too) // never stuck on a documented sample key; but check every match on the line
+      kinds.push(kind); break;
+    }
+  }
+  if (!kinds.includes('database URL with password') && testPathDbUrlOverride(raw)) kinds.push('database URL with password');
+  return kinds;
+};
+/** True when the line has a database URL and EVERY such host is a single-label name (no dot): a docker service or placeholder, never a real server or IP. */
+const DB_HOST_RE = /\b(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?):\/\/[^\s:@/]+:(?!(?:\$\{[A-Za-z_][A-Za-z0-9_]*\}|%\([A-Za-z_]+\)s|\{\{[A-Za-z_][A-Za-z0-9_.]*\}\}|\$\{\{[A-Za-z_][A-Za-z0-9_.-]*\}\})@)[^\s@/]{3,}@([^\s"'`)]*)/gi;
+const DB_MARK_TAIL_RE = /^[A-Za-z][A-Za-z0-9_-]*(?::[0-9]{1,5})?(?:\/[A-Za-z0-9_-]*)?(?:\?(?:(?!host|socket|service)[A-Za-z_]+=[A-Za-z0-9_-]*(?:&|$))*)?$/i; /* allowlist: a dot, comma, IPv6, %-escape, numeric host, second URL or host=/socket= can never match */
+const dbMarkable = (raw) => { let any = false; for (const m of raw.matchAll(DB_HOST_RE)) { any = true; const end = m.index + m[0].length; if (/["'`)]/.test(raw.charAt(end)) && !/^["'`)]+[\s;,}\]]*(?:\/\/|#|\/\*(?:(?!\*\/).)*(?:\*\/\s*)?$|$)/.test(raw.slice(end))) return false; if (!DB_MARK_TAIL_RE.test(m[1].replace(/[;,]+$/, '')) || /^[0-9]+(?::|\/|$)/.test(m[1])) return false; } return any; };
+/** May the allow mark clear this kind here? Never a high-confidence kind in any path (except a bare private-key header); a database URL with a password only when dbMarkable(raw) (single-label hosts); other noisy kinds anywhere. */
+const markClears = (kind, skipPath, bodyFollows, raw) => kind === 'private key block' ? !bodyFollows : SECRET_HIGH_CONFIDENCE_KINDS.includes(kind) ? false : kind === 'database URL with password' ? dbMarkable(raw) : true;
+/** Does a base64 key body sit on this line (after the header) or on the next added line of the same file? A marked header with a body is a real key. */
+const B64_RUN_RE = /[A-Za-z0-9+/]{40,}/;
+const keyBodyFollows = (ls, i) => { const l = ls[i]; const after = l.raw.split(/-----BEGIN [^-]*-----/)[1] || ''; if (B64_RUN_RE.test(after)) return true; for (let j = i + 1; j <= i + KEY_SPAN; j++) { const nx = ls[j]; if (!nx || nx.pi !== l.pi || nx.path !== l.path || nx.hunk !== l.hunk || nx.line - l.line > KEY_SPAN) break; if (B64_RUN_RE.test(nx.raw) || isKeyBodyLine(nx.raw)) return true; if (/-----END /.test(nx.raw)) break; } return false; }; // up to 8 added lines ahead in the same file: a comment or blank line between header and body does not hide it
+/** v1.12.5: a line with the allow mark removed and a trailing comment opener/closer and spaces dropped, so the marked copy and the unmarked earlier copy compare equal. Pure. */
+const markNorm = (raw) => String(raw).split(SECRET_ALLOW_MARK).join('').replace(/\s*(?:\/\/|#|--|\/\*|<!--)\s*$/, '').replace(/\s*(?:\*\/|-->)\s*$/, '').replace(/\s*(?:\/\/|#|--|\/\*|<!--)\s*$/, '').trim(); // round 8 (bb-review P3): whitespace INSIDE the line is kept, so a mark never clears a different value
+/** v1.12.5: the pushed (net) lines whose allow mark may clear the same line in an earlier commit (path + normalized text). Pure. */
+const netMarkSet = (ls) => new Set(ls.filter((l, i) => { if (l.history || !l.raw.includes(SECRET_ALLOW_MARK)) return false; const ks = allKinds(l.raw, l.skipPath, l.path); const body = ks.includes('private key block') && keyBodyFollows(ls, i); return ks.length > 0 && ks.every((k) => markClears(k, l.markOk, body, l.raw)); }).map((l) => l.path + LF + markNorm(l.raw)));
+/** Returns [{kind, path, line}] for ADDED lines. Test/fixture/example paths only get SECRET_TEST_PATH_KINDS (high-confidence + database URL with password); a line carrying the allow mark is not a hit unless the mark may clear its kind: never a high-confidence kind, a database URL only when dbMarkable (see markClears, scanAllowedMarks). Pure. */
+export function scanSecrets(patches) {
+  const hits = [];
+  const ls = [...addedLines(patches)];
+  // v1.12.5: an allow mark on a PUSHED (net) line also clears the same line (same path, same text apart from the mark) in an EARLIER commit; only net rows are sources, and markClears still refuses high-confidence kinds
+  // round 3: a pushed line is a source ONLY when scanAllowedMarks would list it (secret-shaped, every kind clearable), so a clearing mark is always named and the pass unreviewed
+  const netMarks = netMarkSet(ls);
+  for (let i = 0; i < ls.length; i++) {
+    const l = ls[i];
+    if (l.keyBody) { hits.push({ kind: 'private key block', path: l.path, line: l.line, history: l.history === true, cmp: l.cmpOnly === true }); continue; } // body of a key whose header line did not change: no mark can be on it
+    let kinds = allKinds(l.raw, l.skipPath, l.path);
+    // v1.12.4: an earlier commit's line is judged on EVERY kind, exactly like the net diff (history hit on any kind = hold); only a mark already ON the pushed line can clear it
+    if (!kinds.length) continue;
+    // the mark clears a line only when EVERY kind on it is clearable (a bare BEGIN header is not the key; a database URL only for ONE single-label host, dbMarkable; never a high-confidence kind); the line is named + the pass unreviewed
+    const marked = l.raw.includes(SECRET_ALLOW_MARK) || (l.history && netMarks.has(l.path + LF + markNorm(l.raw)));
+    const body = marked && kinds.includes('private key block') && keyBodyFollows(ls, i);
+    const left = marked ? kinds.filter((k) => !markClears(k, l.markOk, body, l.raw)) : kinds;
+    if (left.length) hits.push({ kind: left[0], path: l.path, line: l.line, history: l.history === true, cmp: l.cmpOnly === true });
+  }
+  return hits;
+}
+/** Allow-marked added lines that WOULD have been hits: the gate names each one and downgrades the pass to unreviewed, so a person sees every declared fake. Pure. */
+export function scanAllowedMarks(patches) {
+  const out = [];
+  const ls = [...addedLines(patches)];
+  const netMarks = netMarkSet(ls); // bb-review P3: an earlier commit's copy that a pushed mark clears is named too ([earlier commit])
+  for (let i = 0; i < ls.length; i++) { const l = ls[i]; if (!l.raw.includes(SECRET_ALLOW_MARK) && !(l.history && netMarks.has(l.path + LF + markNorm(l.raw)))) continue; const ks = allKinds(l.raw, l.skipPath, l.path); const body = ks.includes('private key block') && keyBodyFollows(ls, i); if (ks.length && ks.every((k) => markClears(k, l.markOk, body, l.raw))) out.push({ path: l.path, line: l.line, history: l.history === true }); }
+  return out;
+}
 /**
  * Who may post a `bb-review` verdict: the local pre-push reviewer (Sam's token) or CI itself. The combined
  * read shows only the LATEST status per context, so a foreign "success" can sit on top of a real failure;
@@ -329,7 +529,11 @@ export const GUARDRAIL_PATHS = Object.freeze([
   'scripts/deploy-verify.mjs', '.github/workflows/deploy-verify.yml',
 ]);
 export const FILES_PAGE_LIMIT = 30;
+const HISTORY_MAX_COMMITS = 50; // per-commit history reads per gate run (API allowance)
+const LF = String.fromCharCode(10); // key separator for the per-commit duplicate check
 
+/** HTTP status only ('read error' if none): the error text of a read that carries patches can echo a credential. */
+const errStatus = (e) => /-> ([45]\d\d)\b/.exec(String(e && e.message))?.[1] || /^([45]\d\d)\b/.exec(String(e && e.message))?.[1] || 'read error';
 const errLine = (e) => String(e?.message || e).split(/\r?\n/)[0];
 // v1.11.2: control characters U+0000-U+001F as a regex-class range built from char codes (DEL \x7f is not one and
 // stays literal). An escaped \x00-\x1f fails eslint no-control-regex in a literal AND in a RegExp string, and
@@ -684,8 +888,8 @@ const findingWord = (strict) => (strict ? 'unresolved Devin thread(s) (strict: a
  * -> {action:'wait'|'pass'|'fail', nudge?:true, unreviewed?:bool, reason, findings?}
  * `unreviewed` = pass WITHOUT Devin's verdict (the job adds the devin-unreviewed label).
  */
-export function decide({ devin, bbReview, threads, elapsedMin = 0, nudged = false, nudgeMin = NUDGE_MIN_DEFAULT, maxMin = MAX_MIN_DEFAULT, strict = false, fastPass = false }) {
-  let dv = devinVerdict({ devin, threads, elapsedMin, nudged, nudgeMin, maxMin, strict });
+export function decide({ devin, bbReview, threads, elapsedMin = 0, nudged = false, nudgeMin = NUDGE_MIN_DEFAULT, maxMin = MAX_MIN_DEFAULT, strict = false, fastPass = false, implementer = '', headRef = '', nowMs = NaN, maxAgeH = EVIDENCE_MAX_AGE_H_DEFAULT }) {
+  let dv = devinVerdict({ devin, threads, elapsedMin, nudged, nudgeMin, maxMin, strict, implementer, headRef, nowMs, maxAgeH });
   // Fast path: skip the WAIT, never a finding, never the label - only a verdict that would wait is replaced, and
   // that pass is unreviewed (Devin has not vouched for this head), exactly as a timeout would be. It needs the
   // threads READ and clean: Devin can post findings while its status is still pending, so an unread or blocking
@@ -714,7 +918,7 @@ export function decide({ devin, bbReview, threads, elapsedMin = 0, nudged = fals
 }
 
 /** The Devin side of the verdict alone (no bb-review). Pure. */
-function devinVerdict({ devin, threads, elapsedMin, nudged, nudgeMin, maxMin, strict = false }) {
+function devinVerdict({ devin, threads, elapsedMin, nudged, nudgeMin, maxMin, strict = false, implementer = '', headRef = '', nowMs = NaN, maxAgeH = EVIDENCE_MAX_AGE_H_DEFAULT }) {
   if (!devin) {
     if (elapsedMin >= maxMin) return { action: 'pass', unreviewed: true, reason: `No "${STATUS_CONTEXT}" status appeared within ${maxMin} min - passing WITHOUT a Devin review` };
     return { action: 'wait', nudge: elapsedMin >= nudgeMin && !nudged, reason: `no "${STATUS_CONTEXT}" status on this head yet (${elapsedMin.toFixed(1)} min)` };
@@ -761,6 +965,18 @@ function devinVerdict({ devin, threads, elapsedMin, nudged, nudgeMin, maxMin, st
   }
   const findings = blockingFindings(threads, { strict });
   if (findings.length) return { action: 'fail', findings, reason: `${findings.length} ${findingWord(strict)} on this head` };
+  // v1.12.0 (W3): the next two checks judge only a FINISHED review whose findings are already read - they come after the
+  // pending/unverifiable waits (a running Devin must keep the gate waiting) and after the red-finding fail (never hide one).
+  // v1.12.0 (W3) independence: the provider that wrote the PR cannot be the independent reviewer of it. Never-stuck,
+  // like a forged status: an unreviewed pass plus the label. 'unknown' authors (agent/ branches) are not rejected.
+  if (providerOf({ login: implementer, headRef }) === 'devin') {
+    return { action: 'pass', unreviewed: true, reason: `the "${STATUS_CONTEXT}" status on this head ("${desc || state}") comes from the same provider that wrote this PR (Devin) - not independent evidence; passing WITHOUT an independent review` };
+  }
+  // v1.12.0 (W3) expiry: a status older than the age limit is stale evidence (same never-stuck outcome).
+  const ageH = evidenceAgeH(devin.created_at, nowMs);
+  if (ageH !== null && ageH > maxAgeH) {
+    return { action: 'pass', unreviewed: true, reason: `the "${STATUS_CONTEXT}" status on this head is ${ageH.toFixed(1)} h old (limit ${maxAgeH} h) - expired evidence; passing WITHOUT a current review` };
+  }
   return { action: 'pass', unreviewed: false, reason: `Devin completed (${desc}) with no ${strict ? 'unresolved Devin threads (strict)' : 'unresolved red findings'}` };
 }
 
@@ -801,7 +1017,7 @@ export function summaryMarkdown({ sha, result, elapsedMin, warnings = [], proven
  * Pure.
  */
 export function buildProvenance({ pr, sha, devin, bbReview, threads, findings, reviewCommit, bbContested } = {}) {
-  const st = (s) => (s ? { state: s.state || '', description: s.description || '', creator: s.creator, id: s.id ?? null, at: s.created_at || '', url: s.target_url || '' } : null);
+  const st = (s, kind) => (s ? { state: s.state || '', description: s.description || '', creator: s.creator, id: s.id ?? null, at: s.created_at || '', url: s.target_url || '', ...reviewerIdentity(kind, s.creator) } : null);
   const foundOn = [...new Set((findings || []).map((f) => f && f.sha).filter(Boolean))];
   // Per-review identity (Devin, BB_Tools #351): the pull_request_review each blocking thread belongs to,
   // id paired with its url so the line can never imply one url covers every review.
@@ -828,8 +1044,9 @@ export function buildProvenance({ pr, sha, devin, bbReview, threads, findings, r
   return {
     head: sha || '',
     implementer: (pr && pr.author) || '',
-    devin: st(devin),
-    bbReview: st(bbReview),
+    implementerProvider: providerOf({ login: pr && pr.author, headRef: pr && pr.headRef }),
+    devin: st(devin, 'devin'),
+    bbReview: st(bbReview, 'bb-review'),
     threads: Array.isArray(threads) ? threads.length : null,
     blocking: (findings || []).length,
     ...(foundOn.length ? { foundOn } : {}),
@@ -841,10 +1058,10 @@ export function buildProvenance({ pr, sha, devin, bbReview, threads, findings, r
 
 /** The one-line form of buildProvenance for the job log and the step summary. Pure. */
 export function provenanceLine(p = {}) {
-  const st = (s, tag = '') => (s ? `${clean(s.state) || '-'}${s.description ? ` "${clean(s.description)}"` : ''} by ${clean(s.creator) || '?'}${s.id != null ? ` id=${clean(s.id)}` : ''}${s.at ? ` at ${clean(s.at)}` : ''}${s.url ? ` (${cleanUrl(s.url)})` : ''}${tag}` : 'none');
+  const st = (s, tag = '') => (s ? `${clean(s.state) || '-'}${s.description ? ` "${clean(s.description)}"` : ''} by ${clean(s.creator) || '?'}${s.id != null ? ` id=${clean(s.id)}` : ''}${s.at ? ` at ${clean(s.at)}` : ''}${s.url ? ` (${cleanUrl(s.url)})` : ''} [${clean(s.provider) || UNRECORDED}/${clean(s.model) || UNRECORDED}/${clean(s.effort) || UNRECORDED}]${tag}` : 'none');
   // bb-review's creator is RECORDED, never verified (a forged bb-review can only block, never pass) - the
   // line says so, or "by github-actions[bot]" would read as proof a review ran.
-  return `provenance: head ${clean(p.head).slice(0, 8) || '?'} implementer @${clean(p.implementer) || '?'} | devin: ${st(p.devin)} | bb-review: ${st(p.bbReview, ' (creator unverified)')}${p.bbContested ? ' [contested]' : ''} | threads ${p.threads ?? '?'}, blocking ${p.blocking ?? 0}${p.foundOn ? `, found on ${p.foundOn.map((s) => clean(s).slice(0, 8)).join(',')}` : ''}${p.reviews ? `, in reviews ${p.reviews.map((r) => `${clean(r.id) || '?'}${r.url ? `(${cleanUrl(r.url)})` : ''}`).join(', ')}` : ''}${p.reviewCommit ? ` | triggering review was on ${clean(p.reviewCommit).slice(0, 8)}` : ''}`;
+  return `provenance: head ${clean(p.head).slice(0, 8) || '?'} implementer @${clean(p.implementer) || '?'} (${clean(p.implementerProvider) || '?'}) | devin: ${st(p.devin)} | bb-review: ${st(p.bbReview, ' (creator unverified)')}${p.bbContested ? ' [contested]' : ''} | threads ${p.threads ?? '?'}, blocking ${p.blocking ?? 0}${p.foundOn ? `, found on ${p.foundOn.map((s) => clean(s).slice(0, 8)).join(',')}` : ''}${p.reviews ? `, in reviews ${p.reviews.map((r) => `${clean(r.id) || '?'}${r.url ? `(${cleanUrl(r.url)})` : ''}`).join(', ')}` : ''}${p.reviewCommit ? ` | triggering review was on ${clean(p.reviewCommit).slice(0, 8)}` : ''}`;
 }
 
 /** Retry an API call API_RETRIES times (after the first try); the last error is thrown. */
@@ -880,6 +1097,11 @@ export async function runGate(io, cfg = {}) {
   const pastWindow = () => (io.now() - t0) / 60000 > maxMin + 1;
   const retry = (fn) => withRetries(fn, { sleep: io.sleep, backoffMs: cfg.backoffMs ?? 2000, shouldStop: pastWindow });
   const warnings = [];
+  const wallNow = () => (cfg.wallNow ? cfg.wallNow() : Date.now());
+  const maxAgeH = cfg.evidenceMaxAgeH ?? EVIDENCE_MAX_AGE_H_DEFAULT;
+  // v1.12.0: the PR facts the independence / expiry rules judge on, added to every decide() call.
+  const ctxFor = (p) => ({ implementer: (p && p.author) || '', headRef: (p && p.headRef) || '', nowMs: wallNow(), maxAgeH });
+  let scannedSha = null; let scanClear = false; let secretHit = null; const scanWarnedSet = new Set(); let scanGap = null; let scanSkipped = 0; let scanMerged = 0; let scanHold = false; let holdWarned = false; let scanAllowed = 0; let draftExit = false; let failSeen = null; let cmpHeld = 0;
   const seenWarn = new Set();
   const warnOnce = (m) => { if (!seenWarn.has(m)) { seenWarn.add(m); warnings.push(m); } };
   let sha = '?';
@@ -928,14 +1150,14 @@ export async function runGate(io, cfg = {}) {
       lastPr = pr; // set before the held/draft exits: the implementer is recorded on every verdict
       lastDevin = null; lastBb = null; lastThreads = undefined; lastBbContested = false; // reset per poll
       if (isHeld(pr)) { result = { action: 'fail', unreviewed: null, reason: HELD_REASON }; break; }
-      if (pr.draft) { result = { action: 'pass', unreviewed: false, reason: 'draft PR - not gated' }; break; }
+      if (pr.draft) { draftExit = true; result = { action: 'pass', unreviewed: false, reason: 'draft PR - not gated' }; break; } // not gated, so the secret-scan checks after the loop do not apply
       if (filesSha !== sha || (files === null && io.getFiles)) {
         // Read once per head, and again on every poll while it is unreadable (a transient 502 must not pin an ordinary
         // PR to strict for the whole run; Devin, #237). Unreadable (or an io without getFiles) leaves files null:
         // strict, never the fast path.
         filesSha = sha;
         files = null;
-        if (io.getFiles) { try { files = await retry(() => io.getFiles(pr.changedFiles)); } catch (e) { warnings.push(`could not read the changed files (${errLine(e)}); judging STRICTLY (any open Devin thread blocks)`); } }
+        if (io.getFiles) { try { files = await retry(() => io.getFiles(pr.changedFiles)); } catch (e) { warnings.push(`could not read the changed files (${errStatus(e)}; error text withheld, it can echo a patch); judging STRICTLY (any open Devin thread blocks)`); } }
       }
       const strict = isStrict(files);
       let fastPass = false;
@@ -1225,7 +1447,7 @@ export async function runGate(io, cfg = {}) {
         if (devinEvidence && REAL_REVIEW_RE.test(devinEvidence.description || '') && !/skip/i.test(devinEvidence.description || '')) {
           try { bbThreads = await retry(() => io.getThreads()); } catch { bbThreads = null; }
         }
-        d = decide({ devin: devinEvidence, bbReview: bbEvidence, threads: bbThreads, elapsedMin, nudgeMin, maxMin, strict, fastPass });
+        d = decide({ devin: devinEvidence, bbReview: bbEvidence, threads: bbThreads, elapsedMin, nudgeMin, maxMin, strict, fastPass, ...ctxFor(pr) });
         lastThreads = bbThreads;
       } else {
         let nudged = true;
@@ -1241,12 +1463,12 @@ export async function runGate(io, cfg = {}) {
           // already posted, so both read what Devin has posted so far (decide refuses to fast-pass unread threads).
           try { threads = await retry(() => io.getThreads()); } catch (e) { threads = null; warnings.push(`could not read Devin review threads (${errLine(e)})${fastPass ? '; not fast-passing' : ''}`); }
         }
-        d = decide({ devin: devinEvidence, bbReview: bbEvidence, threads, elapsedMin, nudged, nudgeMin, maxMin, strict, fastPass });
+        d = decide({ devin: devinEvidence, bbReview: bbEvidence, threads, elapsedMin, nudged, nudgeMin, maxMin, strict, fastPass, ...ctxFor(pr) });
         if (d.action === 'pass' && d.unreviewed && threads === undefined) {
           // About to pass WITHOUT Devin's verdict and the threads were never read: read them once now, so a red thread
           // Devin already posted fails the gate instead of a sweep re-run that would pass again (Devin, #237).
           try { threads = await retry(() => io.getThreads()); } catch (e) { threads = null; warnings.push(`could not read Devin review threads (${errLine(e)})`); }
-          d = decide({ devin: devinEvidence, bbReview: bbEvidence, threads, elapsedMin, nudged, nudgeMin, maxMin, strict, fastPass });
+          d = decide({ devin: devinEvidence, bbReview: bbEvidence, threads, elapsedMin, nudged, nudgeMin, maxMin, strict, fastPass, ...ctxFor(pr) });
         }
         lastThreads = threads;
       }
@@ -1297,20 +1519,62 @@ export async function runGate(io, cfg = {}) {
       // fails closed (deadlineBlind -> flooding) unless a saved failure is judged, so a non-fail verdict with
       // listUnreadable set has no reachable path; the line stays as belt and braces for any future verdict shape.
       if (listUnreadable && d.action !== 'fail') d = { ...d, unreviewed: true, reason: `${d.reason || 'passed'} - plus: the status-list read failed at the deadline, so the bb-review slot had no last look` };
+      // v1.12.0 (W3): scan the ADDED lines of EVERY head for secret shapes before any verdict leaves this loop - not only
+      // before the gate's own review request. A hit fails the gate (see after the loop) and withholds the request; a diff
+      // that cannot be read is retried each poll (warned once) and, if still unread when the window ends, FAILS the gate (see after the loop); a file GitHub gave no patch
+      // for (too large or binary) is named in a warning and skipped, the readable files are still scanned. An io without getPatches
+      // predates the scan. Values are never printed.
+      if (io.getPatches && scannedSha !== sha) {
+        scanClear = false; scanHold = false; cmpHeld = 0; // round 14 (bb-review P3): the held-hit count belongs to ONE read of ONE head
+        try {
+          const patches = await retry(() => io.getPatches(pr.changedFiles, sha, pr.baseSha, elapsedMin >= maxMin / 2));
+          const hits = scanSecrets(patches);
+          const cmpWait = elapsedMin < maxMin && hits.length > 0 && hits.every((h) => h.cmp); // round 11 (bb-review P2): a hit seen ONLY in compare-only rows may be a lagging PR list or a moved base: re-read next poll, fail only at the deadline
+          const after = await io.getPr(); // the head must not have moved while the diff was read, or the diff may belong to another commit
+          if (after && after.sha && after.sha !== sha) throw new Error(`head moved from ${sha} to ${after.sha} while the diff was read`);
+          if (!Array.isArray(patches)) throw new Error('diff unreadable'); // a bad read is retried, never recorded as scanned
+          // v1.12.3: the hit is recorded FIRST, so nothing below (scanAllowedMarks, clean) can throw and leave a scanned-but-hit-less head
+          if (hits.length && !cmpWait) secretHit = { sha, n: hits.length, kinds: [...new Set(hits.map((h) => h.kind))].join(', '), where: `${clean(hits[0].path)}:${hits[0].line}${hits[0].cmp ? ' - this line is in the head-pinned compare but NOT in the PR files list (a lagging list or a moved base): rebase onto the current main and push so the two lists agree, then the gate re-reads' : ''}${hits[0].history ? ' in an EARLIER commit of this PR - removing the line is not enough: rewrite the branch history or open a fresh branch, and rotate the secret' : ''}${!hits[0].history && hits.some((h) => h.history) ? ` (also ${hits.filter((h) => h.history).length} hit(s) in an EARLIER commit of this PR, first at ${clean(hits.find((h) => h.history).path)}:${hits.find((h) => h.history).line}: removing a line is not enough there, rewrite the branch history or open a fresh branch, and rotate the secret)` : ''}` };
+          const gaps = patches.filter((f) => f && f.gap).map((f) => clean(f.path)); // v1.12.5: the commit history was not read completely: the gate fails after the loop
+          scanGap = gaps.length ? { sha, why: gaps.slice(0, 3).join('; ') } : null; // a complete read clears an earlier gap
+          const gapRetry = elapsedMin < maxMin && patches.some((f) => f && f.gap && f.readError); // a transient read error: scan this head again next poll while time remains
+          scanMerged = patches.reduce((n, f) => n + (f && f.mergeSkipped ? Number(f.mergeSkipped) || 0 : 0), 0);
+          const merges = scanMerged;
+          if (merges > 0) warnOnce(`${merges} merge commit(s) in this PR were not read by the per-commit secret scan (a merge commit's diff is the base branch's own changes); a secret added while resolving a merge conflict and removed later would not be seen`);
+          const big = patches.filter((f) => f && f.unscanned && !f.gap).map((f) => clean(f.path));
+          scanSkipped = big.length; scanHold = patches.some((f) => f && f.unscanned && !f.notice && holdsRequest(f.path));
+          const marks = scanAllowedMarks(patches); scanAllowed = marks.length;
+          if (marks.length) warnOnce(`${marks.length} secret-shaped line(s) carry the ${SECRET_ALLOW_MARK} mark (${marks.slice(0, 5).map((m) => `${clean(m.path)}:${m.line}${m.history ? ' [earlier commit]' : ''}`).join(', ')}) - the pass is unreviewed so a person confirms each is a fake`);
+          const byPath = secretScanSkippedPaths(patches).map(clean);
+          if (byPath.length) warnOnce(`secret scan read only the high-confidence kinds and database URLs with passwords in ${byPath.length} test/fixture/example file(s): ${byPath.slice(0, 5).join(', ')}`);
+          if (big.length) warnOnce(`secret scan skipped ${big.length} file(s) GitHub gave no diff for (too large or binary): ${big.slice(0, 5).join(', ')}`);
+          if (cmpWait) { cmpHeld = hits.length;
+            warnOnce(`${hits.length} secret-shaped line(s) appear only in the head-pinned compare, not in the PR files list (a lagging list or a moved base): re-reading next poll; the gate fails at the deadline if they persist`);
+          } else if (hits.length) {
+            warnings.push(`the diff holds ${hits.length} secret-shaped added line(s) (${secretHit.kinds}; e.g. ${secretHit.where}) - remove them, and on a branch with more than one commit a fix commit is NOT enough (the earlier commit is read too): rewrite the branch history so the line is gone; the review request is withheld and the gate fails; values are never printed; if one is real, ROTATE it - Devin's GitHub app may already have read the diff`);
+          } else scanClear = true;
+          if (!gapRetry && !cmpWait) scannedSha = sha; // set LAST: only a fully processed read counts as scanned; a transient failure above is retried on the next poll
+        } catch (e) { const wk = sha + '|' + errStatus(e); if (!scanWarnedSet.has(wk)) { scanWarnedSet.add(wk); warnings.push(`could not read the diff to scan it for secrets (${errStatus(e)}; error text withheld, it can echo a credential); retrying each poll`); } }
+      }
       if (d.nudge) {
         // Marker first, then the command alone on line 1 so Devin's trigger reads it. A failed post can have
         // landed (ambiguous timeout), so every RETRY re-lists comments and skips when this head's marker exists.
         let first = true;
         try {
+          if (io.getPatches && scanClear && scanHold && !holdWarned) { holdWarned = true; warnings.push('the /devin review request is withheld: a file GitHub gave no diff for was not scanned for secrets (see the skipped-files warning)'); }
+          if (io.getPatches && (!scanClear || scanHold)) throw new Error('secret scan did not clear this head');
           await retry(async () => {
             if (!first && hasNudge(await io.listComments(), sha)) return;
             first = false;
             await io.postComment(`/devin review\n\n${nudgeMarker(sha)}\n_devin-gate: no Devin Review status after ${nudgeMin} min; asking once._`);
           });
           io.log(`nudged Devin for ${sha.slice(0, 8)}`);
-        } catch (e) { warnings.push(`could not post the Devin nudge (${errLine(e)})`); }
+        } catch (e) { if (!/^secret scan did not clear/.test(String(e && e.message))) warnings.push(`could not post the Devin nudge (${errLine(e)})`); }
       }
-      if (d.action !== 'wait') { result = d; break; }
+      if (secretHit && secretHit.sha === sha && d.action !== 'fail') d = { action: 'fail', unreviewed: true, reason: `the diff holds ${secretHit.n} secret-shaped added line(s) (${secretHit.kinds}; e.g. ${secretHit.where}) - remove them, and on a branch with more than one commit a fix commit is NOT enough (the earlier commit is read too): rewrite the branch history so the line is gone (values are never printed); the review request was withheld; if one is a real credential, ROTATE it - the Devin GitHub app may already have read the diff` }; // v1.12.4: a hit is final for this head - no waiting out the window
+      // a fail seen while the diff was still unread is sticky for this head: a later weaker poll (a flaky thread read) must not replace a red finding with a pass
+      if (d.action === 'fail') failSeen = { sha, d }; else if (d.action === 'pass' && failSeen && failSeen.sha === sha && scannedSha !== sha) d = failSeen.d; // v1.12.2: sticky only while the diff is still unread - once it is scanned, the latest poll is judged (a resolved finding must not leave the gate red)
+      if (d.action === 'fail' || (d.action !== 'wait' && !(io.getPatches && scannedSha !== sha && elapsedMin < maxMin))) { result = d; break; } // an unread diff keeps the loop polling until the window ends
       io.log(d.reason);
     } catch (e) {
       // An outage verdict rests on NO evidence: the record must not show a status read earlier as if it were the
@@ -1322,6 +1586,22 @@ export async function runGate(io, cfg = {}) {
       if (outage) { result = outage; break; }
     }
     await io.sleep(pollMs);
+  }
+  // v1.12.0 (W3): a secret-shaped line in the ADDED diff never passes green - the request was withheld, so nothing reviewed it.
+  // (An unreadable diff is not a hit, but it fails the gate below: a check that could not run must not pass.)
+  if (secretHit && secretHit.sha === sha && result.action !== 'fail') {
+    result = { action: 'fail', unreviewed: true, reason: `the diff holds ${secretHit.n} secret-shaped added line(s) (${secretHit.kinds}; e.g. ${secretHit.where}) - remove them, and on a branch with more than one commit a fix commit is NOT enough (the earlier commit is read too): rewrite the branch history so the line is gone (values are never printed); the review request was withheld` };
+  }
+  // v1.12.5: a commit history the scan could not read COMPLETELY never passes (unreadable commit list or commit, or more than 50 commits): a check that could not run must not pass.
+  if (io.getPatches && !draftExit && result.action === 'pass' && scanGap && scanGap.sha === sha && !(secretHit && secretHit.sha === sha)) {
+    result = { action: 'fail', unreviewed: true, reason: `the secret scan could not read the whole commit history (${scanGap.why}) - failing, a check that could not run must not pass; ${/3000 or more files/.test(scanGap.why) && /oldest|250 commits/.test(scanGap.why) ? 'two gaps: split any commit that changes 3000 or more files AND squash the branch into 50 commits or fewer, or open a fresh branch' : /3000 or more files/.test(scanGap.why) ? 'rewrite the branch so no single commit changes 3000 or more files (split it), or open a fresh branch' : 'squash the branch into 50 commits or fewer (a plain rebase keeps every commit), or open a fresh branch; the sweep re-runs this gate after a read error, but with more than 50 commits the only fix is to squash'}` };
+  }
+  // A pass whose scan never completed (diff unreadable on every poll, or a file GitHub gave no patch for) is an unreviewed pass.
+  if (io.getPatches && !draftExit && result.action === 'pass' && !(secretHit && secretHit.sha === sha) && !scanClear && scannedSha !== sha) {
+    result = { action: 'fail', unreviewed: null, reason: cmpHeld ? 'the diff holds ' + cmpHeld + ' secret-shaped line(s) that appear only in the head-pinned compare, not in the PR files list (a lagging list or a moved base): rebase onto the current main and push so the two lists agree, then the gate re-reads; if one is a real credential, ROTATE it and rewrite the branch history (the Devin GitHub app may already have read the diff); no /devin review request was posted' : 'the secret scan could not read the diff before the window ended - failing, a check that could not run must not pass; the sweep re-runs this gate' };
+  }
+  if (io.getPatches && !draftExit && result.action === 'pass' && !(secretHit && secretHit.sha === sha) && (!scanClear || scanSkipped > 0 || scanAllowed > 0 || scanMerged > 0)) {
+    result = { ...result, unreviewed: true, reason: (result.reason ? result.reason + '; ' : '') + (!scanClear ? 'secret scan could not read the diff' : scanSkipped > 0 ? `secret scan skipped ${scanSkipped} file(s) GitHub gave no diff for` : scanAllowed > 0 ? `${scanAllowed} secret-shaped line(s) carry the ${SECRET_ALLOW_MARK} mark` : `${scanMerged} merge commit(s) not read by the secret scan`) + ' - passing as unreviewed' };
   }
   if (result.action === 'pass') {
     // A hold Sam adds while this run was deciding must not leave a green check behind it: re-read once just before passing.
@@ -1374,14 +1654,14 @@ export function githubIo(env = process.env, fetchFn = fetch, { requestTimeoutMs 
       signal: ac.signal,
     });
     if (okCodes.includes(r.status)) return null;
-    if (!r.ok) throw new Error(`${method} ${path} -> ${r.status} ${(await r.text()).slice(0, 200)}`);
+    if (!r.ok) throw new Error(`${method} ${path} -> ${r.status}`); // v1.12.2: the response body is never read into the error - GitHub can echo a patch or credential, and apiOutage / warnings print this message
     return r.status === 204 ? null : await r.json();
     } finally { clearTimeout(timer); }
   };
   const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
   return {
     api,
-    getPr: async () => { const p = await api('GET', `/repos/${repo}/pulls/${pr}`); return { sha: p.head.sha, draft: !!p.draft, headRef: p.head.ref, author: p.user?.login || '', changedFiles: p.changed_files, title: p.title || '', labels: (p.labels || []).map((l) => l.name) }; },
+    getPr: async () => { const p = await api('GET', `/repos/${repo}/pulls/${pr}`); return { baseSha: p.base?.sha || '', sha: p.head.sha, draft: !!p.draft, headRef: p.head.ref, author: p.user?.login || '', changedFiles: p.changed_files, title: p.title || '', labels: (p.labels || []).map((l) => l.name) }; },
     // Changed paths (a rename contributes both names). A partial list could hide a canonical file, so the page cap
     // and a count that disagrees with the PR's changed_files both THROW (the caller then judges strictly).
     getFiles: async (expectedCount) => {
@@ -1397,6 +1677,107 @@ export function githubIo(env = process.env, fetchFn = fetch, { requestTimeoutMs 
         }
       }
       throw new Error(`pull files incomplete: more than ${FILES_PAGE_LIMIT * 100} files`);
+    },
+    // v1.12.0: the per-file unified diffs for the secret scan. Same paging and completeness rules as getFiles: a partial read
+    // THROWS (the caller retries next poll). A single file with no patch (too large) is flagged `unscanned`, never read as clean.
+    // With (sha, baseSha) the diff is read from the compare API pinned to that commit, so it cannot be a lagging copy of another head.
+    // v1.12.4: the NET diff plus the diff of every non-merge commit of the PR (every kind, judged like the net diff, see scanSecrets), so a secret added in one commit and removed in a later one is still read.
+    // Per commit: every page of its files (a patch-less file is flagged unscanned like the net read). A commit's read is cached by sha (commits are immutable), so a retry re-reads only what failed.
+    // A failed read THROWS (retried next poll) until the second half of the window; then the history is flagged unscanned (unreviewed pass, request withheld). Over 50 commits: the oldest are named in a NOTICE row (unreviewed pass, request NOT held); a list of 250 (GitHub's cap) holds.
+    getPatches: async function (expectedCount, sha, baseSha, fallbackOk) {
+      const net = await this.getNetPatches(expectedCount, sha, baseSha, fallbackOk);
+      if (!sha || !Array.isArray(net)) return net;
+      const cc = (this._commitCache ||= new Map());
+      const gap = (why, readError) => ({ path: `(per-commit history: ${why})`, patch: '', unscanned: true, history: true, gap: true, readError: !!readError }); // v1.12.5: gap = the history was not read completely - the gate FAILS on it (a file without a patch is not a gap)
+      let commits;
+      try { commits = []; for (let pg = 1; pg <= 3; pg++) { const one = await api('GET', `/repos/${repo}/pulls/${pr}/commits?per_page=100&page=${pg}`); if (!Array.isArray(one)) throw new Error('pull commits unreadable'); commits.push(...one); if (one.length < 100) break; } if (commits.length < 250 && (!commits.length || !commits.some((x) => x && x.sha === sha))) throw new Error('pull commits list does not end at the head (lagging copy; retried next poll)'); } catch (e) { if (!fallbackOk) throw e; return [...net, gap('could not be read', true)]; }
+      const keyOf = (f) => (f.gap ? 'G' : f.unscanned ? 'U' : 'S') + LF + f.path + LF + f.patch; const seen = new Set(net.filter((f) => !f.cmpOnly).map(keyOf)); const extra = [];
+      const isMerge = (c) => Array.isArray(c?.parents) && c.parents.length > 1;
+      const real = commits.filter((c) => !isMerge(c)); // v1.12.5 (bb-review P3): merge commits are never read, so they count toward neither the 50-commit limit nor the newest-50 slice
+      const mergesSkipped = commits.length - real.length;
+      for (const c of commits.length === 1 ? [] : real.slice(-HISTORY_MAX_COMMITS)) { // one commit: the net diff IS that commit, so no extra reads (most PRs)
+        if (!c || !c.sha) continue;
+        let rows = cc.get(c.sha);
+        if (!rows) {
+          try {
+            rows = [];
+            for (let page = 1; page <= 30; page++) {
+              const one = await api('GET', `/repos/${repo}/commits/${c.sha}?per_page=100&page=${page}`);
+              if (!one || !Array.isArray(one.files)) throw new Error('commit files unreadable');
+              for (const f of one.files) { if (typeof f.patch === 'string' && f.patch) rows.push({ path: f.filename, patch: f.patch, unscanned: false, history: true }); else if (fileUnscanned(f)) rows.push({ path: f.filename, patch: '', unscanned: true, history: true }); }
+              if (one.files.length < 100) break;
+              if (page === 30) rows.push(gap('a commit lists 3000 or more files; GitHub shows no more, so the rest of it was not read')); // round 15 (Devin SEC red): a secret added in the unread files and removed later would escape, so this FAILS like the 50-commit gap; bounded, not permanent (round 8 P2): split the commit (or open a fresh branch) and the gate re-reads
+            }
+            cc.set(c.sha, rows);
+          } catch (e) { if (!fallbackOk) throw e; extra.push(gap('a commit could not be read', true)); continue; }
+        }
+        for (const r of rows) { const key = keyOf(r); if (seen.has(key)) continue; seen.add(key); extra.push(r); }
+      }
+      if (commits.length >= 250) extra.push(gap('GitHub lists at most 250 commits; the newest may be unread')); // v1.12.5: fails the gate, like every gap
+      else if (real.length > HISTORY_MAX_COMMITS) extra.push(gap('the ' + (real.length - HISTORY_MAX_COMMITS) + ' oldest of ' + real.length + ' commits were not read (newest ' + HISTORY_MAX_COMMITS + ' were); squash the branch into ' + HISTORY_MAX_COMMITS + ' commits or fewer (a plain rebase keeps every commit and does not help)')); // bounds the API calls per run (about 50 + pages); v1.12.5: no longer a notice that passes
+      if (mergesSkipped > 0) extra.push({ path: `(${mergesSkipped} merge commit(s) not read)`, patch: '', unscanned: false, history: true, mergeSkipped: mergesSkipped });
+      return [...net, ...extra];
+    },
+    getNetPatches: async (expectedCount, sha, baseSha, fallbackOk) => {
+      const all = [];
+      let n = 0;
+      let cmpFallback = []; // v1.12.5 (bb-review P2): when the compare and the PR list disagree late in the window, the compare (pinned to the head) is still scanned, together with the PR list
+      // The compare API lists changed files on ONE response, up to 300 (it pages commits, not files): use it only for a PR that fits, else the PR files list.
+      if (sha && baseSha && typeof expectedCount === 'number' && expectedCount > 0 && expectedCount <= 300) {
+        let cmp;
+        try { cmp = await api('GET', `/repos/${repo}/compare/${baseSha}...${sha}`); } catch (e) { if (!fallbackOk) throw e; cmp = null; } // a transient failure THROWS (retried next poll) until the second half of the window, then falls back
+        // a compare that comes back short (or fails late in the window) falls through to the PR files list, which marks itself unpinned (unreviewed pass) - never a permanent fail
+        if (cmp && Array.isArray(cmp.files) && cmp.files.length !== expectedCount && !fallbackOk) throw new Error(`compare lists ${cmp.files.length} files, the PR says ${expectedCount} (retried next poll)`);
+        // v1.12.2 (Devin SEC_): an equal COUNT does not prove the same FILES - when the base has moved, the compare can list other paths. Require the compare's names to equal the PR's own file list (the merge-base diff) before trusting it.
+        // round 6 (bb-review P2): whenever the compare has files and the code falls through to the PR list (count differs late, PR-files read failed late, or the lists disagree), the head-pinned compare is scanned too
+        if (cmp && Array.isArray(cmp.files)) cmpFallback = cmp.files.map((f) => ({ path: f.filename, patch: typeof f.patch === 'string' ? f.patch : '', unscanned: fileUnscanned(f) }));
+        if (cmp && Array.isArray(cmp.files) && cmp.files.length === expectedCount) {
+          const want = new Set(); let prFiles;
+          try {
+            prFiles = [];
+            for (let page = 1; page <= 4; page++) { const b = await api('GET', `/repos/${repo}/pulls/${pr}/files?per_page=100&page=${page}`); if (!Array.isArray(b)) throw new Error('pull files unreadable'); prFiles.push(...b); if (b.length < 100) break; }
+            if (prFiles.length !== expectedCount) throw new Error(`pull files list ${prFiles.length} files, the PR says ${expectedCount} (a 300-file compare may hide more)`); // v1.12.2 (Devin SEC_): the compare caps at 300, so a 4th page proves nothing extra exists
+          } catch (e) { if (!fallbackOk) throw e; prFiles = null; }
+          if (prFiles) { for (const f of prFiles) want.add(f.filename); const got = new Set(cmp.files.map((f) => f.filename)); let same = want.size === got.size && [...want].every((x) => got.has(x)); if (!same && !fallbackOk) throw new Error('compare lists different files than the PR (retried next poll)');
+            // v1.12.5 (Devin SEC_): the same FILE NAMES do not prove the same CHANGES - when the base moved, the compare can show other added lines for the same path (a credential in the PR vanishes from the scan). Each file's added lines must equal the PR's merge-base diff.
+            // a file the PR list gives NO patch for (too large) has no merge-base lines to compare, so it is skipped here (its compare lines are scanned as usual)
+            if (same) { const sig = (patch) => (typeof patch === 'string' ? patch.split('\n').filter((l) => l.startsWith('+')).join('\n') : ''); const byName = new Map(prFiles.map((f) => [f.filename, sig(f.patch)])); const hasPatch = new Set(prFiles.filter((f) => typeof f.patch === 'string').map((f) => f.filename)); same = cmp.files.every((f) => !hasPatch.has(f.filename) || byName.get(f.filename) === sig(f.patch)); if (!same && !fallbackOk) throw new Error('compare shows other added lines than the PR (retried next poll)'); } if (same) return cmp.files.map((f) => ({ path: f.filename, patch: typeof f.patch === 'string' ? f.patch : '', unscanned: fileUnscanned(f) })); cmpFallback = cmp.files.map((f) => ({ path: f.filename, patch: typeof f.patch === 'string' ? f.patch : '', unscanned: fileUnscanned(f) })); }
+        }
+      }
+      // round 10: every compare row that the PR files list does not show identically is scanned (a force-pushed head the list still lags must not hide a credential); it is tagged cmpOnly so a hit names the cause and the fix (a moved base: rebase onto the current main, then the two lists agree)
+      // round 14 (bb-review P3): an added line the PR files list ALREADY shows for the same path is scanned there, so the compare copy turns it into a context line - one credential is one hit. Every other compare line stays added (never dropped by text from a source that is not scanned).
+      const addCmp = () => { for (const c of cmpFallback) {
+        if (all.some((r) => r.path === c.path && r.patch === c.patch && r.unscanned === c.unscanned)) continue;
+        let patch = c.patch;
+        const prev = all.filter((r) => r.path === c.path && !r.cmpOnly && !r.unscanned && typeof r.patch === 'string' && r.patch);
+        if (patch && prev.length) {
+          const have = new Set(); for (const r of prev) for (const l of r.patch.split('\n')) if (l.startsWith('+')) have.add(l);
+          patch = patch.split('\n').map((l) => (l.startsWith('+') && have.has(l) ? ' ' + l.slice(1) : l)).join('\n');
+          if (!patch.split('\n').some((l) => l.startsWith('+'))) continue;
+        }
+        all.push({ ...c, patch, cmpOnly: true });
+      } };
+      for (let page = 1; page <= FILES_PAGE_LIMIT; page++) {
+        const batch = await api('GET', `/repos/${repo}/pulls/${pr}/files?per_page=100&page=${page}`);
+        if (!Array.isArray(batch)) throw new Error('pull files unreadable');
+        for (const f of batch) {
+          n++;
+          // GitHub omits `patch` for binaries (changes 0) AND for oversized diffs (changes > 0): the latter was never scanned.
+          const row = { path: f.filename, patch: typeof f.patch === 'string' ? f.patch : '', unscanned: fileUnscanned(f) };
+          all.push(row);
+        }
+        if (batch.length < 100) {
+          if (typeof expectedCount === 'number' && expectedCount !== n) throw new Error(`pull files incomplete: read ${n} of ${expectedCount}`);
+          // the PR files list is not tied to a commit (over 300 files, or no base sha): it may lag the head, so the pass cannot count as reviewed
+          addCmp();
+          if (sha) all.push({ path: '(file list is not pinned to the head commit)', patch: '', unscanned: true }); // the gate always passes a sha
+          return all;
+        }
+      }
+      // GitHub lists at most FILES_PAGE_LIMIT * 100 files: scan what was read and flag the rest, so a huge PR is an unreviewed pass (never stuck), not a permanent fail
+      addCmp();
+      all.push({ path: `(files beyond the ${FILES_PAGE_LIMIT * 100} GitHub lists)`, patch: '', unscanned: true });
+      return all;
     },
     // The status LIST (newest first) - the combined endpoint omits `creator`, which the fast path must check.
     getCanonicalStatus: async (sha) => {
@@ -2071,7 +2452,7 @@ if (invokedDirectly) {
   } else if (env.GITHUB_EVENT_NAME === 'status') {
     await runStatusEvent(env);
   } else {
-    const cfg = { nudgeMin: envMinutes(env.DEVIN_GATE_NUDGE_MIN, NUDGE_MIN_DEFAULT), maxMin: envMinutes(env.DEVIN_GATE_MAX_MIN, MAX_MIN_DEFAULT), pollS: envMinutes(env.DEVIN_GATE_POLL_S, POLL_S_DEFAULT), reviewCommit: env.REVIEW_COMMIT || '' };
+    const cfg = { nudgeMin: envMinutes(env.DEVIN_GATE_NUDGE_MIN, NUDGE_MIN_DEFAULT), maxMin: envMinutes(env.DEVIN_GATE_MAX_MIN, MAX_MIN_DEFAULT), pollS: envMinutes(env.DEVIN_GATE_POLL_S, POLL_S_DEFAULT), reviewCommit: env.REVIEW_COMMIT || '', evidenceMaxAgeH: envMinutes(env.DEVIN_GATE_EVIDENCE_MAX_AGE_H, EVIDENCE_MAX_AGE_H_DEFAULT) };
     const io = githubIo(env, fetch, { deadlineMs: Date.now() + (cfg.maxMin + 1) * 60000 });
     const { result, sha, elapsedMin, warnings, provenance } = await runGate(io, cfg);
     const md = summaryMarkdown({ sha, result, elapsedMin, warnings, provenance });
