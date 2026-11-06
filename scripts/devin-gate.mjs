@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// BB_Tools | guardrails/devin-gate.mjs | v1.12.7 | 2026-11-05 | BB
+// BB_Tools | guardrails/devin-gate.mjs | v1.12.8 | 2026-11-06 | BB
+// v1.12.8 (v1.12.7 open P3s): (a) the allow-mark warning names the HEAD commit's own marked line as [head commit], not [earlier commit] (scanAllowedMarks adds head:true on those rows only); (b) markNorm: kept as is - text AFTER the mark (`// <mark>: note`) leaves the marked and unmarked copies unequal, which fails CLOSED (the earlier copy stays a hit), so it is not a hole; (c) a big file the compare gives no patch for: kept as is - it is flagged unscanned (U key) and never passes silently.
 // v1.12.7 (case table docs/DEVIN_GATE_V1_12_7_CASE_TABLE_2026-11-05.md, Devin SEC red on universal-auth #66): an allow mark on a net row clears an earlier-commit copy ONLY when the net diff is pinned to the head (netIsPinned) or the row came from the head-pinned compare; a stale PR files list after a force push is no source.
 // v1.12.6: (a) a single-commit PR whose net diff is the UNPINNED PR files list (over 300 files, or the compare failed late) is read per commit by sha too (a force-pushed head the list still lags no longer escapes); (b) a listed commit without a sha is a failing gap, not a skip. Rows K17-K18 in the case table.
 // v1.12.5 also: (7) the compare must show the SAME ADDED LINES as the PR merge-base diff, not just the same file names (C01/C02: early window retries, late window scans the PR list unpinned); (8) a key-body line joins a marked header only inside the same patch (C03). Rows C01-C04, M04 in the case table.
@@ -488,7 +489,7 @@ export function scanAllowedMarks(patches) {
   const out = [];
   const ls = [...addedLines(patches)];
   const netMarks = netMarkSet(ls, netIsPinned(patches)); // bb-review P3: an earlier commit's copy that a pushed mark clears is named too ([earlier commit])
-  for (let i = 0; i < ls.length; i++) { const l = ls[i]; if (!l.raw.includes(SECRET_ALLOW_MARK) && !(l.history && netMarks.has(l.path + LF + markNorm(l.raw)))) continue; const ks = allKinds(l.raw, l.skipPath, l.path); const body = ks.includes('private key block') && keyBodyFollows(ls, i); if (ks.length && ks.every((k) => markClears(k, l.markOk, body, l.raw))) out.push({ path: l.path, line: l.line, history: l.history === true }); }
+  for (let i = 0; i < ls.length; i++) { const l = ls[i]; if (!l.raw.includes(SECRET_ALLOW_MARK) && !(l.history && netMarks.has(l.path + LF + markNorm(l.raw)))) continue; const ks = allKinds(l.raw, l.skipPath, l.path); const body = ks.includes('private key block') && keyBodyFollows(ls, i); if (ks.length && ks.every((k) => markClears(k, l.markOk, body, l.raw))) out.push({ path: l.path, line: l.line, history: l.history === true, ...(l.head ? { head: true } : {}) }); }
   return out;
 }
 /**
@@ -1549,7 +1550,7 @@ export async function runGate(io, cfg = {}) {
           const big = patches.filter((f) => f && f.unscanned && !f.gap).map((f) => clean(f.path));
           scanSkipped = big.length; scanHold = patches.some((f) => f && f.unscanned && !f.notice && holdsRequest(f.path));
           const marks = scanAllowedMarks(patches); scanAllowed = marks.length;
-          if (marks.length) warnOnce(`${marks.length} secret-shaped line(s) carry the ${SECRET_ALLOW_MARK} mark (${marks.slice(0, 5).map((m) => `${clean(m.path)}:${m.line}${m.history ? ' [earlier commit]' : ''}`).join(', ')}) - the pass is unreviewed so a person confirms each is a fake`);
+          if (marks.length) warnOnce(`${marks.length} secret-shaped line(s) carry the ${SECRET_ALLOW_MARK} mark (${marks.slice(0, 5).map((m) => `${clean(m.path)}:${m.line}${m.head ? ' [head commit]' : m.history ? ' [earlier commit]' : ''}`).join(', ')}) - the pass is unreviewed so a person confirms each is a fake`);
           const byPath = secretScanSkippedPaths(patches).map(clean);
           if (byPath.length) warnOnce(`secret scan read only the high-confidence kinds and database URLs with passwords in ${byPath.length} test/fixture/example file(s): ${byPath.slice(0, 5).join(', ')}`);
           if (big.length) warnOnce(`secret scan skipped ${big.length} file(s) GitHub gave no diff for (too large or binary): ${big.slice(0, 5).join(', ')}`);
