@@ -1,4 +1,4 @@
-# @samjonaidi-ship-it/universal-auth | .github/workflows/ci.yml | v1.2.2 | 2026-10-06 | BB
+# @samjonaidi-ship-it/universal-auth | .github/workflows/ci.yml | v1.3.0 | 2026-10-26 | BB
 # Per-PR CI gate. Block 6 Day 22 expansion: + perf cold-start, + memory soak
 # (5 min CI cap), + security suite. Heavy suites (24h soak, full chaos,
 # Playwright 12-config matrix) live in chaos.yml + browser-matrix.yml nightly.
@@ -177,3 +177,45 @@ jobs:
         with:
           fail-on-severity: high
           comment-summary-in-pr: on-failure
+
+  gitleaks:
+    permissions: { contents: read }
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: { fetch-depth: 0, persist-credentials: false }
+      - name: gitleaks - new secrets in this run's commits only
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          for i in 1 2 3; do
+            rm -f /tmp/gitleaks.tgz
+            curl -fsSL --max-time 60 "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -o /tmp/gitleaks.tgz && break
+            echo "gitleaks download attempt $i failed - retrying"; sleep 5
+          done
+          [ -s /tmp/gitleaks.tgz ] || { echo "::error::gitleaks tarball download failed after 3 attempts (release outage or network)"; exit 1; }
+          echo "${GITLEAKS_SHA256}  /tmp/gitleaks.tgz" | sha256sum -c -
+          tar -xzf /tmp/gitleaks.tgz -C /tmp gitleaks
+          # Judge ONLY the commits this run introduces: the PR range on
+          # pull_request (the merge commit carries the base tip in its own
+          # history, so no extra fetch is needed), the pushed range on push.
+          # A full-history --all scan would go red on unrelated branches' refs
+          # and on pre-existing findings that are not this PR's to fix.
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            RANGE="${{ github.event.pull_request.base.sha }}..HEAD"
+          elif [ -n "${{ github.event.before }}" ] && git cat-file -e "${{ github.event.before }}" 2>/dev/null; then
+            RANGE="${{ github.event.before }}..HEAD"
+          else
+            # dispatch/schedule/other: scan what this branch adds over main.
+            # A shallow HEAD~N fallback would let a manual run flip a red scan green.
+            MB=$(git merge-base origin/main HEAD 2>/dev/null) || { echo "::error::no merge-base with origin/main - scan range undetermined"; exit 1; }
+            RANGE="$MB..HEAD"
+          fi
+          echo "gitleaks range: $RANGE"
+          N=$(git rev-list --count "$RANGE")
+          echo "gitleaks commits in range: $N"
+          [ "$N" = "0" ] && echo "::warning::gitleaks range $RANGE is empty - nothing was scanned"
+          # --diff-merges=first-parent: a merge commit's own diff (a secret typed into a conflict fix) is scanned too.
+          /tmp/gitleaks git . --log-opts="--diff-merges=first-parent $RANGE" --redact --exit-code 1 --ignore-gitleaks-allow

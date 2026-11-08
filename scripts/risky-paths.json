@@ -40,6 +40,7 @@
       "why": "the guardrails themselves — a PR that weakens the gate must not pass through the gate",
       "patterns": [
         "^\\.github/workflows/",
+        "^\\.gitleaks",
         "^\\.githooks/",
         "(^|/)branch-protection",
         "(^|/)sync-branch-protection\\.",
