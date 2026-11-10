@@ -1,7 +1,9 @@
-# BB_Tools | guardrails/pr-body-lint.yml | v1.3 | 2026-10-31 | BB
+# BB_Tools | guardrails/pr-body-lint.yml | v1.4 | 2026-11-08 | BB
 # CANONICAL. Every managed repo carries a byte-identical copy at
 # .github/workflows/pr-body-lint.yml; edit THIS file, then
 # `node sync-guardrails.mjs --pr` (BB_Tools). The checker is scripts/check-pr-body.mjs.
+#
+# v1.4 (2026-11-08): timeout-minutes: 5 on the job (O-807: a hang burned the 6h default). No other change.
 #
 # v1.3 (2026-10-31): watermark only. BB_Tools #357 pinned actions/checkout to a SHA in this file without bumping the
 # header; a consumer whose watermark gate judges copied files (universal-auth scripts/verify-watermark-bump.ts) then
@@ -45,6 +47,7 @@ jobs:
   searched-first:
     name: PR body has Searched first
     runs-on: ubuntu-slim
+    timeout-minutes: 5
     permissions:
       contents: read
       pull-requests: read
