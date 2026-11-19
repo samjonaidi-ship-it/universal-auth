@@ -1,5 +1,5 @@
-<!-- BB-AGENT-CONTRACT v2.1 -- managed block. Edit the template, not the copies. -->
-# Agent Workflow Contract | Bainbridge Builders | v2.1 | 2026-10-30 | BB
+<!-- BB-AGENT-CONTRACT v2.2 -- managed block. Edit the template, not the copies. -->
+# Agent Workflow Contract | Bainbridge Builders | v2.2 | 2026-11-06 | BB
 
 **Every agent working in this repo follows this file — Claude Code, Devin (cloud
 AND desktop), Codex, and any future one.** It is deliberately IN THE REPO and
@@ -253,8 +253,10 @@ before coding starts.
   before the first push.
 - **When Devin reviews your PR, take the whole review at once:** fix every
   finding in ONE commit, fix the same pattern everywhere else in the diff (not
-  only the line it named), add a test for each red finding, then push once.
-  One push = one more review round.
+  only the line it named), add the case to the module's EXISTING test suite
+  or case table — a module with no suite gets one (say so); a NEW test file
+  per finding needs a stated reason (consolidation over accretion) — then
+  push once. One push = one more review round.
 - **No round limit.** Keep fixing — one commit per round — until Devin has no
   open red findings and CI is green. The PR is yours to land, not Sam's. **Round 3+:
   stop patching.** Write the full case table for the function(s) Devin keeps
