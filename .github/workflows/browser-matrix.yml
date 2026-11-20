@@ -1,4 +1,6 @@
-# @samjonaidi-ship-it/universal-auth | .github/workflows/browser-matrix.yml | v1.0.6 | 2026-05-22 | BB
+# @samjonaidi-ship-it/universal-auth | .github/workflows/browser-matrix.yml | v1.0.7 | 2026-11-19 | BB
+# v1.0.7 (2026-11-19, O-807): matrix-gate gets timeout-minutes: 5 (it was the
+#   6-hour default; the job is one shell step).
 # v1.0.6 (2026-05-22): matrix-gate no longer fails when the matrix job is
 #   deliberately skipped. BROWSER_SMOKE_ENABLED is gated off by design (see
 #   docs/CI_SECRETS.md); the gate previously treated needs.matrix.result
@@ -118,6 +120,7 @@ jobs:
     needs: matrix
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Verify all browser shards passed
         run: |
